@@ -86,7 +86,9 @@ struct HUDContent: View {
         }
     }
 
-    private var symbol: String {
+    private var symbol: String { Self.symbol(for: event) }
+
+    static func symbol(for event: HUDEvent) -> String {
         switch event {
         case .volume(let level, let muted):
             if muted || level == 0 { return "speaker.slash.fill" }

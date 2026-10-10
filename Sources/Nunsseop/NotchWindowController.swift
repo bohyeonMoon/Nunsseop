@@ -27,6 +27,50 @@ final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
+/// Tells what a two-finger swipe over the notch does. Each swipe fires at most once, until `reset`.
+struct SwipeRecognizer {
+    enum Action: Equatable { case open, close, nextTrack, previousTrack }
+
+    static let threshold: CGFloat = 40
+    /// How much further one axis must have moved than the other for the swipe to count as along it.
+    static let dominance: CGFloat = 1.5
+
+    private var travel = CGVector.zero
+    private var fired = false
+
+    /// Only trackpad swipes over the panel; not scrolling in other windows, wheels or momentum.
+    static func accepts(overPanel: Bool, precise: Bool, momentum: Bool) -> Bool {
+        overPanel && precise && !momentum
+    }
+
+    /// The expanded header scrolls its tabs sideways, so swipes there are left to it.
+    static func isOverHeader(fromTop: CGFloat, collapsedHeight: CGFloat) -> Bool {
+        fromTop < max(collapsedHeight, 24) + 6
+    }
+
+    mutating func reset() {
+        travel = .zero
+        fired = false
+    }
+
+    /// Adds a scroll event's deltas and returns the action once the swipe is clear enough. `inverted` is natural
+    /// scrolling, which is turned back into the fingers' direction. Skipping tracks needs `tracks`.
+    mutating func add(dx: CGFloat, dy: CGFloat, inverted: Bool, opens: Bool, tracks: Bool) -> Action? {
+        let sign: CGFloat = inverted ? 1 : -1
+        travel.dx += dx * sign
+        travel.dy += dy * sign
+        guard !fired else { return nil }
+        if abs(travel.dy) > Self.threshold && abs(travel.dy) > abs(travel.dx) * Self.dominance, opens {
+            fired = true
+            return travel.dy > 0 ? .open : .close
+        } else if abs(travel.dx) > Self.threshold && abs(travel.dx) > abs(travel.dy) * Self.dominance, tracks {
+            fired = true
+            return travel.dx < 0 ? .nextTrack : .previousTrack
+        }
+        return nil
+    }
+}
+
 @MainActor
 final class NotchWindowController {
     private let model: NotchViewModel
@@ -41,8 +85,7 @@ final class NotchWindowController {
     private var hoverOpenBlocked = false
     /// The drag pasteboard's count at the last mouse up; a higher count means the drag running now carries data.
     private var idleDragCount = NSPasteboard(name: .drag).changeCount
-    private var swipe = CGVector.zero
-    private var swipeFired = false
+    private var swipe = SwipeRecognizer()
     private var swipeIdleWork: DispatchWorkItem?
     private var screenObserver: NSObjectProtocol?
     private var displayObserver: AnyCancellable?
@@ -438,10 +481,11 @@ final class NotchWindowController {
     private func isWheelOverHeader(_ event: NSEvent) -> Bool {
         event.window === panel && model.isExpanded && !event.hasPreciseScrollingDeltas
             && event.scrollingDeltaX == 0 && event.scrollingDeltaY != 0
-            && panel.frame.height - event.locationInWindow.y < max(model.geometry.collapsedSize.height, 24) + 6
+            && SwipeRecognizer.isOverHeader(fromTop: panel.frame.height - event.locationInWindow.y,
+                                            collapsedHeight: model.geometry.collapsedSize.height)
     }
 
-    nonisolated private static func sideways(_ event: NSEvent) -> NSEvent? {
+    nonisolated static func sideways(_ event: NSEvent) -> NSEvent? {
         guard let copy = event.cgEvent?.copy() else { return nil }
         for (vertical, horizontal) in [(CGEventField.scrollWheelEventDeltaAxis1, CGEventField.scrollWheelEventDeltaAxis2),
                                        (.scrollWheelEventPointDeltaAxis1, .scrollWheelEventPointDeltaAxis2),
@@ -457,41 +501,30 @@ final class NotchWindowController {
     private func scrolled(_ event: NSEvent) {
         let settings = model.settings
         guard settings.swipeToOpen || settings.swipeForTracks else { return }
-        // Only trackpad swipes over the panel; not scrolling in other windows, wheels or momentum.
-        guard event.window === panel, event.hasPreciseScrollingDeltas, event.momentumPhase.isEmpty else { return }
+        guard SwipeRecognizer.accepts(overPanel: event.window === panel, precise: event.hasPreciseScrollingDeltas,
+                                      momentum: !event.momentumPhase.isEmpty) else { return }
         // Scrolling over the timer's time changes its length instead.
         if TimeScrollTarget.isHovered { return }
-        // The expanded header scrolls its tabs sideways, so swipes there are left to it.
         let fromTop = panel.frame.height - event.locationInWindow.y
-        if model.isExpanded && fromTop < max(model.geometry.collapsedSize.height, 24) + 6 { return }
-        if event.phase == .began || event.phase == .mayBegin {
-            swipe = .zero
-            swipeFired = false
-        }
-        // Convert to finger direction regardless of the natural scrolling setting.
-        let sign: CGFloat = event.isDirectionInvertedFromDevice ? 1 : -1
-        swipe.dx += event.scrollingDeltaX * sign
-        swipe.dy += event.scrollingDeltaY * sign
+        if model.isExpanded && SwipeRecognizer.isOverHeader(fromTop: fromTop, collapsedHeight: model.geometry.collapsedSize.height) { return }
+        if event.phase == .began || event.phase == .mayBegin { swipe.reset() }
 
         swipeIdleWork?.cancel()
         let idle = DispatchWorkItem { [weak self] in
-            MainActor.assumeIsolated {
-                self?.swipe = .zero
-                self?.swipeFired = false
-            }
+            MainActor.assumeIsolated { self?.swipe.reset() }
         }
         swipeIdleWork = idle
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: idle)
 
-        guard !swipeFired else { return }
-        let threshold: CGFloat = 40
-        if abs(swipe.dy) > threshold && abs(swipe.dy) > abs(swipe.dx) * 1.5, settings.swipeToOpen {
-            swipeFired = true
-            if swipe.dy > 0 { model.expand() } else { model.collapse() }
-        } else if abs(swipe.dx) > threshold && abs(swipe.dx) > abs(swipe.dy) * 1.5,
-                  settings.swipeForTracks, model.isExpanded, model.tab == .home, model.nowPlaying.track != nil {
-            swipeFired = true
-            model.nowPlaying.send(swipe.dx < 0 ? .next : .previous)
+        // Finger direction regardless of the natural scrolling setting.
+        let tracks = settings.swipeForTracks && model.isExpanded && model.tab == .home && model.nowPlaying.track != nil
+        switch swipe.add(dx: event.scrollingDeltaX, dy: event.scrollingDeltaY, inverted: event.isDirectionInvertedFromDevice,
+                         opens: settings.swipeToOpen, tracks: tracks) {
+        case .open: model.expand()
+        case .close: model.collapse()
+        case .nextTrack: model.nowPlaying.send(.next)
+        case .previousTrack: model.nowPlaying.send(.previous)
+        case nil: break
         }
     }
 
@@ -578,7 +611,7 @@ final class NotchWindowController {
                     }
                 }
                 openWork = work
-                DispatchQueue.main.asyncAfter(deadline: .now() + model.settings.openDelay + (model.browRevealing ? NotchViewModel.browRevealDwell + 0.15 : 0), execute: work)
+                DispatchQueue.main.asyncAfter(deadline: .now() + NotchViewModel.hoverOpenDelay(base: model.settings.openDelay, browRevealing: model.browRevealing), execute: work)
             }
         }
     }

@@ -15,21 +15,30 @@ extension NotchViewModel {
             return nil
         case .claude, .codex:
             guard let left = Self.aiLeft(item, in: aiUsage.providers, window: settings.idleAIWindow) else { return nil }
-            return IdleValue(symbol: item == .claude ? "sparkles" : "terminal",
-                             tint: left < 15 ? .red : (item == .claude ? .orange : .white), text: "\(left)%")
+            return Self.aiValue(item, left: left)
         case .battery:
-            guard let power = hud.power else { return nil }
-            return IdleValue(symbol: power.isCharging ? "battery.100percent.bolt" : BatteryBadge.symbol(for: power.percent),
-                             tint: power.percent <= 20 && !power.onAC ? .red : .white, text: "\(power.percent)%")
+            return hud.power.map(Self.batteryValue)
         case .weather:
-            guard let weather = weather.current else { return nil }
-            return IdleValue(symbol: WeatherModel.symbol(for: weather.code), tint: nil,
-                             text: "\(Int(weather.temperature.rounded()))°")
+            return weather.current.map(Self.weatherValue)
         case .date:
             return IdleValue(symbol: nil, tint: nil, text: date.formatted(.dateTime.day().weekday(.abbreviated)))
         case .agents:
             return Self.agentsValue(agents.counts)
         }
+    }
+
+    static func aiValue(_ item: IdleItem, left: Int) -> IdleValue {
+        IdleValue(symbol: item == .claude ? "sparkles" : "terminal",
+                  tint: left < 15 ? .red : (item == .claude ? .orange : .white), text: "\(left)%")
+    }
+
+    static func batteryValue(_ power: PowerState) -> IdleValue {
+        IdleValue(symbol: power.isCharging ? "battery.100percent.bolt" : BatteryBadge.symbol(for: power.percent),
+                  tint: power.percent <= 20 && !power.onAC ? .red : .white, text: "\(power.percent)%")
+    }
+
+    static func weatherValue(_ weather: WeatherModel.Current) -> IdleValue {
+        IdleValue(symbol: WeatherModel.symbol(for: weather.code), tint: nil, text: "\(Int(weather.temperature.rounded()))°")
     }
 
     /// Agents waiting for you come first, in yellow; otherwise how many are working. Nothing when none are.
@@ -122,80 +131,125 @@ struct CollapsedActivity: View {
     let showsTimer: Bool
     let showsDownloads: Bool
 
+    enum LeftIcon: Equatable {
+        case call, music, recording, privacy, download, timer
+    }
+
+    enum RightContent: Equatable {
+        case recording, call, privacyDots, timer, download, bars
+    }
+
+    /// A call outranks music and timers; a screen recording keeps its time on the right.
+    static func leftIcon(inCall: Bool, playing: Bool, recording: Bool, privacyActive: Bool, downloading: Bool) -> LeftIcon {
+        if inCall { return .call }
+        if playing { return .music }
+        if recording { return .recording }
+        if privacyActive { return .privacy }
+        if downloading { return .download }
+        return .timer
+    }
+
+    static func rightContent(recording: Bool, inCall: Bool, privacyActive: Bool, timerShown: Bool, playing: Bool,
+                             downloading: Bool) -> RightContent {
+        if recording { return .recording }
+        if inCall { return .call }
+        if privacyActive && !timerShown && playing { return .privacyDots }
+        if timerShown { return .timer }
+        if downloading { return .download }
+        return .bars
+    }
+
     var body: some View {
         let art = min(height - 14, 32)
         let playing = showsMusic && nowPlaying.track?.isPlaying == true
         // A download takes the timer's place, after it: a timer someone set outranks a download.
-        let download = showsDownloads && !(showsTimer && timer.isRunning) ? downloads.status : nil
+        let timerShown = showsTimer && timer.isRunning
+        let download = showsDownloads && !timerShown ? downloads.status : nil
+        let privacyActive = privacy.map { $0.cameraInUse || $0.micInUse } ?? false
         HStack {
-            // A call outranks music and timers; a screen recording keeps its time on the right.
-            if let call {
-                Image(nsImage: call.icon)
-                    .resizable()
-                    .frame(width: art, height: art)
-            } else if playing {
+            switch Self.leftIcon(inCall: call != nil, playing: playing, recording: recorder.isRecording,
+                                 privacyActive: privacyActive, downloading: download != nil) {
+            case .call:
+                if let call {
+                    Image(nsImage: call.icon)
+                        .resizable()
+                        .frame(width: art, height: art)
+                }
+            case .music:
                 ArtworkView(image: nowPlaying.artwork, cornerRadius: art > 16 ? 5 : 3, style: .circular)
                     .frame(width: art, height: art)
-            } else if recorder.isRecording {
+            case .recording:
                 Circle().fill(.red).frame(width: 8, height: 8)
-            } else if let privacy, privacy.cameraInUse || privacy.micInUse {
-                HStack(spacing: 3) {
-                    if privacy.cameraInUse { Image(systemName: "video.fill").foregroundStyle(.green) }
-                    if privacy.micInUse { Image(systemName: "mic.fill").foregroundStyle(.orange) }
+            case .privacy:
+                if let privacy {
+                    HStack(spacing: 3) {
+                        if privacy.cameraInUse { Image(systemName: "video.fill").foregroundStyle(.green) }
+                        if privacy.micInUse { Image(systemName: "mic.fill").foregroundStyle(.orange) }
+                    }
+                    .font(.system(size: 10, weight: .semibold))
                 }
-                .font(.system(size: 10, weight: .semibold))
-            } else if download != nil {
+            case .download:
                 Image(systemName: "arrow.down.circle.fill")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.blue)
-            } else {
+            case .timer:
                 Image(systemName: timer.mode == .stopwatch ? "stopwatch.fill" : "timer")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(timer.mode == .pomodoro && timer.phase == .rest ? .green : .orange)
             }
             Spacer()
-            if let started = recorder.startedAt {
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    Text(TimerModel.format(context.date.timeIntervalSince(started)))
-                        .font(.system(size: 11, weight: .semibold).monospacedDigit())
-                        .foregroundStyle(.red)
-                }
-            } else if let call {
-                HStack(spacing: 3) {
-                    if callMuted {
-                        Image(systemName: "mic.slash.fill")
-                            .font(.system(size: 9, weight: .semibold))
+            switch Self.rightContent(recording: recorder.isRecording, inCall: call != nil, privacyActive: privacyActive,
+                                     timerShown: timerShown, playing: playing, downloading: download != nil) {
+            case .recording:
+                if let started = recorder.startedAt {
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        Text(TimerModel.format(context.date.timeIntervalSince(started)))
+                            .font(.system(size: 11, weight: .semibold).monospacedDigit())
                             .foregroundStyle(.red)
                     }
-                    TimelineView(.periodic(from: .now, by: 1)) { context in
-                        Text(TimerModel.format(context.date.timeIntervalSince(call.startedAt)))
-                            .font(.system(size: 11, weight: .semibold).monospacedDigit())
-                            .foregroundStyle(.green)
+                }
+            case .call:
+                if let call {
+                    HStack(spacing: 3) {
+                        if callMuted {
+                            Image(systemName: "mic.slash.fill")
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(.red)
+                        }
+                        TimelineView(.periodic(from: .now, by: 1)) { context in
+                            Text(TimerModel.format(context.date.timeIntervalSince(call.startedAt)))
+                                .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                                .foregroundStyle(.green)
+                        }
                     }
                 }
-            } else if let privacy, (privacy.cameraInUse || privacy.micInUse), !(showsTimer && timer.isRunning), playing {
-                HStack(spacing: 3) {
-                    if privacy.cameraInUse { Circle().fill(.green).frame(width: 6, height: 6) }
-                    if privacy.micInUse { Circle().fill(.orange).frame(width: 6, height: 6) }
+            case .privacyDots:
+                if let privacy {
+                    HStack(spacing: 3) {
+                        if privacy.cameraInUse { Circle().fill(.green).frame(width: 6, height: 6) }
+                        if privacy.micInUse { Circle().fill(.orange).frame(width: 6, height: 6) }
+                    }
                 }
-            } else if showsTimer && timer.isRunning {
+            case .timer:
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     Text(TimerModel.format(timer.value(at: context.date)))
                         .font(.system(size: 11, weight: .semibold).monospacedDigit())
                         .foregroundStyle(.orange)
                 }
-            } else if let download {
-                Group {
-                    if let percent = download.percent {
-                        Text("\(percent)%")
-                    } else {
-                        // Until the browser knows the size.
-                        Image(systemName: "ellipsis")
+            case .download:
+                if let download {
+                    Group {
+                        if let percent = download.percent {
+                            Text("\(percent)%")
+                        } else {
+                            // Until the browser knows the size.
+                            Image(systemName: "ellipsis")
+                        }
                     }
+                    .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(.blue)
                 }
-                .font(.system(size: 11, weight: .semibold).monospacedDigit())
-                .foregroundStyle(.blue)
-            } else {
+            case .bars:
                 SpectrumBars(isPlaying: playing, tint: nowPlaying.tint)
                     .frame(width: art - 2, height: max(8, art - 6))
             }

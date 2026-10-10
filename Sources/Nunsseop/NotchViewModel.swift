@@ -133,9 +133,14 @@ final class NotchViewModel: ObservableObject {
     /// The eyebrow is raised: at once on hover, but only after a short dwell when it had faded out, as the cue that it opens.
     @Published var browLifted = false
     /// How long the pointer rests on a faded eyebrow before it raises and opens.
-    static let browRevealDwell: TimeInterval = 0.5
+    nonisolated static let browRevealDwell: TimeInterval = 0.5
     /// The eyebrow had faded out when the pointer arrived.
     var browRevealing = false
+
+    /// How long the pointer must rest on the collapsed shape before it opens: a faded eyebrow also waits out its dwell.
+    nonisolated static func hoverOpenDelay(base: TimeInterval, browRevealing: Bool) -> TimeInterval {
+        base + (browRevealing ? browRevealDwell + 0.15 : 0)
+    }
     /// The eyebrow has faded out after sitting unused.
     @Published private(set) var browHidden = false
     private var browHideWork: DispatchWorkItem?
@@ -296,19 +301,29 @@ final class NotchViewModel: ObservableObject {
 
     var expandedSize: CGSize {
         var width = settings.expandedWidth
-        if settings.widenForTabs { width = max(width, min(widthFittingTabs, geometry.maxExpandedWidth)) }
+        if settings.widenForTabs { width = Self.widened(width, fitting: widthFittingTabs, limit: geometry.maxExpandedWidth) }
         return CGSize(width: width, height: settings.expandedHeight)
+    }
+
+    /// The saved width, or the width that shows every tab when that is more, but never past the panel.
+    nonisolated static func widened(_ width: CGFloat, fitting: CGFloat, limit: CGFloat) -> CGFloat {
+        max(width, min(fitting, limit))
     }
 
     nonisolated static let tabSlot: CGFloat = 36
     /// Horizontal inset of the expanded content from the shape's edge.
-    static let headerInset: CGFloat = 18 + 14
+    nonisolated static let headerInset: CGFloat = 18 + 14
 
     /// Battery, weather, Settings and Quit at the right end of the header.
     var headerStatusWidth: CGFloat {
+        Self.headerStatusWidth(battery: settings.batteryInHeader && hud.power != nil,
+                               weather: settings.headerWeather && weather.current != nil)
+    }
+
+    nonisolated static func headerStatusWidth(battery: Bool, weather: Bool) -> CGFloat {
         var width: CGFloat = 2 * (26 + 6)
-        if settings.batteryInHeader && hud.power != nil { width += 66 }
-        if settings.headerWeather && weather.current != nil { width += 50 }
+        if battery { width += 66 }
+        if weather { width += 50 }
         return width
     }
 
@@ -333,15 +348,19 @@ final class NotchViewModel: ObservableObject {
 
     /// The width that shows every tab without scrolling: split around the camera on notched displays, otherwise in one row.
     private var widthFittingTabs: CGFloat {
-        let count = settings.visibleTabs.count
+        Self.fittingWidth(tabCount: settings.visibleTabs.count, status: headerStatusWidth,
+                          hasNotch: geometry.hasNotch, notchWidth: geometry.collapsedSize.width)
+    }
+
+    nonisolated static func fittingWidth(tabCount count: Int, status: CGFloat, hasNotch: Bool, notchWidth: CGFloat) -> CGFloat {
         let content: CGFloat
-        if geometry.hasNotch {
-            let side = Self.tabSplit(count: count, status: headerStatusWidth).side
-            content = 2 * side + geometry.collapsedSize.width + 8 + 12
+        if hasNotch {
+            let side = tabSplit(count: count, status: status).side
+            content = 2 * side + notchWidth + 8 + 12
         } else {
-            content = Self.stripWidth(count) + 12 + headerStatusWidth
+            content = stripWidth(count) + 12 + status
         }
-        return content + 2 * Self.headerInset
+        return content + 2 * headerInset
     }
 
     /// The meeting name the sneak peek shows instead of the track while a call starts.
@@ -350,11 +369,20 @@ final class NotchViewModel: ObservableObject {
     }
 
     var showsSneakPeek: Bool {
-        guard settings.sneakPeekEnabled else { return false }
-        if sneakPeekCallTitle != nil { return true }
-        guard let track = nowPlaying.track else { return false }
-        let lyricsLive = settings.lyricsEnabled && settings.lyricsUnderNotch && track.isPlaying && !lyrics.lines.isEmpty
-        return settings.sneakPeekAlways || sneakPeekPending || lyricsLive
+        Self.showsSneakPeek(enabled: settings.sneakPeekEnabled, callTitle: sneakPeekCallTitle,
+                            track: nowPlaying.track.map { $0.isPlaying },
+                            lyricsLive: settings.lyricsEnabled && settings.lyricsUnderNotch && !lyrics.lines.isEmpty,
+                            always: settings.sneakPeekAlways, pending: sneakPeekPending)
+    }
+
+    /// `track` is whether the loaded track plays, nil without one. `lyricsLive` says lyrics are on, shown under the
+    /// notch and known for this song; they only count while it plays.
+    nonisolated static func showsSneakPeek(enabled: Bool, callTitle: String?, track: Bool?, lyricsLive: Bool,
+                                           always: Bool, pending: Bool) -> Bool {
+        guard enabled else { return false }
+        if callTitle != nil { return true }
+        guard let playing = track else { return false }
+        return always || pending || (lyricsLive && playing)
     }
 
     /// While music plays, the collapsed notch grows an "ear" on each side
@@ -363,12 +391,6 @@ final class NotchViewModel: ObservableObject {
     static let hudEarWidth: CGFloat = 102
     /// Room for a short value such as "73%" or "16°" on each side while idle.
     static let idleEarWidth: CGFloat = 70
-
-    /// On a display without a notch nothing hides in the middle, so a notice or headphone battery is one line.
-    var hudLine: String? {
-        guard !geometry.hasNotch, let event = hud.event else { return nil }
-        return HUDContent.line(for: event)
-    }
 
     /// On a display without a notch the sneak peek or lyric sits between the artwork and the visualizer, not in a row below.
     var sneakPeekInline: Bool { !geometry.hasNotch && showsSneakPeek }
@@ -380,7 +402,11 @@ final class NotchViewModel: ObservableObject {
     /// What the inline line may take, at most a third of the screen; anything longer shrinks a little, then truncates.
     var inlinePeekWidth: CGFloat {
         let wanted = sneakPeekCallTitle.map { Self.peekLineWidth(lines: [$0]) } ?? songPeekWidth
-        return min(max(wanted, Self.minInlinePeekWidth), geometry.screenFrame.width / 3)
+        return Self.clampedPeekWidth(wanted, screenWidth: geometry.screenFrame.width)
+    }
+
+    nonisolated static func clampedPeekWidth(_ wanted: CGFloat, screenWidth: CGFloat) -> CGFloat {
+        min(max(wanted, minInlinePeekWidth), screenWidth / 3)
     }
 
     /// The widest of these lines as SneakPeekLine draws them: the play symbol and its gap, the text, and the side padding.
@@ -397,36 +423,50 @@ final class NotchViewModel: ObservableObject {
     }
 
     var collapsedSize: CGSize {
-        var size = geometry.collapsedSize
-        if !geometry.hasNotch, let event = hud.event, let value = HUDContent.compactValueWidth(for: event) {
+        Self.collapsedSize(base: geometry.collapsedSize, hasNotch: geometry.hasNotch, screenWidth: geometry.screenFrame.width,
+                           event: hud.event, showsLiveActivity: showsLiveActivity, earWidth: earWidth,
+                           idleGrowth: showsIdleEars ? (idleFittedSides.map { $0.left + $0.right } ?? 2 * Self.idleEarWidth) : nil,
+                           showsSneakPeek: showsSneakPeek, inlinePeekWidth: inlinePeekWidth)
+    }
+
+    /// The closed shape's size from the display's own (`base`) and what the notch shows. `idleGrowth` is how much the
+    /// idle values add, nil when there are none.
+    static func collapsedSize(base: CGSize, hasNotch: Bool, screenWidth: CGFloat, event: HUDEvent?,
+                              showsLiveActivity: Bool, earWidth: @autoclosure () -> CGFloat,
+                              idleGrowth: @autoclosure () -> CGFloat?, showsSneakPeek: Bool,
+                              inlinePeekWidth: @autoclosure () -> CGFloat) -> CGSize {
+        var size = base
+        if !hasNotch, let event, let value = HUDContent.compactValueWidth(for: event) {
             size.width = max(size.width, 2 * 18 + HUDContent.lineSymbolWidth + HUDContent.lineGap + value)
             return size
         }
-        if let line = hudLine {
+        if !hasNotch, let event, let line = HUDContent.line(for: event) {
+            // Nothing hides in the middle, so a notice or headphone battery is one line.
             // The symbol, the gap after it and the side padding, then the text; long lines truncate at a third of the screen.
             let text = ceil((line as NSString).size(withAttributes: [.font: HUDContent.lineFont]).width)
             let content = HUDContent.lineSymbolWidth + HUDContent.lineGap + text
-            size.width = min(max(size.width, 2 * 18 + content), max(size.width, geometry.screenFrame.width / 3))
+            size.width = min(max(size.width, 2 * 18 + content), max(size.width, screenWidth / 3))
             return size
         }
-        if let event = hud.event {
-            size.width += 2 * Self.hudEarWidth
+        if let event {
+            size.width += 2 * hudEarWidth
             switch event {
-            case .headphones, .notice: size.height += Self.sneakPeekHeight
+            case .headphones, .notice: size.height += sneakPeekHeight
             default: break
             }
             return size
         }
+        let sneakPeekInline = !hasNotch && showsSneakPeek
         if showsLiveActivity {
-            size.width += 2 * earWidth
-        } else if showsIdleEars && !sneakPeekInline {
-            size.width += idleFittedSides.map { $0.left + $0.right } ?? 2 * Self.idleEarWidth
+            size.width += 2 * earWidth()
+        } else if !sneakPeekInline, let growth = idleGrowth() {
+            size.width += growth
         }
         if sneakPeekInline {
-            size.width = max(size.width, (showsLiveActivity ? 2 * earWidth : 0) + inlinePeekWidth + 2 * 13)
+            size.width = max(size.width, (showsLiveActivity ? 2 * earWidth() : 0) + inlinePeekWidth() + 2 * 13)
         } else if showsSneakPeek {
             size.width = max(size.width, 300)
-            size.height += Self.sneakPeekHeight
+            size.height += sneakPeekHeight
         }
         return size
     }
@@ -447,11 +487,16 @@ final class NotchViewModel: ObservableObject {
         #if DEBUG
         if Self.forcesLeftEarHidden { return true }
         #endif
-        let screen = geometry.screenFrame
-        let menus = appMenus.frames.filter { screen.contains(CGPoint(x: $0.midX, y: $0.midY)) }
-        let left = screen.midX - notch / 2, right = screen.midX + notch / 2
         // Fitted idle values may grow the left side by less than half; growing right only takes all of it.
         let ear = idleFittedSides?.left ?? (width - notch) / 2
+        return Self.menusReachLeftEar(menus: appMenus.frames, screen: geometry.screenFrame, notch: notch, width: width, ear: ear)
+    }
+
+    /// Menus whose centre is off the screen belong to another display and are ignored.
+    nonisolated static func menusReachLeftEar(menus: [CGRect], screen: CGRect, notch: CGFloat, width: CGFloat, ear: CGFloat) -> Bool {
+        guard width > notch else { return false }
+        let menus = menus.filter { screen.contains(CGPoint(x: $0.midX, y: $0.midY)) }
+        let left = screen.midX - notch / 2, right = screen.midX + notch / 2
         let covers = { (from: CGFloat, to: CGFloat) in menus.contains { $0.maxX > from && $0.minX < to } }
         return covers(left - ear, left) && !covers(right, right + width - notch)
     }
@@ -515,11 +560,15 @@ final class NotchViewModel: ObservableObject {
 
     /// The collapsed shape on screen.
     var collapsedRect: NSRect {
-        var rect = geometry.shapeRect(size: collapsedSize).offsetBy(dx: collapsedShift, dy: 0)
+        Self.collapsedRect(geometry: geometry, size: collapsedSize, shift: collapsedShift)
+    }
+
+    static func collapsedRect(geometry: NotchGeometry, size: CGSize, shift: CGFloat) -> NSRect {
+        var rect = geometry.shapeRect(size: size).offsetBy(dx: shift, dy: 0)
         // The gap above a floating eyebrow still counts, so flicking the pointer to the screen edge finds it.
         rect.size.height += geometry.topInset
         // The bare eyebrow is small, so the pointer may be a little off to the side.
-        if !geometry.hasNotch && collapsedSize.width == geometry.collapsedSize.width { rect = rect.insetBy(dx: -8, dy: 0) }
+        if !geometry.hasNotch && size.width == geometry.collapsedSize.width { rect = rect.insetBy(dx: -8, dy: 0) }
         return rect
     }
 
@@ -563,12 +612,16 @@ final class NotchViewModel: ObservableObject {
     }
 
     var earWidth: CGFloat {
-        let height = geometry.collapsedSize.height
-        let base = settings.compactLiveActivity ? height * 0.7 : height + 6
-        // Room for "1:23:45" during a call, plus a mic-slash while muted, and "12:34" when a timer is running or "100%" for a download.
-        if calls.call != nil { return max(base, callControls.state?.mic == .off ? 74 : 60) }
         let needsText = (timer.isRunning && settings.collapsedTimer) || recorder.isRecording
             || (downloads.status != nil && settings.collapsedDownloads)
+        return Self.earWidth(height: geometry.collapsedSize.height, compact: settings.compactLiveActivity,
+                             inCall: calls.call != nil, muted: callControls.state?.mic == .off, needsText: needsText)
+    }
+
+    nonisolated static func earWidth(height: CGFloat, compact: Bool, inCall: Bool, muted: Bool, needsText: Bool) -> CGFloat {
+        let base = compact ? height * 0.7 : height + 6
+        // Room for "1:23:45" during a call, plus a mic-slash while muted, and "12:34" when a timer is running or "100%" for a download.
+        if inCall { return max(base, muted ? 74 : 60) }
         return needsText ? max(base, 50) : base
     }
 
@@ -576,8 +629,20 @@ final class NotchViewModel: ObservableObject {
         isExpanded ? expandedSize : collapsedSize
     }
 
+    /// Home for a tab the settings no longer show.
+    nonisolated static func visibleTab(_ tab: NotchTab, isVisible: (NotchTab) -> Bool) -> NotchTab {
+        isVisible(tab) ? tab : .home
+    }
+
     private func leaveHiddenTab() {
-        if !settings.isVisible(tab) { tab = .home }
+        let next = Self.visibleTab(tab, isVisible: settings.isVisible)
+        if next != tab { tab = next }
+    }
+
+    /// The tab the notch shows after closing: never Mirror, which would start the camera when it reopens, and never
+    /// one that is hidden.
+    nonisolated static func tabAfterCollapse(_ tab: NotchTab, isVisible: (NotchTab) -> Bool) -> NotchTab {
+        visibleTab(tab == .mirror ? .home : tab, isVisible: isVisible)
     }
 
     func expand() {
@@ -592,9 +657,9 @@ final class NotchViewModel: ObservableObject {
         resetBrowHide()
         pinned = false
         // The camera must only start from an explicit click on the Mirror tab.
-        if tab == .mirror { tab = .home }
         // Search opened by its shortcut may be a tab the header doesn't show.
-        leaveHiddenTab()
+        let next = Self.tabAfterCollapse(tab, isVisible: settings.isVisible)
+        if next != tab { tab = next }
     }
 }
 
