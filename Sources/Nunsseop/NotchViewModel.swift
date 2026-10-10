@@ -502,7 +502,7 @@ final class NotchViewModel: ObservableObject {
     }
 
     /// The room the eyebrow's stroke leaves at each end of its frame, which fitted idle values keep from the wall too.
-    static let idleFittedMargin: CGFloat = 10
+    nonisolated static let idleFittedMargin: CGFloat = 10
 
     /// On a display without a notch, the idle values size the shape to fit them instead of taking a fixed ear each.
     var idleFits: Bool {
