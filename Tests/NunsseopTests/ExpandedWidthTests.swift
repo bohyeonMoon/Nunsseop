@@ -88,11 +88,16 @@ struct ExpandedWidthTests {
         g.screenFrame = NSRect(x: 0, y: 0, width: 1512, height: 982)
         g.hasNotch = true
         g.collapsedSize = CGSize(width: 384, height: 32)
-        let count = NotchTab.allCases.count
-        let width = NotchViewModel.widened(620, fitting: NotchViewModel.fittingWidth(tabCount: count, status: 180, hasNotch: true, notchWidth: 384),
-                                           limit: g.maxExpandedWidth)
-        #expect(width <= g.maxExpandedWidth)
-        #expect(width <= g.panelFrame.width - 40)
+        // The unclamped fitting width itself has to fit; clamping it to the limit would hide an overflow.
+        for count in 1...NotchTab.allCases.count {
+            for status in statuses {
+                let fitting = NotchViewModel.fittingWidth(tabCount: count, status: status, hasNotch: true, notchWidth: 384)
+                #expect(fitting <= g.maxExpandedWidth, "count \(count), status \(status)")
+                #expect(fitting <= g.panelFrame.width - 40, "count \(count), status \(status)")
+                // Because it fits, widening a narrower saved width reaches it exactly.
+                #expect(NotchViewModel.widened(0, fitting: fitting, limit: g.maxExpandedWidth) == fitting, "count \(count), status \(status)")
+            }
+        }
     }
 }
 

@@ -89,6 +89,7 @@ struct HUDLineTests {
 }
 
 /// The one-row HUD reserves fixed slots for its symbol and value; what is drawn has to fit them.
+/// These measure real fonts and SF Symbols, so they depend on the system's own, deliberately.
 @MainActor
 struct HUDSlotTests {
     private func symbolWidth(_ name: String) throws -> CGFloat {

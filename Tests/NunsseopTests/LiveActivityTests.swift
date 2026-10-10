@@ -124,7 +124,7 @@ struct IdleValueTests {
 
     @Test func weatherUsesTheConditionsSymbolInItsOwnColours() {
         let value = NotchViewModel.weatherValue(WeatherModel.Current(place: "Seoul", temperature: 20, high: 30, low: 10, code: 0))
-        #expect(value.symbol == WeatherModel.symbol(for: 0))
+        #expect(value.symbol == "sun.max.fill")
         #expect(value.tint == nil)
     }
 }

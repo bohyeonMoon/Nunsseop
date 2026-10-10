@@ -98,11 +98,11 @@ struct SwipeRecognizerTests {
 
 struct HoverOpenDelayTests {
     @Test func aVisibleEyebrowOpensAfterTheSettingsDelay() {
-        #expect(NotchViewModel.hoverOpenDelay(base: 0.1, browRevealing: false) == 0.1)
+        #expect(abs(NotchViewModel.hoverOpenDelay(base: 0.1, browRevealing: false) - 0.1) < 1e-9)
     }
 
     @Test func aFadedEyebrowAlsoWaitsOutItsDwell() {
-        #expect(NotchViewModel.hoverOpenDelay(base: 0.1, browRevealing: true) == 0.1 + 0.5 + 0.15)
+        #expect(abs(NotchViewModel.hoverOpenDelay(base: 0.1, browRevealing: true) - (0.1 + 0.5 + 0.15)) < 1e-9)
     }
 }
 

@@ -5,6 +5,7 @@ import Testing
 
 /// The header reserves 66 for the battery badge and 50 for the weather chip, each including the 6 the row puts
 /// between its items; what is drawn has to fit what is reserved.
+/// These measure real fonts and SF Symbols, so they depend on the system's own, deliberately.
 @MainActor
 struct HeaderStatusWidthTests {
     private let spacing: CGFloat = 6
