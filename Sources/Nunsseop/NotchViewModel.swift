@@ -239,20 +239,11 @@ final class NotchViewModel: ObservableObject {
         // Claude Code and Codex sessions anywhere, through their hooks; kept only while the count or the tab is shown.
         notifyServer.onAgent = { [agentHooks] in agentHooks.apply($0) }
         // Claude Code's permission prompts wait here until answered, or until their hook is gone.
-        notifyServer.permissions.isEnabled = { AppSettings.load("permissionPrompts", default: true) }
-        notifyServer.permissions.onPrompt = { [weak self] in self?.approvals.add($0) }
-        notifyServer.permissions.onGone = { [weak self] in self?.approvals.remove($0) }
-        approvals.onAnswer = { [notifyServer] in notifyServer.permissions.answer($0, $1) }
+        PermissionLink.connect(board: approvals, gate: notifyServer.permissions, isOn: settings.$permissionPrompts.eraseToAnyPublisher(),
+                               enabled: { AppSettings.load("permissionPrompts", default: true) })
+            .forEach { $0.store(in: &cancellables) }
         approvals.$prompts
             .sink { [weak self] _ in self?.objectWillChange.send() }
-            .store(in: &cancellables)
-        settings.$permissionPrompts
-            .removeDuplicates()
-            .filter { !$0 }
-            .sink { [weak self] _ in
-                self?.notifyServer.permissions.cancelAll()
-                self?.approvals.clear()
-            }
             .store(in: &cancellables)
         settings.$idleLeft.combineLatest(settings.$idleRight, settings.$agentsTab)
             .map { $0 == .agents || $1 == .agents || $2 }
