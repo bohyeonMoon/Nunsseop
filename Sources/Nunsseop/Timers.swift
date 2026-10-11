@@ -30,21 +30,52 @@ final class TimerModel: ObservableObject {
     }
 
     private let defaults: UserDefaults
+    private let cal: Calendar
     private let now: () -> Date
     private let chime: () -> Void
+    /// The day `completedPomodoros` counts.
+    private var countedDay: Date
+    private var dayObservers: [NSObjectProtocol] = []
 
-    init(defaults: UserDefaults = .standard, now: @escaping () -> Date = { .now },
+    init(defaults: UserDefaults = .standard, calendar: Calendar = .autoupdatingCurrent, now: @escaping () -> Date = { .now },
          chime: @escaping () -> Void = { NSSound(named: "Glass")?.play() }) {
         self.defaults = defaults
+        cal = calendar
         self.now = now
         self.chime = chime
+        countedDay = calendar.startOfDay(for: now())
         countdownSeconds = Self.stored("countdownSeconds", 5 * 60, in: defaults)
         workMinutes = Self.stored("pomodoroWorkMinutes", 25, in: defaults)
         restMinutes = Self.stored("pomodoroRestMinutes", 5, in: defaults)
+        // Timers don't count time asleep, so the day is checked again on wake and clock changes too.
+        dayObservers = [
+            NotificationCenter.default.addObserver(forName: .NSCalendarDayChanged, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.rollDay() }
+            },
+            NotificationCenter.default.addObserver(forName: .NSSystemClockDidChange, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.rollDay() }
+            },
+            NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.rollDay() }
+            },
+        ]
     }
 
     var onFinished: ((String) -> Void)?
     private var ticker: Timer?
+
+    /// Starts the Pomodoro count over when the day has changed since it began.
+    func rollDay() {
+        let current = cal.startOfDay(for: now())
+        guard current != countedDay else { return }
+        countedDay = current
+        completedPomodoros = 0
+    }
+
+    func recordCompletedPomodoro() {
+        rollDay()
+        completedPomodoros += 1
+    }
 
     var isRunning: Bool { anchor != nil }
     var isActive: Bool { anchor != nil || pausedValue != nil }
@@ -170,7 +201,7 @@ final class TimerModel: ObservableObject {
             reset()
             onFinished?(String(localized: "Timer finished"))
         case .pomodoro:
-            if phase == .work { completedPomodoros += 1 }
+            if phase == .work { recordCompletedPomodoro() }
             let finishedWork = phase == .work
             phase = finishedWork ? .rest : .work
             self.anchor = now().addingTimeInterval(fullLength)

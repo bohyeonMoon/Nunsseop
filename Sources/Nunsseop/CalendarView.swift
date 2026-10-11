@@ -74,7 +74,7 @@ private struct WeekStrip: View {
                 .alignmentGuide(.dayNumber) { $0[.lastTextBaseline] }
                 .padding(.trailing, wide ? 6 : 4)
             ForEach(calendar.week.prefix(days), id: \.self) { day in
-                let today = Calendar.current.isDateInToday(day)
+                let today = Calendar.current.isDate(day, inSameDayAs: calendar.today)
                 let selected = Calendar.current.isDate(day, inSameDayAs: calendar.selectedDay)
                 let weekend = Calendar.current.isDateInWeekend(day)
                 Button { calendar.selectedDay = day } label: {
