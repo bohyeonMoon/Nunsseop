@@ -42,7 +42,7 @@ private enum Fixture {
 }
 
 struct AgentTranscriptParseTests {
-    @Test func claudeTakesTheFolderModelAndContextOfTheLastMainMessage() {
+    @Test func claudeTakesTheFirstFolderAndTheModelAndContextOfTheLastMainMessage() {
         let tail = Fixture.data([
             Fixture.snapshot,
             Fixture.claudeUser(cwd: "/Users/me/old"),
@@ -54,7 +54,7 @@ struct AgentTranscriptParseTests {
             Fixture.claudeAssistant(model: "<synthetic>", input: 0, cacheRead: 0, cacheCreation: 0),
         ])
         #expect(AgentTranscript.parse(.claude, tail: tail)
-                == AgentTranscript(cwd: "/Users/me/proj", model: "claude-opus-5-5", tokens: 84_010))
+                == AgentTranscript(cwd: "/Users/me/old", model: "claude-opus-5-5", tokens: 84_010))
     }
 
     @Test func claudeSkipsALastLineThatIsStillBeingWritten() {
@@ -77,7 +77,7 @@ struct AgentTranscriptParseTests {
         #expect(AgentTranscript.parse(.claude, tail: tail) == AgentTranscript(cwd: nil, model: "claude-sonnet-5-5", tokens: 42))
     }
 
-    @Test func codexTakesTheFolderModelAndInputTokensOfTheLastCount() {
+    @Test func codexTakesTheFirstFolderAndTheModelAndInputTokensOfTheLastCount() {
         let tail = Fixture.data([
             Fixture.codexMeta(cwd: "/Users/me/start", id: "s"),
             Fixture.codexTurn(model: "gpt-5.6", cwd: "/Users/me/proj"),
@@ -86,7 +86,7 @@ struct AgentTranscriptParseTests {
             Fixture.codexTokens(input: nil),
             Fixture.codexTokens(input: 19_492),
         ])
-        #expect(AgentTranscript.parse(.codex, tail: tail) == AgentTranscript(cwd: "/Users/me/proj", model: "gpt-5.6", tokens: 19_492))
+        #expect(AgentTranscript.parse(.codex, tail: tail) == AgentTranscript(cwd: "/Users/me/start", model: "gpt-5.6", tokens: 19_492))
     }
 
     @Test func codexSkipsAMalformedLastLine() {
@@ -138,6 +138,15 @@ struct AgentTranscriptReadTests {
         defer { try? FileManager.default.removeItem(at: url) }
         try Data().write(to: url)
         #expect(AgentTranscript.read(url, kind: .claude) == AgentTranscript())
+    }
+
+    @Test func theFolderIsTheOneTheSessionStartedInEvenAfterTheShellMoved() throws {
+        let url = try scratch()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let filler = (0..<4_000).map { _ in "{\"type\":\"attachment\",\"text\":\"\(String(repeating: "x", count: 100))\"}" }
+        try Fixture.write([Fixture.claudeUser(cwd: "/Users/me/proj")] + filler
+                          + [Fixture.claudeAssistant(model: "claude-opus-5-5", input: 4, cacheRead: 0, cacheCreation: 0, cwd: "/Users/me/proj/worktree")], to: url)
+        #expect(AgentTranscript.read(url, kind: .claude)?.cwd == "/Users/me/proj")
     }
 
     @Test func aLongFileIsReadFromItsEndAndItsStart() throws {

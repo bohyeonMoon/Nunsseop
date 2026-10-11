@@ -9,8 +9,9 @@ struct AgentTranscript: Equatable {
     var tokens: Int? = nil
 
     /// Claude Code's lines carry `cwd` and, on assistant messages, `message.model` and `message.usage`; Codex's
-    /// `session_meta` and `turn_context` carry `cwd` and `model`, and its `token_count` events the usage. The later
-    /// line wins, and a line that doesn't parse (a half-written last one, or the cut one a tail starts with) is skipped.
+    /// `session_meta` and `turn_context` carry `cwd` and `model`, and its `token_count` events the usage. The first
+    /// folder is the one the session started in (the shell can move on later); for the rest the later line wins. A line
+    /// that doesn't parse (a half-written last one, or the cut one a tail starts with) is skipped.
     static func parse(_ kind: AgentKind, head: Data = Data(), tail: Data) -> AgentTranscript {
         var result = AgentTranscript()
         for chunk in [head, tail] {
@@ -28,7 +29,7 @@ struct AgentTranscript: Equatable {
     private mutating func absorbClaude(_ object: [String: Any]) {
         // A subagent's lines are its own; synthetic messages (no reply was asked for) carry no real usage.
         guard object["isSidechain"] as? Bool != true else { return }
-        if let cwd = object["cwd"] as? String, !cwd.isEmpty { self.cwd = cwd }
+        if self.cwd == nil, let cwd = object["cwd"] as? String, !cwd.isEmpty { self.cwd = cwd }
         guard object["type"] as? String == "assistant", let message = object["message"] as? [String: Any],
               let model = message["model"] as? String, !model.isEmpty, model != "<synthetic>" else { return }
         self.model = model
@@ -41,10 +42,8 @@ struct AgentTranscript: Equatable {
     private mutating func absorbCodex(_ object: [String: Any]) {
         guard let payload = object["payload"] as? [String: Any] else { return }
         switch object["type"] as? String {
-        case "session_meta":
-            if let cwd = payload["cwd"] as? String, !cwd.isEmpty { self.cwd = cwd }
-        case "turn_context":
-            if let cwd = payload["cwd"] as? String, !cwd.isEmpty { self.cwd = cwd }
+        case "session_meta", "turn_context":
+            if self.cwd == nil, let cwd = payload["cwd"] as? String, !cwd.isEmpty { self.cwd = cwd }
             if let model = payload["model"] as? String, !model.isEmpty { self.model = model }
         case "event_msg":
             // The first token_count of a session has no `info`; its input tokens include the cached ones.
@@ -58,7 +57,7 @@ struct AgentTranscript: Equatable {
     }
 
     /// Where a read starts from the end of a file, and how far it widens when the last assistant message or token
-    /// count isn't in it (one line can be megabytes); the start of the file is read only for a folder the tail lacks.
+    /// count isn't in it (one line can be megabytes); the start of the file is read for the folder the session began in.
     static let firstWindow = 256 << 10
     static let lastWindow = 4 << 20
     static let headWindow = 128 << 10
@@ -76,9 +75,10 @@ struct AgentTranscript: Equatable {
                 window *= 4
                 continue
             }
-            if result.cwd == nil, start > 0, (try? handle.seek(toOffset: 0)) != nil,
-               let head = try? handle.read(upToCount: min(Int(start), headWindow)) {
-                result.cwd = parse(kind, head: head, tail: Data()).cwd
+            if start > 0, (try? handle.seek(toOffset: 0)) != nil,
+               let head = try? handle.read(upToCount: min(Int(start), headWindow)),
+               let first = parse(kind, head: head, tail: Data()).cwd {
+                result.cwd = first
             }
             return result
         }
