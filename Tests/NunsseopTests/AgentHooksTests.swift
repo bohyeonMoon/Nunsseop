@@ -71,6 +71,53 @@ struct AgentHookEventTests {
         #expect(AgentHook.event(headers: ["x-session": "s", "x-event": "Stop", "x-subagent": ""]) != nil)
     }
 
+    @Test func codexEventsAsTheCountReadsThem() {
+        #expect(AgentHook.action(event: "UserPromptSubmit", type: nil) == .working)
+        #expect(AgentHook.action(event: "PermissionRequest", type: nil) == .needsInput)
+        #expect(AgentHook.action(event: "Stop", type: nil) == .finished)
+        #expect(AgentHook.action(event: "Interrupt", type: nil) == .idle)
+        #expect(AgentHook.action(event: "SessionEnd", type: nil) == .remove)
+        // The rest of Codex's events say nothing about the turn as a whole.
+        for event in ["PreToolUse", "PostToolUse", "PreCompact", "PostCompact", "SessionStart", "SubagentStart", "SubagentStop"] {
+            #expect(AgentHook.action(event: event, type: nil) == nil, "\(event)")
+        }
+    }
+
+    @Test func theAgentHeaderTellsCodexFromClaudeCode() {
+        let base = ["x-session": "019e-abc", "x-event": "PermissionRequest", "x-app": "com.apple.Terminal"]
+        #expect(AgentHook.event(headers: base.merging(["x-agent": "codex"]) { $1 })
+                == AgentEvent(session: "019e-abc", action: .needsInput, app: "com.apple.Terminal", inHerdr: false, agent: .codex))
+        // Claude Code's hook has no such header, and an empty or named one means the same.
+        for agent in [nil, "", "claude"] {
+            let headers = agent.map { base.merging(["x-agent": $0]) { $1 } } ?? base
+            #expect(AgentHook.event(headers: headers)?.agent == .claude, "\(agent ?? "nil")")
+        }
+        // Whatever else is refused, so a stray value can't open a source of its own.
+        for agent in ["gemini", "Codex", "codex\n", "codex ", String(repeating: "a", count: 65)] {
+            #expect(AgentHook.event(headers: base.merging(["x-agent": agent]) { $1 }) == nil, "\(agent)")
+        }
+    }
+
+    @Test func codexSubagentCallsAreDropped() {
+        let headers = ["x-session": "s", "x-event": "PermissionRequest", "x-agent": "codex"]
+        #expect(AgentHook.event(headers: headers) != nil)
+        #expect(AgentHook.event(headers: headers.merging(["x-subagent": "worker-1"]) { $1 }) == nil)
+    }
+
+    @Test func codexHookCommandNamesItsAgentAndSendsOnlyIdsAndNames() {
+        let command = NotifyServer.agentHookCommand(for: .codex)
+        #expect(command.contains("127.0.0.1:\(NotifyServer.port)/agent"))
+        #expect(command.contains("X-Agent: codex"))
+        #expect(command.contains("-m 1") && command.contains("--connect-timeout 1") && command.contains(">/dev/null 2>&1 || true"))
+        for field in ["session_id", "hook_event_name", "agent_id"] { #expect(command.contains(field)) }
+        for private_ in ["prompt", "last_assistant_message", "tool_input", "cwd", "transcript_path", "--data-binary"] {
+            #expect(!command.contains(private_))
+        }
+        // Claude Code's command is the one installed so far, and stays as it was.
+        #expect(NotifyServer.agentHookCommand == NotifyServer.agentHookCommand(for: .claude))
+        #expect(!NotifyServer.agentHookCommand.contains("X-Agent"))
+    }
+
     @Test func hookCommandSendsOnlyIdsAndNames() {
         let command = NotifyServer.agentHookCommand
         #expect(command.contains("127.0.0.1:\(NotifyServer.port)/agent"))
@@ -219,6 +266,77 @@ struct AgentHooksTests {
         hooks.apply(event("a", .working), now: start)
         #expect(board.counts == AgentBoard.Counts(working: 2))
         hooks.reset()
+        #expect(board.counts == AgentBoard.Counts(working: 1))
+    }
+
+    @Test func codexSessionsAreASourceOfTheirOwn() {
+        let board = AgentBoard()
+        let claude = AgentHooks(board: board, isOn: { true }, watchesHerdr: { false }, frontmostApp: { nil })
+        let codex = AgentHooks(board: board, agent: .codex, isOn: { true }, watchesHerdr: { false }, frontmostApp: { nil })
+        #expect(claude.source == "hooks:claude" && codex.source == "hooks:codex")
+        // The same session id from both tools is two sessions.
+        claude.apply(event("same", .working), now: start)
+        codex.apply(event("same", .needsInput), now: start)
+        #expect(board.counts == AgentBoard.Counts(working: 1, waiting: 1))
+        // One's end, idle or reset doesn't touch the other.
+        codex.apply(event("same", .remove), now: start)
+        #expect(board.counts == AgentBoard.Counts(working: 1))
+        codex.apply(event("same", .working), now: start)
+        claude.apply(event("same", .idle), now: start)
+        #expect(board.counts == AgentBoard.Counts(working: 1))
+        codex.reset()
+        #expect(board.counts.isEmpty)
+    }
+
+    @Test func codexFollowsTheSameRulesAsClaudeCode() {
+        let board = AgentBoard()
+        let codex = AgentHooks(board: board, agent: .codex, isOn: { true }, watchesHerdr: { true },
+                               frontmostApp: { "com.apple.Terminal" })
+        // A herdr pane is herdr's; a turn finished in the front app was seen; one elsewhere waits.
+        codex.apply(event("h", .working, inHerdr: true), now: start)
+        #expect(board.counts.isEmpty)
+        codex.apply(event("a", .working, app: "com.apple.Terminal"), now: start)
+        codex.apply(event("a", .finished, app: "com.apple.Terminal"), now: start)
+        #expect(board.counts.isEmpty)
+        codex.apply(event("b", .working, app: "com.mitchellh.ghostty"), now: start)
+        codex.apply(event("b", .needsInput, app: "com.mitchellh.ghostty"), now: start.addingTimeInterval(1))
+        #expect(board.counts == AgentBoard.Counts(waiting: 1))
+        // An interrupt clears what was asked, and a finished hand stays.
+        codex.apply(event("b", .idle, app: "com.mitchellh.ghostty"), now: start.addingTimeInterval(2))
+        #expect(board.counts.isEmpty)
+        codex.apply(event("c", .finished, app: "com.mitchellh.ghostty"), now: start)
+        codex.apply(event("c", .idle, app: "com.mitchellh.ghostty"), now: start)
+        #expect(board.counts == AgentBoard.Counts(waiting: 1))
+    }
+
+    @Test func eachToolsEventsGoToItsOwnHooks() {
+        let board = AgentBoard()
+        let tools = ToolHooks(claude: AgentHooks(board: board, isOn: { true }, watchesHerdr: { false }, frontmostApp: { nil }),
+                              codex: AgentHooks(board: board, agent: .codex, isOn: { true }, watchesHerdr: { false },
+                                                frontmostApp: { nil }))
+        tools.apply(AgentEvent(session: "x", action: .working, agent: .codex), now: start)
+        #expect(board.counts == AgentBoard.Counts(working: 1))
+        // The same id from Claude Code is another session, and ending it leaves Codex's.
+        tools.apply(event("x", .needsInput), now: start)
+        #expect(board.counts == AgentBoard.Counts(working: 1, waiting: 1))
+        tools.apply(event("x", .remove), now: start)
+        #expect(board.counts == AgentBoard.Counts(working: 1))
+        tools.apply(AgentEvent(session: "x", action: .remove, agent: .codex), now: start)
+        #expect(board.counts.isEmpty)
+    }
+
+    @Test func hidingTheCountClearsBothToolsSessions() {
+        let board = AgentBoard()
+        let tools = ToolHooks(claude: AgentHooks(board: board, isOn: { true }, watchesHerdr: { false }, frontmostApp: { nil }),
+                              codex: AgentHooks(board: board, agent: .codex, isOn: { true }, watchesHerdr: { false },
+                                                frontmostApp: { nil }))
+        tools.apply(event("a", .working), now: start)
+        tools.apply(AgentEvent(session: "b", action: .needsInput, agent: .codex), now: start)
+        #expect(board.counts == AgentBoard.Counts(working: 1, waiting: 1))
+        tools.reset()
+        #expect(board.counts.isEmpty)
+        // Nothing comes back with the next event.
+        tools.apply(AgentEvent(session: "c", action: .working, agent: .codex), now: start)
         #expect(board.counts == AgentBoard.Counts(working: 1))
     }
 

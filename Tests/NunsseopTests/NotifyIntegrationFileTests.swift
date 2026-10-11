@@ -139,6 +139,213 @@ struct NotifyIntegrationFileTests {
         }
     }
 
+    // MARK: Codex hooks
+
+    private let codex = NotifyIntegration.codex
+    private let codexEvents = ["UserPromptSubmit", "PermissionRequest", "Stop", "Interrupt", "SessionEnd"]
+
+    /// Another tool's entries as Muxy, GitKraken and herdr write them into ~/.codex/hooks.json: a matcher and a timeout.
+    private func othersHooks() -> [String: Any] {
+        func group(_ commands: [String]) -> [String: Any] {
+            ["matcher": "", "hooks": commands.map { ["type": "command", "command": $0, "timeout": 10] as [String: Any] }]
+        }
+        return ["hooks": [
+            "PermissionRequest": [group(["muxy-codex-hook.sh permission-request # muxy-notification-hook", "gk ai hook run --host codex"])],
+            "Stop": [group(["muxy-codex-hook.sh stop # muxy-notification-hook"]), group(["gk ai hook run --host codex"])],
+            "PreToolUse": [group(["gk ai hook run --host codex"])],
+            "SessionStart": [group(["bash herdr-agent-state.sh session"])],
+        ]]
+    }
+
+    private func groups(_ settings: [String: Any], _ event: String) -> [[String: Any]] {
+        ((settings["hooks"] as? [String: Any])?[event] as? [[String: Any]]) ?? []
+    }
+
+    @Test func connectingCodexAddsItsHooksNextToTheOtherToolsAndKeepsTheirs() throws {
+        try withTempHome { home in
+            let hooksURL = home.appendingPathComponent(".codex/hooks.json")
+            try put("model = \"o3\"\n", at: codex.configURL)
+            let others = othersHooks()
+            try NotifyIntegration.writeJSON(others, to: hooksURL)
+            let seed = try #require(bytes(hooksURL))
+
+            try codex.installNow()
+
+            let settings = try NotifyIntegration.loadJSON(at: hooksURL)
+            #expect(JSONHook.isCurrent(codex.hooks, in: settings))
+            #expect(codex.hooks.map(\.event).sorted() == codexEvents.sorted())
+            for event in codexEvents {
+                let before = groups(others, event), after = groups(settings, event)
+                // The other tools' groups stay first and untouched; ours is one more group after them.
+                #expect(after.count == before.count + 1, "\(event)")
+                #expect(zip(before, after).allSatisfy { sameJSON($0, $1) }, "\(event)")
+                let ours = try #require(after.last)
+                #expect(ours["matcher"] == nil)
+                #expect(((ours["hooks"] as? [[String: Any]])?.compactMap { $0["command"] as? String }) == [NotifyServer.agentHookCommand(for: .codex)])
+            }
+            for event in ["PreToolUse", "SessionStart"] {
+                #expect(sameJSON(["g": groups(settings, event)], ["g": groups(others, event)]), "\(event)")
+            }
+            #expect(bytes(backup(of: hooksURL)) == seed)
+            // The notice side is the legacy notify command, as before.
+            #expect(CodexNotify.isInstalled(in: text(codex.configURL) ?? ""))
+            #expect(codex.isInstalled)
+            // Claude Code's settings are nobody's business here.
+            #expect(!fileManager.fileExists(atPath: claude.configURL.path))
+        }
+    }
+
+    @Test func disconnectingCodexRemovesOnlyItsHooks() throws {
+        try withTempHome { home in
+            let hooksURL = home.appendingPathComponent(".codex/hooks.json")
+            try put("model = \"o3\"\n", at: codex.configURL)
+            let others = othersHooks()
+            try NotifyIntegration.writeJSON(others, to: hooksURL)
+            try codex.installNow()
+            #expect(codex.isInstalled)
+
+            try codex.uninstallNow()
+
+            #expect(!codex.isInstalled)
+            #expect(!JSONHook.holdsAny(in: try NotifyIntegration.loadJSON(at: hooksURL)))
+            #expect(sameJSON(try NotifyIntegration.loadJSON(at: hooksURL), others))
+            #expect(text(codex.configURL) == "model = \"o3\"\n")
+        }
+    }
+
+    @Test func connectingCodexCreatesHooksJSONAndDisconnectingLeavesNoneOfOurs() throws {
+        try withTempHome { home in
+            let hooksURL = home.appendingPathComponent(".codex/hooks.json")
+            try codex.installNow()
+            let settings = try NotifyIntegration.loadJSON(at: hooksURL)
+            #expect(JSONHook.isCurrent(codex.hooks, in: settings))
+            #expect(!fileManager.fileExists(atPath: backup(of: hooksURL).path))
+            for event in codexEvents { #expect(groups(settings, event).count == 1, "\(event)") }
+
+            // Again: nothing is rewritten.
+            let installed = bytes(hooksURL), date = modified(hooksURL)
+            try codex.installNow()
+            #expect(bytes(hooksURL) == installed && modified(hooksURL) == date)
+            #expect(!fileManager.fileExists(atPath: backup(of: hooksURL).path))
+
+            try codex.uninstallNow()
+            #expect(try NotifyIntegration.loadJSON(at: hooksURL).isEmpty)
+            #expect(!codex.isInstalled)
+        }
+    }
+
+    @Test func codexCountsAsConnectedThroughItsNotifyCommandAlone() throws {
+        try withTempHome { home in
+            let hooksURL = home.appendingPathComponent(".codex/hooks.json")
+            // Only the hooks: not connected, since Connect is what puts both in.
+            try NotifyIntegration.writeJSON(JSONHook.adding(codex.hooks, to: [:]), to: hooksURL)
+            #expect(!codex.isInstalled)
+            // A connection from before the hooks existed still counts, and the next launch brings the hooks.
+            try fileManager.removeItem(at: hooksURL)
+            try put(CodexNotify.adding(to: ""), at: codex.configURL)
+            #expect(codex.isInstalled)
+        }
+    }
+
+    @Test func aHooksFileThatCantBeReadStopsConnectingCodexBeforeAnythingIsWritten() throws {
+        try withTempHome { home in
+            let hooksURL = home.appendingPathComponent(".codex/hooks.json")
+            try put("model = \"o3\"\n", at: codex.configURL)
+            for seed in [#"{"hooks": "#, "[1]", #"{"hooks":"nope"}"#] {
+                try put(seed, at: hooksURL)
+                #expect(throws: (any Error).self, "\(seed)") { try codex.installNow() }
+                #expect(bytes(hooksURL) == Data(seed.utf8), "\(seed)")
+                #expect(text(codex.configURL) == "model = \"o3\"\n", "\(seed)")
+                #expect(!fileManager.fileExists(atPath: CodexNotify.scriptURL.path), "\(seed)")
+                #expect(!codex.isInstalled)
+            }
+        }
+    }
+
+    @Test func theErrorForAHooksFileThatCantBeReadNamesHooksJSON() throws {
+        try withTempHome { home in
+            try put("model = \"o3\"\n", at: codex.configURL)
+            try put("[1]", at: codex.hooksURL)
+            let error = try #require(throws: NotifyIntegration.IntegrationError.self) { try codex.installNow() }
+            #expect(codex.file(failing: error) == codex.hooksURL)
+            #expect(codex.hooksURL.lastPathComponent == "hooks.json")
+            // A config that can't be read is its own file's error.
+            try put("notify = nope\n", at: codex.configURL)
+            let configError = try #require(throws: NotifyIntegration.IntegrationError.self) { try codex.installNow() }
+            #expect(codex.file(failing: configError) == codex.configURL)
+        }
+    }
+
+    @Test func disconnectingCodexWorksWithAHooksFileThatCantBeRead() throws {
+        try withTempHome { home in
+            for seed in ["", "// c\n{}", "[1]", #"{"hooks": "#, #"{"hooks":"nope"}"#] {
+                try put(CodexNotify.adding(to: "model = \"o3\"\n"), at: codex.configURL)
+                try put(seed, at: codex.hooksURL)
+                try codex.uninstallNow()
+                #expect(text(codex.configURL) == "model = \"o3\"\n", "\(seed)")
+                #expect(!codex.isInstalled, "\(seed)")
+                #expect(bytes(codex.hooksURL) == Data(seed.utf8), "\(seed)")
+            }
+        }
+    }
+
+    @Test func launchRefreshesTheCodexScriptWithAHooksFileThatCantBeRead() throws {
+        try withTempHome { home in
+            for seed in ["", "// c\n{}", "[1]", #"{"hooks":"nope"}"#] {
+                let configText = try CodexNotify.adding(to: "model = \"o3\"\n")
+                try put(configText, at: codex.configURL)
+                try put("#!/bin/sh\necho old\n", at: CodexNotify.scriptURL)
+                try put(seed, at: codex.hooksURL)
+                NotifyIntegration.updateConnectedNow()
+                #expect(text(CodexNotify.scriptURL) == CodexNotify.script, "\(seed)")
+                #expect(text(codex.configURL) == configText, "\(seed)")
+                #expect(bytes(codex.hooksURL) == Data(seed.utf8), "\(seed)")
+            }
+        }
+    }
+
+    @Test func launchBringsAnOlderCodexConnectionTheHooks() throws {
+        try withTempHome { home in
+            let hooksURL = home.appendingPathComponent(".codex/hooks.json")
+            try put(CodexNotify.adding(to: "model = \"o3\"\n"), at: codex.configURL)
+            let others = othersHooks()
+            try NotifyIntegration.writeJSON(others, to: hooksURL)
+            NotifyIntegration.updateConnectedNow()
+            #expect(JSONHook.isCurrent(codex.hooks, in: try NotifyIntegration.loadJSON(at: hooksURL)))
+
+            // Our hook of an older version is replaced, not doubled.
+            var stale = try NotifyIntegration.loadJSON(at: hooksURL)
+            stale = try JSONHook.adding([("Stop", "curl http://127.0.0.1:\(NotifyServer.port)/agent -H 'X-Old: 1'")],
+                                        to: JSONHook.removing(from: stale))
+            try NotifyIntegration.writeJSON(stale, to: hooksURL)
+            NotifyIntegration.updateConnectedNow()
+            let settings = try NotifyIntegration.loadJSON(at: hooksURL)
+            #expect(JSONHook.isCurrent(codex.hooks, in: settings))
+            #expect(groups(settings, "Stop").count == groups(others, "Stop").count + 1)
+        }
+    }
+
+    @Test func launchClearsCodexHooksLeftBehindWithoutTheNotifyCommand() throws {
+        try withTempHome { home in
+            let hooksURL = home.appendingPathComponent(".codex/hooks.json")
+            let others = othersHooks()
+            try NotifyIntegration.writeJSON(JSONHook.adding(codex.hooks, to: others), to: hooksURL)
+            NotifyIntegration.updateConnectedNow()
+            #expect(sameJSON(try NotifyIntegration.loadJSON(at: hooksURL), others))
+        }
+    }
+
+    @Test func launchLeavesAHooksFileWithNoHooksOfOursAlone() throws {
+        try withTempHome { home in
+            let hooksURL = home.appendingPathComponent(".codex/hooks.json")
+            try NotifyIntegration.writeJSON(othersHooks(), to: hooksURL)
+            let seed = bytes(hooksURL), date = modified(hooksURL)
+            NotifyIntegration.updateConnectedNow()
+            #expect(bytes(hooksURL) == seed && modified(hooksURL) == date)
+            #expect(!fileManager.fileExists(atPath: backup(of: hooksURL).path))
+        }
+    }
+
     // MARK: Update at launch
 
     @Test func launchBringsAnOlderNoticeHookUpToDate() throws {

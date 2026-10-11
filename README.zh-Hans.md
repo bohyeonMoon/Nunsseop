@@ -87,7 +87,7 @@ brew install --cask namekun/tap/nunsseop
 - **实时获取 Claude 用量上限（需手动开启）。** 如果你在别处使用 Claude，AI 标签会询问一次，是否通过 Claude Code 存在钥匙串里的登录信息，大约每小时从 Anthropic 获取一次你的 5 小时和每周 Claude 用量上限。你同意之前保持关闭；之后可在设置 › 服务中更改。以最新的那个来源为准；如果它不含套餐和各模型的用量条，则沿用之前的。
 - **来自代理和终端的通知。** Claude Code、Codex、Gemini CLI 和 OpenCode 的钩子，Muxy、cmux 和 herdr 中的代理，以及 tmux 和 WezTerm 的响铃，都会显示在刘海里。点按通知，即可把对应的终端、窗格或标签页调到前台（[设置方法见下文](#代理与终端通知)）。
 - **通知标签。** 显示最近 30 条来自代理、终端和日历的通知，未读的带有角标；点按某一条就能回到它的来源。默认关闭（设置 › 刘海），且只保存在内存里。
-- **工作中的代理。** 收起时的刘海上有一个项目，显示有多少个编程代理在等你（黄色的手）；没有在等你的，则显示有多少个正在工作（绿色的闪电）。目前跟随 herdr，以及通过钩子连接的 Claude Code（在“设置 › 提醒”中连接），用 `claude --bg` 启动的后台会话也会计入。
+- **工作中的代理。** 收起时的刘海上有一个项目，显示有多少个编程代理在等你（黄色的手）；没有在等你的，则显示有多少个正在工作（绿色的闪电）。目前跟随 herdr，以及通过钩子连接的 Claude Code 和 Codex（在“设置 › 提醒”中连接；Codex 下次启动时会询问是否信任这些钩子），用 `claude --bg` 启动的后台会话也会计入。
 
 **🧩 随心定制**
 - 自己选择标签及其顺序、顶部栏和收起的刘海显示什么，以及要哪些弹出提示。**关闭的功能就不会再运行。**
@@ -145,7 +145,7 @@ Nunsseop 显示的是 macOS 列为“正在播放”的内容，所以播放器�
 
 Nunsseop 在 `127.0.0.1:47750` 上监听来自 Mac 上各种工具的通知。请求必须带有保存在 `~/Library/Application Support/Nunsseop/notify-token` 中的密钥令牌。
 
-打开设置 → 提醒，点按 Claude Code、Codex、Gemini CLI 或 OpenCode 旁边的**连接**。这里只会列出你在这台 Mac 上用过的工具。Nunsseop 会修改该工具的设置文件（`~/.claude/settings.json`、`~/.codex/config.toml`、`~/.gemini/settings.json`），或在 `~/.config/opencode/plugins` 中添加一个插件，并以 `.nunsseop-backup` 扩展名保留原文件。Codex 只允许一条 `notify` 命令，所以已有的那条会排在 Nunsseop 的之后继续运行。点按**断开连接**即可撤销。之后启动的会话会把通知发送到刘海。
+打开设置 → 提醒，点按 Claude Code、Codex、Gemini CLI 或 OpenCode 旁边的**连接**。这里只会列出你在这台 Mac 上用过的工具。Nunsseop 会修改该工具的设置文件（`~/.claude/settings.json`、`~/.codex/config.toml`、`~/.codex/hooks.json`、`~/.gemini/settings.json`），或在 `~/.config/opencode/plugins` 中添加一个插件，并以 `.nunsseop-backup` 扩展名保留原文件。Codex 只允许一条 `notify` 命令，所以已有的那条会排在 Nunsseop 的之后继续运行。点按用于统计工作中代理的钩子会与其他工具的钩子并列写入 `~/.codex/hooks.json`；Codex 下次启动时会询问是否信任它们（选择“Review hooks”可只信任 Nunsseop 的钩子，“Trust all and continue”会信任所有工具的新钩子），在此之前不会运行。 **断开连接**即可撤销。之后启动的会话会把通知发送到刘海。
 
 如果想手动设置 Claude Code，请点按**拷贝 Claude Code 钩子命令**，然后把它添加到 `~/.claude/settings.json`：
 

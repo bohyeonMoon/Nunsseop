@@ -5,7 +5,7 @@ import Foundation
 enum NotifyIntegration: String, CaseIterable, Identifiable {
     case claudeCode, codex, gemini, openCode
 
-    enum IntegrationError: Error { case unreadableConfig }
+    enum IntegrationError: Error { case unreadableConfig, unreadableHooks }
 
     var id: String { rawValue }
 
@@ -40,13 +40,28 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
         return FileManager.default.fileExists(atPath: folder.path)
     }
 
-    /// The hooks Nunsseop keeps in a JSON tool's settings. Claude Code also reports its sessions for the agents
-    /// count; Gemini CLI's event names aren't known well enough for that.
+    /// Where Codex reads lifecycle hooks, next to its config. Its notices stay with the notify command in `configURL`.
+    var hooksURL: URL { configURL.deletingLastPathComponent().appendingPathComponent("hooks.json") }
+
+    /// The hooks Nunsseop keeps in a JSON tool's settings. Claude Code and Codex also report their sessions for the
+    /// agents count; Gemini CLI's event names aren't known well enough for that.
     var hooks: JSONHook.Table {
-        let notice = (event: "Notification", command: NotifyServer.hookCommand(title: name))
-        guard self == .claudeCode else { return [notice] }
-        let agent = NotifyServer.agentHookCommand
-        return [notice] + ["Notification", "UserPromptSubmit", "Stop", "StopFailure", "SessionEnd"].map { ($0, agent) }
+        switch self {
+        case .claudeCode:
+            let agent = NotifyServer.agentHookCommand
+            return [("Notification", NotifyServer.hookCommand(title: name))]
+                + ["Notification", "UserPromptSubmit", "Stop", "StopFailure", "SessionEnd"].map { ($0, agent) }
+        case .codex:
+            let agent = NotifyServer.agentHookCommand(for: .codex)
+            return ["UserPromptSubmit", "PermissionRequest", "Stop", "Interrupt", "SessionEnd"].map { ($0, agent) }
+        default:
+            return [("Notification", NotifyServer.hookCommand(title: name))]
+        }
+    }
+
+    /// The file a failed change is about, as Settings names it.
+    func file(failing error: Error) -> URL {
+        (error as? IntegrationError) == .unreadableHooks ? hooksURL : configURL
     }
 
     var isInstalled: Bool {
@@ -54,6 +69,8 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
         case .claudeCode, .gemini:
             return (try? Self.loadJSON(at: configURL)).map(JSONHook.isInstalled(in:)) ?? false
         case .codex:
+            // The notify command is what makes Codex connected, as the notice hook does for Claude Code; the hooks
+            // come with it, and are added at launch to a connection from before they existed.
             return (try? String(contentsOf: configURL, encoding: .utf8)).map(CodexNotify.isInstalled(in:)) ?? false
         case .openCode:
             return FileManager.default.fileExists(atPath: configURL.path)
@@ -76,15 +93,27 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
             guard let updated = try JSONHook.updating(hooks, in: settings) else { return }
             try Self.writeJSON(updated, to: configURL)
         case .codex:
+            // Both files are read and the changes worked out before anything is written, so one that can't be read
+            // changes nothing. A connection that's already there is only refreshed, and doesn't wait for a hooks file
+            // that can't be read.
             let text = try Self.loadText(at: configURL)
+            let connected = CodexNotify.isInstalled(in: text)
+            let notify = try connected ? nil : CodexNotify.adding(to: text)
+            let agentHooks: [String: Any]?
+            do {
+                agentHooks = try JSONHook.updating(hooks, in: Self.loadJSON(at: hooksURL))
+            } catch {
+                guard connected else { throw IntegrationError.unreadableHooks }
+                agentHooks = nil
+            }
             let script = CodexNotify.scriptURL
             if (try? String(contentsOf: script, encoding: .utf8)) != CodexNotify.script {
                 try FileManager.default.createDirectory(at: script.deletingLastPathComponent(), withIntermediateDirectories: true)
                 try Data(CodexNotify.script.utf8).write(to: script, options: .atomic)
                 try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
             }
-            guard !CodexNotify.isInstalled(in: text) else { return }
-            try Self.writeText(CodexNotify.adding(to: text), to: configURL)
+            if let notify { try Self.writeText(notify, to: configURL) }
+            if let agentHooks { try Self.writeJSON(agentHooks, to: hooksURL) }
         case .openCode:
             guard (try? String(contentsOf: configURL, encoding: .utf8)) != Self.openCodePlugin else { return }
             // Through write(), so a plugin edited by hand is kept as a backup.
@@ -93,7 +122,7 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
     }
 
     /// Updates every connected tool to this version's hook, script or plugin, in the background; the rest stay
-    /// untouched, except for agent hooks of ours that a deleted notice hook left behind in a JSON tool's settings.
+    /// untouched, except for agent hooks of ours that a deleted notice hook or notify command left behind.
     static func updateConnected() {
         queue.async { updateConnectedNow() }
     }
@@ -102,7 +131,7 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
         for tool in allCases {
             if tool.isInstalled {
                 try? tool.installNow()
-            } else if tool == .claudeCode || tool == .gemini {
+            } else if tool != .openCode {
                 try? tool.uninstallNow()
             }
         }
@@ -117,8 +146,11 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
             try Self.writeJSON(JSONHook.removing(from: settings), to: configURL)
         case .codex:
             let text = try Self.loadText(at: configURL)
-            guard CodexNotify.isInstalled(in: text) else { return }
-            try Self.writeText(CodexNotify.removing(from: text), to: configURL)
+            if CodexNotify.isInstalled(in: text) { try Self.writeText(CodexNotify.removing(from: text), to: configURL) }
+            // Best effort: a hooks file that can't be read must not keep the notify command in place.
+            if let agentHooks = try? Self.loadJSON(at: hooksURL), JSONHook.holdsAny(in: agentHooks) {
+                try? Self.writeJSON(JSONHook.removing(from: agentHooks), to: hooksURL)
+            }
         case .openCode:
             try? FileManager.default.removeItem(at: configURL)
         }

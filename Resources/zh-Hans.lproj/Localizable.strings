@@ -111,7 +111,8 @@
 "Copy Claude Code hook command" = "拷贝 Claude Code 钩子命令";
 "Connect" = "连接";
 "Disconnect" = "断开连接";
-"Connecting changes the tool's own settings file and keeps the old one with a `.nunsseop-backup` extension. Sessions started afterwards send their notifications here. Claude Code also reports its sessions for the agents count in the closed notch, which works while notifications from local tools are on." = "连接会修改该工具自己的设置文件，并以 `.nunsseop-backup` 扩展名保留原文件。之后启动的会话会把通知发送到这里。Claude Code 还会把会话上报给收起刘海中的工作中代理数量；该功能在本地工具通知开启时有效。";
+"Connecting changes the tool's own settings file and keeps the old one with a `.nunsseop-backup` extension. Sessions started afterwards send their notifications here. Claude Code and Codex also report their sessions for the agents count in the closed notch, which works while notifications from local tools are on." = "连接会修改该工具自己的设置文件，并以 `.nunsseop-backup` 扩展名保留原文件。之后启动的会话会把通知发送到这里。Claude Code 和 Codex 还会把会话上报给收起刘海中的工作中代理数量；该功能在本地工具通知开启时有效。";
+"Codex asks you to review Nunsseop's hooks the next time it starts. Trust them (\"Review hooks\" lets you trust only Nunsseop's; \"Trust all and continue\" trusts every tool's new hooks); until then its sessions don't count." = "Codex 下次启动时会请你检查 Nunsseop 的钩子。请信任它们（“Review hooks”可只信任 Nunsseop 的钩子，“Trust all and continue”会信任所有工具的新钩子）；在此之前它的会话不会被统计。";
 "Couldn't change %@. Copy the hook command and add it by hand." = "无法修改 %@。请拷贝钩子命令并手动添加。";
 "Copy command for scripts" = "拷贝脚本用命令";
 "Timer" = "计时器";

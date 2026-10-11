@@ -131,6 +131,62 @@ struct AgentHookShellTests {
     }
 }
 
+struct CodexAgentHookShellTests {
+    private func run(_ stdin: String, environment: [String: String] = ["__CFBundleIdentifier": "com.x"], curlExit: Int32 = 0) throws -> ShellRun {
+        try ShellRun.run({ _ in ["-c", NotifyServer.agentHookCommand(for: .codex)] }, stdin: stdin, environment: environment, curlExit: curlExit)
+    }
+
+    /// What Codex 0.155 writes to a PermissionRequest hook's stdin (its schema), with the parts that must never leave.
+    private let permissionRequest = #"""
+        {"session_id":"019e5b2c-7a41-7c10-8d3e-2f6a9c1b4e07","turn_id":"turn-1","transcript_path":"/Users/me/.codex/sessions/s.jsonl",
+         "cwd":"/Users/me/secret","hook_event_name":"PermissionRequest","model":"gpt-5.5","permission_mode":"default",
+         "tool_name":"Bash","tool_input":{"command":"rm -rf secret","description":"secret plan"}}
+        """#
+
+    @Test func sendsTheEventAsHeadersOnlyAndNamesCodex() throws {
+        let sent = try run(permissionRequest)
+        #expect(sent.args == [
+            "-s", "-m", "1", "--connect-timeout", "1", "-X", "POST", "http://127.0.0.1:\(NotifyServer.port)/agent", "-d", "",
+            "-H", "Authorization: Bearer tok", "-H", "X-Session: 019e5b2c-7a41-7c10-8d3e-2f6a9c1b4e07",
+            "-H", "X-Event: PermissionRequest", "-H", "X-Type: ", "-H", "X-Subagent: ", "-H", "X-App: com.x",
+            "-H", "X-Herdr: ", "-H", "X-Background: ", "-H", "X-Agent: codex",
+        ])
+        #expect(sent.body.isEmpty)
+        #expect(!sent.args.joined().contains("secret") && !sent.args.joined().contains("rm -rf") && !sent.args.joined().contains("gpt"))
+        #expect(sent.curlCalls == 1 && sent.stdout.isEmpty && sent.status == 0)
+    }
+
+    @Test func eachEventOfTheMappingReachesTheServerAsTheEventTheCountReads() throws {
+        for (event, action) in [("UserPromptSubmit", AgentAction.working), ("PermissionRequest", .needsInput), ("Stop", .finished),
+                                ("Interrupt", .idle), ("SessionEnd", .remove)] {
+            let sent = try run(json(["session_id": "s-1", "hook_event_name": event, "turn_id": "t", "prompt": "do it"]))
+            var headers: [String: String] = [:]
+            for (flag, header) in zip(sent.args, sent.args.dropFirst()) where flag == "-H" {
+                guard let colon = header.firstIndex(of: ":") else { continue }
+                headers[header[..<colon].lowercased()] = header[header.index(after: colon)...].trimmingCharacters(in: .whitespaces)
+            }
+            #expect(AgentHook.event(headers: headers)
+                    == AgentEvent(session: "s-1", action: action, app: "com.x", inHerdr: false, agent: .codex), "\(event)")
+        }
+    }
+
+    @Test func aSubagentCallCarriesItsIdAndHerdrIsFlagged() throws {
+        let sub = try run(json(["session_id": "s", "hook_event_name": "PermissionRequest", "agent_id": "agent-7"]))
+        #expect(sub.args.contains("X-Subagent: agent-7"))
+        let herdr = try run(json(["session_id": "s", "hook_event_name": "Stop"]), environment: ["__CFBundleIdentifier": "com.x", "HERDR_PANE_ID": "1"])
+        #expect(herdr.args.contains("X-Herdr: 1") && herdr.args.contains("X-Agent: codex"))
+    }
+
+    @Test func aClosedNunsseopOrBrokenInputCostsTheSessionNothing() throws {
+        for stdin in ["", "not json"] {
+            let sent = try run(stdin)
+            #expect(sent.curlCalls == 1 && sent.status == 0 && sent.stdout.isEmpty, "\(stdin)")
+        }
+        let closed = try run(json(["session_id": "s", "hook_event_name": "Stop"]), curlExit: 7)
+        #expect(closed.status == 0 && closed.stdout.isEmpty)
+    }
+}
+
 struct NoticeHookShellTests {
     private func run(_ environment: [String: String] = [:], curlExit: Int32 = 0) throws -> ShellRun {
         try ShellRun.run({ _ in ["-c", NotifyServer.hookCommand(title: "Claude Code")] },
