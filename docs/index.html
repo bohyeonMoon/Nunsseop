@@ -1173,10 +1173,10 @@ open build/Nunsseop.app</pre></div>
   }
 
   // Transitions.dev — Texts reveal: blocks that start below the fold rise in once as they come into view. Blocks already in view are never hidden,
-  // and with no IntersectionObserver or under Reduce Motion nothing is.
+  // and with no IntersectionObserver, under Reduce Motion or in an automated browser (a full-page capture never scrolls) nothing is.
   try {
     var blocks = [].slice.call(document.querySelectorAll('.reveal'));
-    if (blocks.length && 'IntersectionObserver' in window && motionOK()) {
+    if (blocks.length && 'IntersectionObserver' in window && motionOK() && !navigator.webdriver) {
       var seen = new IntersectionObserver(function (entries) {
         var n = 0;
         entries.forEach(function (e) {

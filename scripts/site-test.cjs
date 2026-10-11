@@ -30,6 +30,9 @@ const pickLang = async (page, lang) => {
   await page.goto(url);
   await page.waitForLoadState('load');
 
+  // An automated browser that never scrolls (a full-page capture) still gets every block.
+  check(await page.evaluate(() => document.querySelectorAll('.reveal-pre').length) === 0, 'blocks hidden in an automated browser');
+
   // Lazy images only load near the viewport, so load them all before checking.
   const broken = await page.$$eval('img', imgs => Promise.all(imgs.map(i => {
     i.loading = 'eager';
@@ -344,6 +347,8 @@ const pickLang = async (page, lang) => {
   {
     const mctx = await browser.newContext({ locale: 'en-US', viewport: { width: 1280, height: 800 } });
     await mctx.addInitScript(clipOk);
+    // Automated browsers get everything at once; this context stands in for a visitor.
+    await mctx.addInitScript(() => Object.defineProperty(Navigator.prototype, 'webdriver', { get: () => false }));
     const mp = await mctx.newPage();
     mp.on('pageerror', e => failures.push('motion page error: ' + e.message));
     mp.on('console', m => { if (m.type() === 'error') failures.push('motion console error: ' + m.text()); });
