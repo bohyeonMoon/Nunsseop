@@ -96,6 +96,12 @@ enum ClaudeStatusLine {
                      script: paths.script.path, scriptExists: FileManager.default.fileExists(atPath: paths.script.path))
     }
 
+    /// Connected, but the saved original is gone, so the script has nothing to run. Connecting always saves the file,
+    /// even when there was no status line before, so a missing file means it was lost.
+    static func originalLost(_ paths: Paths = .live) -> Bool {
+        state(paths) == .connected && !FileManager.default.fileExists(atPath: paths.original.path)
+    }
+
     static func connect(_ paths: Paths = .live) throws {
         try NotifyIntegration.queue.sync {
             let settings = try NotifyIntegration.loadJSON(at: paths.settings)

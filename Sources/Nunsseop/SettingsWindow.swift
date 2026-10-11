@@ -375,6 +375,7 @@ private struct ServicesPane: View {
     @ObservedObject var settings: AppSettings
     @State private var statusLine = ClaudeStatusLine.State.notConnected
     @State private var statusLineFailed = false
+    @State private var statusLineLost = false
 
     var body: some View {
         Form {
@@ -404,6 +405,10 @@ private struct ServicesPane: View {
                         Text("Not connected.").font(.caption).foregroundStyle(.secondary)
                     case .changed:
                         Text("Something else has changed Claude Code's status line since you connected. Connect again to use the new one.")
+                            .font(.caption).foregroundStyle(.orange)
+                    }
+                    if statusLineLost {
+                        Text("Your previous status line command couldn't be restored. After you disconnect, you can set it again in ~/.claude/settings.json.")
                             .font(.caption).foregroundStyle(.orange)
                     }
                     if statusLineFailed {
@@ -470,7 +475,7 @@ private struct ServicesPane: View {
             }
         }
         .formStyle(.grouped)
-        .onAppear { statusLine = ClaudeStatusLine.state() }
+        .onAppear(perform: refreshStatusLine)
     }
 
     private func toggleStatusLine() {
@@ -480,7 +485,12 @@ private struct ServicesPane: View {
         } catch {
             statusLineFailed = true
         }
+        refreshStatusLine()
+    }
+
+    private func refreshStatusLine() {
         statusLine = ClaudeStatusLine.state()
+        statusLineLost = ClaudeStatusLine.originalLost()
     }
 }
 
