@@ -30,6 +30,9 @@ const pickLang = async (page, lang) => {
   await page.goto(url);
   await page.waitForLoadState('load');
 
+  // An automated browser that never scrolls (a full-page capture) still gets every block.
+  check(await page.evaluate(() => document.querySelectorAll('.reveal-pre').length) === 0, 'blocks hidden in an automated browser');
+
   // Lazy images only load near the viewport, so load them all before checking.
   const broken = await page.$$eval('img', imgs => Promise.all(imgs.map(i => {
     i.loading = 'eager';
@@ -274,10 +277,172 @@ const pickLang = async (page, lang) => {
     }
   }
 
+  // Motion (Transitions.dev). Content never depends on it: state changes at once, motion is layered on top.
+  const clipOk = 'Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: () => Promise.resolve() } })';
+  const clipDenied = 'Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: () => Promise.reject(new Error("denied")) } })';
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const menuOpen = p => p.evaluate(() => document.getElementById('lang').classList.contains('open'));
+  const scrollThrough = async p => {
+    const h = await p.evaluate(() => document.documentElement.scrollHeight);
+    for (let y = 0; y < h; y += 400) { await p.evaluate(y => window.scrollTo(0, y), y); await sleep(40); }
+    await p.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  };
+
+  // Reduce Motion: every block is there without scrolling, nothing runs, nothing is transformed or blurred.
+  {
+    const rctx = await browser.newContext({ locale: 'en-US', reducedMotion: 'reduce', viewport: { width: 1280, height: 800 } });
+    await rctx.addInitScript(clipOk);
+    const rp = await rctx.newPage();
+    rp.on('pageerror', e => failures.push('reduced-motion page error: ' + e.message));
+    rp.on('console', m => { if (m.type() === 'error') failures.push('reduced-motion console error: ' + m.text()); });
+    await rp.goto(url);
+    await rp.waitForLoadState('load');
+    await sleep(300);
+    const r = await rp.evaluate(() => {
+      const shown = sel => [...document.querySelectorAll(sel)].filter(el => el.getClientRects().length);
+      const moving = shown('.reveal, .nn-word, .hero .lead, .hero .cta, .copy > span, #tourTitle, #tourText')
+        .filter(el => { const cs = getComputedStyle(el); return cs.transform !== 'none' || cs.filter !== 'none' || cs.opacity !== '1'; })
+        .map(el => el.className || el.id || el.tagName);
+      return {
+        reveals: document.querySelectorAll('.reveal').length,
+        pending: document.querySelectorAll('.reveal-pre').length,
+        moving,
+        menuTransform: getComputedStyle(document.querySelector('.lang-menu')).transform,
+        blurredShots: [...document.querySelectorAll('.tour-screen img')].filter(i => getComputedStyle(i).filter !== 'none').length,
+        running: document.getAnimations().filter(a => a.playState === 'running').length,
+      };
+    });
+    check(r.reveals > 0, 'reduced motion: no .reveal blocks found');
+    check(r.pending === 0, `reduced motion: ${r.pending} blocks are still waiting to be revealed`);
+    check(r.moving.length === 0, 'reduced motion: still transformed, blurred or faded: ' + r.moving.join(', '));
+    check(r.menuTransform === 'none', 'reduced motion: language menu is transformed: ' + r.menuTransform);
+    check(r.blurredShots === 0, 'reduced motion: tour screens are blurred');
+    check(r.running === 0, `reduced motion: ${r.running} animations are running`);
+    // The language menu still works, and closes at once.
+    await rp.click('.lang-btn');
+    check(await rp.getAttribute('.lang-btn', 'aria-expanded') === 'true', 'reduced motion: language menu did not open');
+    check(await rp.locator('[data-set="ko"]').isVisible(), 'reduced motion: language options not visible');
+    await rp.click('[data-set="ko"]');
+    check(await rp.getAttribute('body', 'data-lang') === 'ko', 'reduced motion: language did not change');
+    check(!(await rp.locator('[data-set="ko"]').isVisible()), 'reduced motion: language menu stayed visible after choosing');
+    check(await rp.locator('.lang-menu.is-closing').count() === 0, 'reduced motion: language menu is animating shut');
+    await rp.click('.lang-btn');
+    await rp.click('[data-set="en"]');
+    // Copy feedback is instant and still.
+    const cb = rp.locator('[data-copy]').first();
+    await cb.click();
+    check((await cb.innerText()).trim() === 'Copied', 'reduced motion: copy did not say Copied');
+    check(await cb.getAttribute('data-prev') === null, 'reduced motion: copy button keeps a ghost label');
+    check(await cb.evaluate(b => b.getAnimations({ subtree: true }).length) === 0, 'reduced motion: copy button animates');
+    // A FAQ answer shows when opened.
+    await rp.locator('.faq summary').first().click();
+    check(await rp.locator('.faq details').first().evaluate(d => [...d.querySelectorAll('.a')].some(a => a.getClientRects().length)), 'reduced motion: FAQ answer not shown');
+    await rp.setViewportSize({ width: 390, height: 844 });
+    const sx = await rp.evaluate(() => { window.scrollTo(1000, 0); return window.scrollX; });
+    check(sx === 0, `reduced motion, mobile: page scrolls sideways by ${sx}px`);
+    await rctx.close();
+  }
+
+  // With motion: blocks below the fold wait, then arrive as scrolled to, without moving anything else on the page.
+  {
+    const mctx = await browser.newContext({ locale: 'en-US', viewport: { width: 1280, height: 800 } });
+    await mctx.addInitScript(clipOk);
+    // Automated browsers get everything at once; this context stands in for a visitor.
+    await mctx.addInitScript(() => Object.defineProperty(Navigator.prototype, 'webdriver', { get: () => false }));
+    const mp = await mctx.newPage();
+    mp.on('pageerror', e => failures.push('motion page error: ' + e.message));
+    mp.on('console', m => { if (m.type() === 'error') failures.push('motion console error: ' + m.text()); });
+    await mp.goto(url);
+    await mp.waitForLoadState('load');
+    const pend = await mp.evaluate(() => {
+      const waiting = [...document.querySelectorAll('.reveal-pre')];
+      const before = waiting.map(el => [el.offsetTop, el.offsetHeight]);
+      waiting.forEach(el => el.classList.remove('reveal-pre'));
+      const moved = waiting.filter((el, i) => el.offsetTop !== before[i][0] || el.offsetHeight !== before[i][1]).length;
+      waiting.forEach(el => el.classList.add('reveal-pre'));
+      return { n: waiting.length, moved, aboveFold: waiting.filter(el => el.getBoundingClientRect().top < innerHeight).length };
+    });
+    check(pend.n > 0, 'motion: nothing waits to be revealed below the fold');
+    check(pend.moved === 0, `motion: hiding ${pend.moved} blocks for the reveal changes the layout`);
+    check(pend.aboveFold === 0, `motion: ${pend.aboveFold} blocks in view at load are hidden`);
+    await scrollThrough(mp);
+    await mp.waitForFunction(() => [...document.querySelectorAll('.reveal')].every(el => getComputedStyle(el).opacity === '1' && getComputedStyle(el).transform === 'none'), null, { timeout: 30000 }).catch(() => {});
+    const unshown = await mp.evaluate(() => [...document.querySelectorAll('.reveal')].filter(el => getComputedStyle(el).opacity !== '1' || getComputedStyle(el).transform !== 'none').length);
+    check(unshown === 0, `motion: ${unshown} blocks never arrived after scrolling through the page`);
+    await mp.evaluate(() => window.scrollTo(0, 0));
+
+    // Language menu: opens to full size, then shrinks away and is hidden.
+    await mp.click('.lang-btn');
+    await mp.waitForFunction(() => { const cs = getComputedStyle(document.querySelector('.lang-menu')); return cs.opacity === '1' && (cs.transform === 'none' || cs.transform === 'matrix(1, 0, 0, 1, 0, 0)'); }, null, { timeout: 30000 }).catch(() => {});
+    const open = await mp.evaluate(() => { const cs = getComputedStyle(document.querySelector('.lang-menu')); return [cs.opacity, cs.transform, cs.visibility]; });
+    check(open[0] === '1' && (open[1] === 'none' || open[1] === 'matrix(1, 0, 0, 1, 0, 0)') && open[2] === 'visible', 'motion: language menu is not fully open: ' + open.join(' '));
+    await mp.keyboard.press('Escape');
+    check(await mp.locator('.lang-menu.is-closing').count() === 1, 'motion: language menu does not animate shut');
+    check(await menuOpen(mp) === false, 'motion: language menu did not close on Escape');
+    await mp.waitForFunction(() => !document.querySelector('.lang-menu').classList.contains('is-closing'), null, { timeout: 30000 }).catch(() => {});
+    const shut = await mp.evaluate(() => [document.querySelector('.lang-menu').classList.contains('is-closing'), getComputedStyle(document.querySelector('.lang-menu')).visibility]);
+    check(shut[0] === false && shut[1] === 'hidden', 'motion: language menu is not hidden after closing: ' + shut.join(' '));
+    check(await mp.evaluate(() => document.activeElement.classList.contains('lang-btn')), 'motion: focus did not return to the language button');
+
+    // Copy: the label is Copied at once; the old label is only a ghost that goes away.
+    const cb = mp.locator('[data-copy]').first();
+    await cb.scrollIntoViewIfNeeded();
+    await cb.click();
+    check((await cb.innerText()).trim() === 'Copied', 'motion: copy did not say Copied at once');
+    check(await cb.getAttribute('data-prev') === 'Copy', 'motion: copy button has no ghost of the old label');
+    await cb.evaluate(b => new Promise(done => { const until = Date.now() + 30000; (function poll() { if ((!b.hasAttribute('data-prev') && !b.getAnimations({ subtree: true }).some(a => a.playState === 'running')) || Date.now() > until) done(); else setTimeout(poll, 50); })(); }));
+    check(await cb.getAttribute('data-prev') === null, 'motion: copy button keeps its ghost label');
+    check(await cb.evaluate(b => b.getAnimations({ subtree: true }).filter(a => a.playState === 'running').length) === 0, 'motion: copy button is still animating');
+    await sleep(1300);
+    check((await cb.innerText()).trim() === 'Copy', 'motion: copy button did not go back to Copy');
+
+    // Install tabs: the underline lands under the selected tab, and the panel changes.
+    await mp.click('[data-tab="src"]');
+    await sleep(450);
+    const ink = await mp.evaluate(() => {
+      const on = document.querySelector('.tabs [aria-selected="true"]'), i = document.querySelector('.tabs-ink');
+      const ir = i.getBoundingClientRect(), br = on.getBoundingClientRect();
+      return { dx: Math.abs(ir.left - br.left), dw: Math.abs(ir.width - br.width), panel: document.querySelector('.panel.active').dataset.panel };
+    });
+    check(ink.dx < 1 && ink.dw < 1 && ink.panel === 'src', `motion: tab underline is off by ${ink.dx}/${ink.dw}px or panel is ${ink.panel}`);
+    await pickLang(mp, 'de');
+    await sleep(100);
+    const inkDe = await mp.evaluate(() => {
+      const on = document.querySelector('.tabs [aria-selected="true"]'), i = document.querySelector('.tabs-ink');
+      return Math.abs(i.getBoundingClientRect().width - on.getBoundingClientRect().width);
+    });
+    check(inkDe < 1, `motion: tab underline does not follow a language change (off by ${inkDe}px)`);
+    await pickLang(mp, 'en');
+    await sleep(100);
+
+    // FAQ: an answer opens to its full height and closes again.
+    const d = mp.locator('.faq details').first();
+    await d.locator('summary').scrollIntoViewIfNeeded();
+    await d.locator('summary').click();
+    await sleep(450);
+    const faqH = await d.evaluate(el => [...el.querySelectorAll('.a')].find(a => a.getClientRects().length).getBoundingClientRect().height);
+    check(faqH > 20, `motion: FAQ answer is ${faqH}px tall after opening`);
+    await d.locator('summary').click();
+    await sleep(450);
+    check(await d.evaluate(el => getComputedStyle(el, '::details-content').blockSize === '0px' && !el.open), 'motion: FAQ answer still shown after closing');
+
+    // A failed copy says so and shakes.
+    await mp.evaluate(clipDenied);
+    await mp.evaluate(() => window.scrollTo(0, 0));
+    await cb.click();
+    check((await cb.innerText()).trim() === 'Copy failed', 'motion: failed copy did not say Copy failed');
+    check(await cb.evaluate(b => b.getAnimations().some(a => a.effect.getKeyframes().some(k => String(k.transform).includes('translateX')))), 'motion: failed copy does not shake');
+    await mp.setViewportSize({ width: 390, height: 844 });
+    await scrollThrough(mp);
+    const wide = await mp.evaluate(() => { window.scrollTo(1000, 0); return [window.scrollX, document.documentElement.scrollWidth, innerWidth]; });
+    check(wide[0] === 0, `motion, mobile: page scrolls sideways by ${wide[0]}px (page ${wide[1]}, screen ${wide[2]})`);
+    await mctx.close();
+  }
+
   await browser.close();
   if (failures.length) {
     console.error(failures.map(f => 'FAIL ' + f).join('\n'));
     process.exit(1);
   }
-  console.log(`site OK: ${langs.length} languages, images, version badge, meta tags, anchors, tour, copy buttons, failed copies, persistence, locale detection, mobile width`);
+  console.log(`site OK: ${langs.length} languages, images, version badge, meta tags, anchors, tour, copy buttons, failed copies, persistence, locale detection, mobile width, motion and Reduce Motion`);
 })().catch(e => { console.error(e); process.exit(1); });
