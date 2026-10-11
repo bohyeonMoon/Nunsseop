@@ -21,6 +21,7 @@ struct BrowserMedia {
         BrowserMedia(bundleID: "com.microsoft.edgemac.Canary", dialect: .chromium),
         BrowserMedia(bundleID: "com.brave.Browser", dialect: .chromium),
         BrowserMedia(bundleID: "com.brave.Browser.beta", dialect: .chromium),
+        BrowserMedia(bundleID: "com.brave.Browser.dev", dialect: .chromium),
         BrowserMedia(bundleID: "com.brave.Browser.nightly", dialect: .chromium),
         BrowserMedia(bundleID: "company.thebrowser.Browser", dialect: .chromium),
         BrowserMedia(bundleID: "company.thebrowser.dia", dialect: .chromium),

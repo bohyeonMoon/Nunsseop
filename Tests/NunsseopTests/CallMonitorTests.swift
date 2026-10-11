@@ -122,6 +122,7 @@ struct CallServiceTests {
         ("com.microsoft.edgemac", "com.microsoft.edgemac"), ("com.microsoft.edgemac.Beta", "com.microsoft.edgemac.Beta"),
         ("com.microsoft.edgemac.Dev", "com.microsoft.edgemac.Dev"), ("com.microsoft.edgemac.Canary", "com.microsoft.edgemac.Canary"),
         ("com.brave.Browser", "com.brave.Browser"), ("com.brave.Browser.beta", "com.brave.Browser.beta"),
+        ("com.brave.Browser.dev", "com.brave.Browser.dev"),
         ("com.brave.Browser.nightly", "com.brave.Browser.nightly"),
     ])
     func releaseChannelsAreNotTheStableBrowser(bundleID: String, expected: String) {
