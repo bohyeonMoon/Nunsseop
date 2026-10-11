@@ -262,6 +262,48 @@ struct NotifyIntegrationFileTests {
         }
     }
 
+    @Test func theErrorForAHooksFileThatCantBeReadNamesHooksJSON() throws {
+        try withTempHome { home in
+            try put("model = \"o3\"\n", at: codex.configURL)
+            try put("[1]", at: codex.hooksURL)
+            let error = try #require(throws: NotifyIntegration.IntegrationError.self) { try codex.installNow() }
+            #expect(codex.file(failing: error) == codex.hooksURL)
+            #expect(codex.hooksURL.lastPathComponent == "hooks.json")
+            // A config that can't be read is its own file's error.
+            try put("notify = nope\n", at: codex.configURL)
+            let configError = try #require(throws: NotifyIntegration.IntegrationError.self) { try codex.installNow() }
+            #expect(codex.file(failing: configError) == codex.configURL)
+        }
+    }
+
+    @Test func disconnectingCodexWorksWithAHooksFileThatCantBeRead() throws {
+        try withTempHome { home in
+            for seed in ["", "// c\n{}", "[1]", #"{"hooks": "#, #"{"hooks":"nope"}"#] {
+                try put(CodexNotify.adding(to: "model = \"o3\"\n"), at: codex.configURL)
+                try put(seed, at: codex.hooksURL)
+                try codex.uninstallNow()
+                #expect(text(codex.configURL) == "model = \"o3\"\n", "\(seed)")
+                #expect(!codex.isInstalled, "\(seed)")
+                #expect(bytes(codex.hooksURL) == Data(seed.utf8), "\(seed)")
+            }
+        }
+    }
+
+    @Test func launchRefreshesTheCodexScriptWithAHooksFileThatCantBeRead() throws {
+        try withTempHome { home in
+            for seed in ["", "// c\n{}", "[1]", #"{"hooks":"nope"}"#] {
+                let configText = try CodexNotify.adding(to: "model = \"o3\"\n")
+                try put(configText, at: codex.configURL)
+                try put("#!/bin/sh\necho old\n", at: CodexNotify.scriptURL)
+                try put(seed, at: codex.hooksURL)
+                NotifyIntegration.updateConnectedNow()
+                #expect(text(CodexNotify.scriptURL) == CodexNotify.script, "\(seed)")
+                #expect(text(codex.configURL) == configText, "\(seed)")
+                #expect(bytes(codex.hooksURL) == Data(seed.utf8), "\(seed)")
+            }
+        }
+    }
+
     @Test func launchBringsAnOlderCodexConnectionTheHooks() throws {
         try withTempHome { home in
             let hooksURL = home.appendingPathComponent(".codex/hooks.json")

@@ -145,7 +145,7 @@ Nunsseop は、macOS が「再生中」として認識している内容を表�
 
 Nunsseop は `127.0.0.1:47750` で、Mac 上のツールからの通知を待ち受けます。リクエストには、`~/Library/Application Support/Nunsseop/notify-token` に保存されたシークレットトークンが必要です。
 
-設定 → 通知を開き、Claude Code、Codex、Gemini CLI、OpenCode の横にある**接続**を押します。この Mac で使ったことのあるツールだけが一覧に表示されます。Nunsseop はそのツールの設定ファイル(`~/.claude/settings.json`、`~/.codex/config.toml`、`~/.codex/hooks.json`、`~/.gemini/settings.json`)を書き換えるか、`~/.config/opencode/plugins` にプラグインを追加し、元のファイルは拡張子 `.nunsseop-backup` を付けて残します。Codex は `notify` コマンドを 1 つしか使えないため、すでにあるコマンドは Nunsseop のコマンドの後に実行されます。作業中のエージェント数のためのフックは、他のツールのフックと並べて `~/.codex/hooks.json` に入り、Codex は次の起動時に信頼するか尋ねます(Trust all and continue を選択)。それまでは実行されません。 **接続解除**で元に戻せます。その後に開始したセッションの通知が、ノッチに送られます。
+設定 → 通知を開き、Claude Code、Codex、Gemini CLI、OpenCode の横にある**接続**を押します。この Mac で使ったことのあるツールだけが一覧に表示されます。Nunsseop はそのツールの設定ファイル(`~/.claude/settings.json`、`~/.codex/config.toml`、`~/.codex/hooks.json`、`~/.gemini/settings.json`)を書き換えるか、`~/.config/opencode/plugins` にプラグインを追加し、元のファイルは拡張子 `.nunsseop-backup` を付けて残します。Codex は `notify` コマンドを 1 つしか使えないため、すでにあるコマンドは Nunsseop のコマンドの後に実行されます。作業中のエージェント数のためのフックは、他のツールのフックと並べて `~/.codex/hooks.json` に入り、Codex は次の起動時に信頼するか尋ねます(「Review hooks」なら Nunsseop のものだけを信頼でき、「Trust all and continue」はすべてのツールの新しいフックを信頼します)。それまでは実行されません。 **接続解除**で元に戻せます。その後に開始したセッションの通知が、ノッチに送られます。
 
 Claude Code を手動で設定するには、**Claude Code フックのコマンドをコピー**を押して、`~/.claude/settings.json` に追加します。
 

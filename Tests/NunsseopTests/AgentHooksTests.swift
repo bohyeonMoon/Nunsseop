@@ -309,6 +309,37 @@ struct AgentHooksTests {
         #expect(board.counts == AgentBoard.Counts(waiting: 1))
     }
 
+    @Test func eachToolsEventsGoToItsOwnHooks() {
+        let board = AgentBoard()
+        let tools = ToolHooks(claude: AgentHooks(board: board, isOn: { true }, watchesHerdr: { false }, frontmostApp: { nil }),
+                              codex: AgentHooks(board: board, agent: .codex, isOn: { true }, watchesHerdr: { false },
+                                                frontmostApp: { nil }))
+        tools.apply(AgentEvent(session: "x", action: .working, agent: .codex), now: start)
+        #expect(board.counts == AgentBoard.Counts(working: 1))
+        // The same id from Claude Code is another session, and ending it leaves Codex's.
+        tools.apply(event("x", .needsInput), now: start)
+        #expect(board.counts == AgentBoard.Counts(working: 1, waiting: 1))
+        tools.apply(event("x", .remove), now: start)
+        #expect(board.counts == AgentBoard.Counts(working: 1))
+        tools.apply(AgentEvent(session: "x", action: .remove, agent: .codex), now: start)
+        #expect(board.counts.isEmpty)
+    }
+
+    @Test func hidingTheCountClearsBothToolsSessions() {
+        let board = AgentBoard()
+        let tools = ToolHooks(claude: AgentHooks(board: board, isOn: { true }, watchesHerdr: { false }, frontmostApp: { nil }),
+                              codex: AgentHooks(board: board, agent: .codex, isOn: { true }, watchesHerdr: { false },
+                                                frontmostApp: { nil }))
+        tools.apply(event("a", .working), now: start)
+        tools.apply(AgentEvent(session: "b", action: .needsInput, agent: .codex), now: start)
+        #expect(board.counts == AgentBoard.Counts(working: 1, waiting: 1))
+        tools.reset()
+        #expect(board.counts.isEmpty)
+        // Nothing comes back with the next event.
+        tools.apply(AgentEvent(session: "c", action: .working, agent: .codex), now: start)
+        #expect(board.counts == AgentBoard.Counts(working: 1))
+    }
+
     @Test func comingToTheAppClearsOnlyItsFinishedHands() {
         let (hooks, board) = make(frontmost: "com.apple.Terminal")
         // activated() publishes at the real time, so the events are timed from it too.

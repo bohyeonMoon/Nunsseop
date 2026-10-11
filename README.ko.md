@@ -145,7 +145,7 @@ Nunsseop은 macOS가 '지금 재생 중'으로 아는 것을 보여 줍니다. �
 
 Nunsseop은 이 Mac 안(`127.0.0.1:47750`)에서만 다른 도구의 알림을 받습니다. 요청에는 `~/Library/Application Support/Nunsseop/notify-token`에 저장된 비밀 토큰이 있어야 합니다.
 
-설정 → 알림에서 Claude Code, Codex, Gemini CLI, OpenCode 옆의 **연결**을 누르세요. 이 Mac에서 써 본 도구만 보입니다. Nunsseop이 그 도구의 설정 파일(`~/.claude/settings.json`, `~/.codex/config.toml`, `~/.codex/hooks.json`, `~/.gemini/settings.json`)을 바꾸거나 `~/.config/opencode/plugins`에 플러그인을 추가하고, 기존 파일은 `.nunsseop-backup` 확장자로 남겨 둡니다. Codex는 `notify` 명령을 하나만 둘 수 있어서, 이미 있던 명령은 Nunsseop 다음에 그대로 실행됩니다. 작업 중인 에이전트 수를 위한 훅은 다른 도구의 훅 옆에 `~/.codex/hooks.json`으로 들어가며, Codex가 다음에 시작할 때 신뢰할지 묻습니다(Trust all and continue를 선택). 그 전에는 실행되지 않습니다. **연결 해제**를 누르면 원래대로 돌아갑니다. 그 뒤에 시작한 세션의 알림이 노치에 뜹니다.
+설정 → 알림에서 Claude Code, Codex, Gemini CLI, OpenCode 옆의 **연결**을 누르세요. 이 Mac에서 써 본 도구만 보입니다. Nunsseop이 그 도구의 설정 파일(`~/.claude/settings.json`, `~/.codex/config.toml`, `~/.codex/hooks.json`, `~/.gemini/settings.json`)을 바꾸거나 `~/.config/opencode/plugins`에 플러그인을 추가하고, 기존 파일은 `.nunsseop-backup` 확장자로 남겨 둡니다. Codex는 `notify` 명령을 하나만 둘 수 있어서, 이미 있던 명령은 Nunsseop 다음에 그대로 실행됩니다. 작업 중인 에이전트 수를 위한 훅은 다른 도구의 훅 옆에 `~/.codex/hooks.json`으로 들어가며, Codex가 다음에 시작할 때 신뢰할지 묻습니다(“Review hooks”로 Nunsseop의 훅만 신뢰할 수 있고, “Trust all and continue”는 모든 도구의 새 훅을 신뢰합니다). 그 전에는 실행되지 않습니다. **연결 해제**를 누르면 원래대로 돌아갑니다. 그 뒤에 시작한 세션의 알림이 노치에 뜹니다.
 
 Claude Code를 직접 설정하려면 **Claude Code 훅 명령 복사**를 누르고 `~/.claude/settings.json`에 넣으세요.
 

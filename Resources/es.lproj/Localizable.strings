@@ -112,7 +112,7 @@
 "Connect" = "Conectar";
 "Disconnect" = "Desconectar";
 "Connecting changes the tool's own settings file and keeps the old one with a `.nunsseop-backup` extension. Sessions started afterwards send their notifications here. Claude Code and Codex also report their sessions for the agents count in the closed notch, which works while notifications from local tools are on." = "Al conectar se cambia el archivo de ajustes de la herramienta y el anterior se guarda con la extensión `.nunsseop-backup`. Las sesiones que se inicien después enviarán aquí sus notificaciones. Claude Code y Codex también informan de sus sesiones para el recuento de agentes del notch plegado, algo que funciona mientras los avisos de herramientas locales estén activados.";
-"Codex asks you to trust Nunsseop's hooks the next time it starts. Choose Trust all and continue; until then its sessions don't count." = "Codex te pedirá confiar en los hooks de Nunsseop la próxima vez que se inicie. Elige «Trust all and continue»; hasta entonces sus sesiones no se cuentan.";
+"Codex asks you to review Nunsseop's hooks the next time it starts. Trust them (\"Review hooks\" lets you trust only Nunsseop's; \"Trust all and continue\" trusts every tool's new hooks); until then its sessions don't count." = "Codex te pedirá revisar los hooks de Nunsseop la próxima vez que se inicie. Confía en ellos («Review hooks» permite confiar solo en los de Nunsseop; «Trust all and continue» confía en los hooks nuevos de todas las herramientas); hasta entonces sus sesiones no se cuentan.";
 "Couldn't change %@. Copy the hook command and add it by hand." = "No se pudo cambiar %@. Copia el comando del hook y añádelo a mano.";
 "Copy command for scripts" = "Copiar el comando para scripts";
 "Timer" = "Temporizador";

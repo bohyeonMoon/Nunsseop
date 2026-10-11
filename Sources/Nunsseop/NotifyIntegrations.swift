@@ -5,7 +5,7 @@ import Foundation
 enum NotifyIntegration: String, CaseIterable, Identifiable {
     case claudeCode, codex, gemini, openCode
 
-    enum IntegrationError: Error { case unreadableConfig }
+    enum IntegrationError: Error { case unreadableConfig, unreadableHooks }
 
     var id: String { rawValue }
 
@@ -59,6 +59,11 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
         }
     }
 
+    /// The file a failed change is about, as Settings names it.
+    func file(failing error: Error) -> URL {
+        (error as? IntegrationError) == .unreadableHooks ? hooksURL : configURL
+    }
+
     var isInstalled: Bool {
         switch self {
         case .claudeCode, .gemini:
@@ -89,10 +94,18 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
             try Self.writeJSON(updated, to: configURL)
         case .codex:
             // Both files are read and the changes worked out before anything is written, so one that can't be read
-            // changes nothing.
+            // changes nothing. A connection that's already there is only refreshed, and doesn't wait for a hooks file
+            // that can't be read.
             let text = try Self.loadText(at: configURL)
-            let notify = try CodexNotify.isInstalled(in: text) ? nil : CodexNotify.adding(to: text)
-            let agentHooks = try JSONHook.updating(hooks, in: Self.loadJSON(at: hooksURL))
+            let connected = CodexNotify.isInstalled(in: text)
+            let notify = try connected ? nil : CodexNotify.adding(to: text)
+            let agentHooks: [String: Any]?
+            do {
+                agentHooks = try JSONHook.updating(hooks, in: Self.loadJSON(at: hooksURL))
+            } catch {
+                guard connected else { throw IntegrationError.unreadableHooks }
+                agentHooks = nil
+            }
             let script = CodexNotify.scriptURL
             if (try? String(contentsOf: script, encoding: .utf8)) != CodexNotify.script {
                 try FileManager.default.createDirectory(at: script.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -133,9 +146,11 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
             try Self.writeJSON(JSONHook.removing(from: settings), to: configURL)
         case .codex:
             let text = try Self.loadText(at: configURL)
-            let agentHooks = try Self.loadJSON(at: hooksURL)
             if CodexNotify.isInstalled(in: text) { try Self.writeText(CodexNotify.removing(from: text), to: configURL) }
-            if JSONHook.holdsAny(in: agentHooks) { try Self.writeJSON(JSONHook.removing(from: agentHooks), to: hooksURL) }
+            // Best effort: a hooks file that can't be read must not keep the notify command in place.
+            if let agentHooks = try? Self.loadJSON(at: hooksURL), JSONHook.holdsAny(in: agentHooks) {
+                try? Self.writeJSON(JSONHook.removing(from: agentHooks), to: hooksURL)
+            }
         case .openCode:
             try? FileManager.default.removeItem(at: configURL)
         }

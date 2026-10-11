@@ -112,7 +112,7 @@
 "Connect" = "接続";
 "Disconnect" = "接続解除";
 "Connecting changes the tool's own settings file and keeps the old one with a `.nunsseop-backup` extension. Sessions started afterwards send their notifications here. Claude Code and Codex also report their sessions for the agents count in the closed notch, which works while notifications from local tools are on." = "接続するとツール自身の設定ファイルを変更し、元のファイルを `.nunsseop-backup` 拡張子で残します。この後に始めたセッションの通知がノッチに表示されます。Claude Code と Codex は、折りたたんだノッチの作業中エージェント数にもセッションを知らせます。これはローカルツールの通知がオンの間に働きます。";
-"Codex asks you to trust Nunsseop's hooks the next time it starts. Choose Trust all and continue; until then its sessions don't count." = "Codex は次に起動したとき、Nunsseop のフックを信頼するか尋ねます。「Trust all and continue」を選んでください。それまで Codex のセッションは数えられません。";
+"Codex asks you to review Nunsseop's hooks the next time it starts. Trust them (\"Review hooks\" lets you trust only Nunsseop's; \"Trust all and continue\" trusts every tool's new hooks); until then its sessions don't count." = "Codex は次に起動したとき、Nunsseop のフックの確認を求めます。信頼してください（「Review hooks」なら Nunsseop のものだけを信頼でき、「Trust all and continue」はすべてのツールの新しいフックを信頼します）。それまで Codex のセッションは数えられません。";
 "Couldn't change %@. Copy the hook command and add it by hand." = "%@ を変更できませんでした。フックのコマンドをコピーして手動で追加してください。";
 "Copy command for scripts" = "スクリプト用のコマンドをコピー";
 "Timer" = "タイマー";

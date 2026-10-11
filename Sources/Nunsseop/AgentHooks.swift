@@ -96,3 +96,19 @@ final class AgentHooks {
                       with: entries.mapValues { AgentBoard.Agent(state: $0.state, expiresAt: $0.expiresAt) }, now: now)
     }
 }
+
+/// The hooks of both tools: an event goes to the tool it names, and hiding the count clears both.
+@MainActor
+struct ToolHooks {
+    let claude: AgentHooks
+    let codex: AgentHooks
+
+    func apply(_ event: AgentEvent, now: Date = .now) {
+        (event.agent == .codex ? codex : claude).apply(event, now: now)
+    }
+
+    func reset() {
+        claude.reset()
+        codex.reset()
+    }
+}
