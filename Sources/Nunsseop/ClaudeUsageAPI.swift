@@ -10,7 +10,8 @@ enum ClaudeUsageAPI {
     static let url = URL(string: "https://api.anthropic.com/api/oauth/usage")!
     /// How often the limits are asked for: a client that isn't Claude Code gets about one request an hour.
     static let interval: TimeInterval = 3600
-    /// After a refusal (429) at least this long passes before asking again, longer if the server says so.
+    /// After a refusal (429) or any other non-200 status (5xx, 400, 404 ...) at least this long passes before asking
+    /// again, longer if the server says so. Only 401/403 differ: they mean signed out.
     static let backoff: TimeInterval = 600
 
     struct Credentials: Equatable {
