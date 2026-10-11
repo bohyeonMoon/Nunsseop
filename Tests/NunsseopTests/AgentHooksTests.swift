@@ -58,6 +58,14 @@ struct AgentHookEventTests {
         #expect(NotifyServer.agentHookCommand.contains("X-Background: ${CLAUDE_JOB_DIR:+1}"))
     }
 
+    @Test func aBackgroundNoticeHasNoApp() {
+        let headers = ["x-app": "com.apple.Terminal"]
+        #expect(NotifyServer.noticeApp(json: nil, headers: headers) == "com.apple.Terminal")
+        #expect(NotifyServer.noticeApp(json: nil, headers: headers.merging(["x-background": ""]) { $1 }) == "com.apple.Terminal")
+        #expect(NotifyServer.noticeApp(json: nil, headers: headers.merging(["x-background": "1"]) { $1 }) == nil)
+        #expect(NotifyServer.noticeApp(json: ["app": "com.apple.Terminal"], headers: ["x-background": "1"]) == nil)
+    }
+
     @Test func subagentCallsAreDropped() {
         #expect(AgentHook.event(headers: ["x-session": "s", "x-event": "Stop", "x-subagent": "agent-1"]) == nil)
         #expect(AgentHook.event(headers: ["x-session": "s", "x-event": "Stop", "x-subagent": ""]) != nil)

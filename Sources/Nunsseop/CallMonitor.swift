@@ -219,7 +219,8 @@ final class CallMonitor: ObservableObject {
     /// WebKit processes that can't be tied to a browser, so Safari is not considered.
     nonisolated static func browser(for processBundleID: String) -> BrowserMedia? {
         let id = processBundleID.lowercased()
-        return BrowserMedia.all.first { $0.dialect == .chromium && id.hasPrefix($0.bundleID.lowercased()) }
+        return BrowserMedia.all.filter { $0.dialect == .chromium && id.hasPrefix($0.bundleID.lowercased()) }
+            .max { $0.bundleID.count < $1.bundleID.count }
     }
 
     /// Most specific first: a meeting link means a call more surely than an open chat app.

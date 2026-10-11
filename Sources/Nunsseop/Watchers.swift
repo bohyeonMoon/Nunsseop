@@ -185,7 +185,7 @@ final class NotifyServer: @unchecked Sendable {
     static func hookCommand(title: String) -> String {
         "plutil -extract message raw -o - - 2>/dev/null | curl -s -m 2 -X POST http://127.0.0.1:\(port)/notify "
             + "-H \"Authorization: Bearer $(cat \"$HOME/Library/Application Support/Nunsseop/notify-token\")\" "
-            + "-H 'X-Title: \(title)' -H \"X-App: $__CFBundleIdentifier\" --data-binary @- >/dev/null || true"
+            + "-H 'X-Title: \(title)' -H \"X-App: $__CFBundleIdentifier\" -H \"X-Background: ${CLAUDE_JOB_DIR:+1}\" --data-binary @- >/dev/null || true"
     }
 
     /// Claude Code's hook for the agents count, the same for every event. Claude Code passes the event as JSON on
@@ -342,14 +342,21 @@ final class NotifyServer: @unchecked Sendable {
         let text = json == nil ? String(data: request.body, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) : nil
         let title = String((json?["title"] as? String ?? request.headers["x-title"] ?? "Notification").prefix(80))
         let message = (json?["message"] as? String ?? text).flatMap { $0.isEmpty ? nil : String($0.prefix(200)) }
-        let clean = { (value: String?, allowed: CharacterSet) -> String? in
-            guard let value, !value.isEmpty, value.unicodeScalars.allSatisfy(allowed.contains) else { return nil }
-            return String(value.prefix(80))
-        }
         let notice = Notice(title: title, message: message,
-                            app: clean(json?["app"] as? String ?? request.headers["x-app"], .bundleIDCharacters),
-                            target: clean(json?["target"] as? String ?? request.headers["x-target"], .targetCharacters))
+                            app: Self.noticeApp(json: json, headers: request.headers),
+                            target: Self.clean(json?["target"] as? String ?? request.headers["x-target"], .targetCharacters))
         return ("204 No Content", .notice(notice))
+    }
+
+    private static func clean(_ value: String?, _ allowed: CharacterSet) -> String? {
+        guard let value, !value.isEmpty, value.unicodeScalars.allSatisfy(allowed.contains) else { return nil }
+        return String(value.prefix(80))
+    }
+
+    /// The app a notice came from. A background session (`X-Background`) has none: the app is only the daemon's.
+    static func noticeApp(json: [String: Any]?, headers: [String: String]) -> String? {
+        if headers["x-background"]?.isEmpty == false { return nil }
+        return clean(json?["app"] as? String ?? headers["x-app"], .bundleIDCharacters)
     }
 
     static func constantTimeEqual(_ a: String, _ b: String) -> Bool {

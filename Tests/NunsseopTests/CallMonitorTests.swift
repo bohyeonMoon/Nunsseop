@@ -108,4 +108,11 @@ struct CallServiceTests {
         #expect(CallMonitor.appBundleID(for: "com.microsoft.VCXPC") == "com.microsoft.teams2")
         #expect(CallMonitor.appBundleID(for: "com.apple.Safari") == nil)
     }
+
+    @Test func canaryIsNotStableChrome() {
+        #expect(CallMonitor.browser(for: "com.google.Chrome.helper")?.bundleID == "com.google.Chrome")
+        #expect(CallMonitor.browser(for: "com.google.Chrome")?.bundleID == "com.google.Chrome")
+        #expect(CallMonitor.browser(for: "com.google.Chrome.canary")?.bundleID == "com.google.Chrome.canary")
+        #expect(CallMonitor.browser(for: "com.google.Chrome.canary.helper")?.bundleID == "com.google.Chrome.canary")
+    }
 }

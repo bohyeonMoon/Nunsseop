@@ -561,6 +561,21 @@ struct HookUpdateTests {
         #expect(current.contains("X-App: $__CFBundleIdentifier"))
     }
 
+    @Test func noticeHookFrom0_27_0GainsXBackground() throws {
+        let current = NotifyServer.hookCommand(title: "Claude Code")
+        // Exactly what 0.27.0 installed: the X-App header, no X-Background.
+        let installed = "plutil -extract message raw -o - - 2>/dev/null | curl -s -m 2 -X POST http://127.0.0.1:\(NotifyServer.port)/notify "
+            + "-H \"Authorization: Bearer $(cat \"$HOME/Library/Application Support/Nunsseop/notify-token\")\" "
+            + "-H 'X-Title: Claude Code' -H \"X-App: $__CFBundleIdentifier\" --data-binary @- >/dev/null || true"
+        let settings: [String: Any] = ["hooks": ["Notification": [["hooks": [["type": "command", "command": installed]]]]]]
+        #expect(!installed.contains("X-Background"))
+        #expect(current.contains("X-Background"))
+        #expect(!JSONHook.isCurrent(current, in: settings))
+        let updated = try #require(try JSONHook.updating(current, in: settings))
+        #expect(commands(updated) == [[current]])
+        #expect(try JSONHook.updating(current, in: updated) == nil)
+    }
+
     private func commands(_ settings: [String: Any]) -> [[String]] {
         (((settings["hooks"] as? [String: Any])?["Notification"] as? [[String: Any]]) ?? []).map { group in
             ((group["hooks"] as? [[String: Any]]) ?? []).compactMap { $0["command"] as? String }
