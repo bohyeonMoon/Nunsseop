@@ -304,3 +304,93 @@ struct NotifyServerTokenTests {
         }
     }
 }
+
+/// The listener against a port something else holds when the app starts, as TIME_WAIT sockets do for ~30 s after a relaunch.
+/// Each test uses a port of its own, never 47750, where a running Nunsseop may be listening.
+struct NotifyServerListenTests {
+    /// A socket listening on a loopback port it picked; `release()` closes it.
+    final class PortHolder {
+        private var fd: Int32
+        let port: UInt16
+
+        init() throws {
+            let fd = socket(AF_INET, SOCK_STREAM, 0)
+            var address = NotifyServerListenTests.loopback(port: 0)
+            let bound = withUnsafePointer(to: &address) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+            }
+            var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+            let named = withUnsafeMutablePointer(to: &address) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(fd, $0, &length) }
+            }
+            guard bound == 0, named == 0, listen(fd, 1) == 0 else {
+                close(fd)
+                throw POSIXError(.EADDRINUSE)
+            }
+            self.fd = fd
+            port = UInt16(bigEndian: address.sin_port)
+        }
+
+        func release() {
+            guard fd >= 0 else { return }
+            close(fd)
+            fd = -1
+        }
+
+        deinit { release() }
+    }
+
+    private static func loopback(port: UInt16) -> sockaddr_in {
+        sockaddr_in(sin_len: UInt8(MemoryLayout<sockaddr_in>.size), sin_family: sa_family_t(AF_INET), sin_port: port.bigEndian,
+                    sin_addr: in_addr(s_addr: inet_addr("127.0.0.1")), sin_zero: (0, 0, 0, 0, 0, 0, 0, 0))
+    }
+
+    /// The status line the server answers a POST to a path it does not serve with, or nil if nothing accepted the request.
+    private func ask(_ port: UInt16) -> String? {
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        defer { close(fd) }
+        var address = Self.loopback(port: port)
+        let connected = withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+        }
+        guard connected == 0 else { return nil }
+        var timeout = timeval(tv_sec: 2, tv_usec: 0)
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+        let request = Array("POST /none HTTP/1.1\r\nContent-Length: 0\r\n\r\n".utf8)
+        guard send(fd, request, request.count, 0) == request.count else { return nil }
+        var buffer = [UInt8](repeating: 0, count: 256)
+        let count = recv(fd, &buffer, buffer.count, 0)
+        guard count > 0 else { return nil }
+        return String(decoding: buffer[..<count], as: UTF8.self).components(separatedBy: "\r\n").first
+    }
+
+    @Test func aPortHeldAtStartIsListenedOnOnceItIsFree() async throws {
+        let holder = try PortHolder()
+        let server = try withTempHome { _ in NotifyServer(port: holder.port) }
+        server.start()
+        defer { server.stop() }
+        // Long enough for the listener to have failed against the held port, and short of its first retry.
+        try await Task.sleep(for: .milliseconds(300))
+        holder.release()
+        var answer: String?
+        let deadline = Date.now.addingTimeInterval(30)
+        while answer == nil && Date.now < deadline {
+            answer = ask(holder.port)
+            if answer == nil { try await Task.sleep(for: .milliseconds(100)) }
+        }
+        #expect(answer == "HTTP/1.1 404 Not Found")
+    }
+
+    @Test func stoppingWhileARetryIsPendingLeavesNothingListening() async throws {
+        let holder = try PortHolder()
+        let server = try withTempHome { _ in NotifyServer(port: holder.port) }
+        server.start()
+        try await Task.sleep(for: .milliseconds(300))
+        server.stop()
+        holder.release()
+        // A retry that survived stop() would fire after the first second; no condition marks its absence.
+        try await Task.sleep(for: .seconds(2))
+        withExtendedLifetime(server) {}
+        #expect(ask(holder.port) == nil)
+    }
+}
