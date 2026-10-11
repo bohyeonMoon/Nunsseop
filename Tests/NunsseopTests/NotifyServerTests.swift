@@ -148,6 +148,18 @@ struct NotifyServerRoutingTests {
         }
     }
 
+    @Test func aCodexAgentEventKeepsItsAgent() throws {
+        try withTempHome { _ in
+            let server = NotifyServer()
+            let codex = server.route(request("/agent", headers: authorized(server, ["x-session": "s-1", "x-event": "Interrupt", "x-agent": "codex"])))
+            #expect(codex.status == "204 No Content")
+            #expect(agentOf(codex) == AgentEvent(session: "s-1", action: .idle, app: nil, inHerdr: false, agent: .codex))
+            let stray = server.route(request("/agent", headers: authorized(server, ["x-session": "s-1", "x-event": "Stop", "x-agent": "nope"])))
+            #expect(stray.status == "204 No Content")
+            #expect(isNone(stray))
+        }
+    }
+
     @Test func aJSONNoticeIsCutToTheHUD() throws {
         try withTempHome { _ in
             let server = NotifyServer()

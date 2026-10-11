@@ -1,8 +1,9 @@
 import AppKit
 
-/// Claude Code sessions for the agents count, told by the hooks Nunsseop installs, so one running in Muxy or a
-/// plain terminal counts as well as one in herdr. Every session is an entry that expires, because a hook can't say
-/// when a turn is cut short with Esc or Claude Code is killed: neither sends an event.
+/// Claude Code or Codex sessions for the agents count, told by the hooks Nunsseop installs, so one running in Muxy
+/// or a plain terminal counts as well as one in herdr. Every session is an entry that expires, because a hook can't
+/// say when a turn is cut short with Esc or the tool is killed: neither sends an event (Codex does send Interrupt).
+/// One instance per tool, each a source of its own, so two tools' session ids can't meet.
 ///
 /// Known limit: approving a permission sends no event either (PostToolUse isn't installed, to spare a process per
 /// tool call), so an approved turn that then works silently keeps its hand until the next event, and drops out of
@@ -11,7 +12,7 @@ import AppKit
 final class AgentHooks {
     /// How long a session keeps counting as working, or as asking for input, after its last event.
     static let activeWindow: TimeInterval = 20 * 60
-    static let source = "hooks:claude"
+    let source: String
 
     private struct Entry {
         var state: AgentBoard.State
@@ -30,9 +31,10 @@ final class AgentHooks {
 
     /// - isOn: whether the closed notch shows the agents count; nothing is kept while it doesn't.
     /// - watchesHerdr: whether herdr's own count is running, which already includes a session in a herdr pane.
-    init(board: AgentBoard, isOn: @escaping () -> Bool, watchesHerdr: @escaping () -> Bool,
+    init(board: AgentBoard, agent: AgentKind = .claude, isOn: @escaping () -> Bool, watchesHerdr: @escaping () -> Bool,
          frontmostApp: @escaping () -> String? = { NSWorkspace.shared.frontmostApplication?.bundleIdentifier }) {
         self.board = board
+        self.source = "hooks:\(agent.rawValue)"
         self.isOn = isOn
         self.watchesHerdr = watchesHerdr
         self.frontmostApp = frontmostApp
@@ -67,7 +69,8 @@ final class AgentHooks {
                                     expiresAt: now.addingTimeInterval(Herdr.doneWindow))
             }
         case .idle:
-            // Claude Code only says idle with no dialog open, so a question or a working turn is over; a finished hand stays.
+            // Claude Code only says idle with no dialog open, and Codex when a turn is interrupted, so a question or a
+            // working turn is over; a finished hand stays.
             if let entry = entries[id], !entry.finished { entries[id] = nil }
         case .remove:
             entries[id] = nil
@@ -79,7 +82,7 @@ final class AgentHooks {
     func reset() {
         guard !entries.isEmpty else { return }
         entries = [:]
-        board.clear(source: Self.source)
+        board.clear(source: source)
     }
 
     func activated(_ app: String?) {
@@ -89,7 +92,7 @@ final class AgentHooks {
     }
 
     private func publish(now: Date) {
-        board.replace(source: Self.source,
+        board.replace(source: source,
                       with: entries.mapValues { AgentBoard.Agent(state: $0.state, expiresAt: $0.expiresAt) }, now: now)
     }
 }

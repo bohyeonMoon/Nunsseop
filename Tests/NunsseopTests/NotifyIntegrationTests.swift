@@ -64,6 +64,16 @@ struct AgentHookInstallTests {
         #expect(gemini[0].event == "Notification" && gemini[0].command == NotifyServer.hookCommand(title: "Gemini CLI"))
     }
 
+    @Test func codexGetsTheAgentHooksForItsOwnEventsAndNoNoticeHook() throws {
+        let codex = NotifyIntegration.codex.hooks
+        #expect(codex.map(\.event) == ["UserPromptSubmit", "PermissionRequest", "Stop", "Interrupt", "SessionEnd"])
+        #expect(codex.allSatisfy { $0.command == NotifyServer.agentHookCommand(for: .codex) })
+        #expect(NotifyIntegration.codex.hooksURL.path.hasSuffix("/.codex/hooks.json"))
+        let settings = try JSONHook.adding(codex, to: [:])
+        #expect(JSONHook.holdsAny(in: settings) && !JSONHook.isInstalled(in: settings))
+        #expect(JSONHook.removing(from: settings).isEmpty)
+    }
+
     @Test func aNoticeOnlyInstallGainsTheAgentHooksOnce() throws {
         let old = try JSONHook.adding(NotifyServer.hookCommand(title: "Claude Code"), to: ["model": "opus"])
         #expect(JSONHook.isInstalled(in: old))

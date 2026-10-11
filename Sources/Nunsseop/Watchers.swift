@@ -99,7 +99,12 @@ enum AgentAction: Equatable {
     case remove
 }
 
-/// One hook call from a Claude Code session, reduced to what the count needs.
+/// The tools whose hooks report sessions for the agents count. Each keeps its sessions apart from the others'.
+enum AgentKind: String {
+    case claude, codex
+}
+
+/// One hook call from a Claude Code or Codex session, reduced to what the count needs.
 struct AgentEvent: Equatable {
     let session: String
     let action: AgentAction
@@ -107,16 +112,20 @@ struct AgentEvent: Equatable {
     var app: String?
     /// Whether it runs in a herdr pane, which herdr's own count covers.
     var inHerdr = false
+    var agent = AgentKind.claude
 }
 
-/// Claude Code's hook events as the agents count reads them.
+/// Claude Code's and Codex's hook events as the agents count reads them.
 enum AgentHook {
     /// What an event means; nil for the ones that say nothing about work (`auth_success`, `SubagentStop`).
+    /// `PermissionRequest` and `Interrupt` are Codex's.
     static func action(event: String, type: String?) -> AgentAction? {
         switch event {
         case "UserPromptSubmit": return .working
         case "Stop", "StopFailure": return .finished
         case "SessionEnd": return .remove
+        case "PermissionRequest": return .needsInput
+        case "Interrupt": return .idle
         case "Notification":
             switch type {
             case "permission_prompt", "elicitation_dialog", "elicitation_url_dialog", "agent_needs_input": return .needsInput
@@ -138,7 +147,10 @@ enum AgentHook {
                   value.unicodeScalars.allSatisfy(CharacterSet.agentIDCharacters.contains) else { return nil }
             return value
         }
-        guard headers["x-subagent"]?.isEmpty ?? true,
+        // Claude Code's hook sends no X-Agent; any other name than Codex's is refused, not taken for Claude Code.
+        let named = headers["x-agent"] ?? ""
+        guard let agent = named.isEmpty ? AgentKind.claude : AgentKind(rawValue: named),
+              headers["x-subagent"]?.isEmpty ?? true,
               let session = word("x-session"), let name = word("x-event"),
               let action = action(event: name, type: word("x-type")) else { return nil }
         let background = headers["x-background"]?.isEmpty == false
@@ -146,14 +158,15 @@ enum AgentHook {
             !value.isEmpty && value.count <= 80 && value.unicodeScalars.allSatisfy(CharacterSet.bundleIDCharacters.contains)
                 ? value : nil
         }
-        return AgentEvent(session: session, action: action, app: app, inHerdr: !background && headers["x-herdr"]?.isEmpty == false)
+        return AgentEvent(session: session, action: action, app: app,
+                          inHerdr: !background && headers["x-herdr"]?.isEmpty == false, agent: agent)
     }
 }
 
 /// Accepts notifications from local tools such as Claude Code hooks:
 /// `POST http://127.0.0.1:47750/notify` with `Authorization: Bearer <token>` and a JSON body
 /// `{"title": "...", "message": "..."}`. The token lives in Application Support/Nunsseop/notify-token.
-/// `POST /agent` takes Claude Code's session events for the agents count, as headers only (see `agentHookCommand`).
+/// `POST /agent` takes Claude Code's and Codex's session events for the agents count, as headers only (see `agentHookCommand`).
 final class NotifyServer: @unchecked Sendable {
     static let port: UInt16 = 47750
     /// A notification a local tool sent, with where it came from when the tool said so.
@@ -192,13 +205,18 @@ final class NotifyServer: @unchecked Sendable {
     /// stdin; only the ids and names below leave it, as headers (no prompt, reply, folder or transcript), trimmed to
     /// safe characters so a stray newline can't break one. Nothing may reach stdout, which `UserPromptSubmit` adds to
     /// Claude's context, and a closed or stuck Nunsseop costs a session at most a second.
-    static var agentHookCommand: String {
+    static var agentHookCommand: String { agentHookCommand(for: .claude) }
+
+    /// The same hook for Codex, which passes the same fields and adds `X-Agent` so its sessions stay apart from
+    /// Claude Code's. Codex asks to trust a hook again when its command changes, so this text shouldn't change lightly.
+    static func agentHookCommand(for agent: AgentKind) -> String {
         "in=$(cat); k() { printf '%s' \"$in\" | plutil -extract \"$1\" raw -o - - 2>/dev/null | tr -cd 'A-Za-z0-9_.-' | cut -c1-64; }; "
             + "curl -s -m 1 --connect-timeout 1 -X POST http://127.0.0.1:\(port)/agent -d '' "
             + "-H \"Authorization: Bearer $(cat \"$HOME/Library/Application Support/Nunsseop/notify-token\")\" "
             + "-H \"X-Session: $(k session_id)\" -H \"X-Event: $(k hook_event_name)\" -H \"X-Type: $(k notification_type)\" "
             + "-H \"X-Subagent: $(k agent_id)\" -H \"X-App: $__CFBundleIdentifier\" -H \"X-Herdr: ${HERDR_PANE_ID:+1}\" "
             + "-H \"X-Background: ${CLAUDE_JOB_DIR:+1}\" "
+            + (agent == .claude ? "" : "-H 'X-Agent: \(agent.rawValue)' ")
             + ">/dev/null 2>&1 || true"
     }
 

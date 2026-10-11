@@ -109,6 +109,7 @@ final class NotchViewModel: ObservableObject {
     let herdr = HerdrSessions()
     let agents = AgentBoard()
     let agentHooks: AgentHooks
+    let codexHooks: AgentHooks
     let tmux = TmuxWatcher()
     let stats = SystemStats()
     let launcher = AppLauncher()
@@ -163,6 +164,9 @@ final class NotchViewModel: ObservableObject {
         self.agentHooks = AgentHooks(board: agents,
                                      isOn: { settings.idleLeft == .agents || settings.idleRight == .agents },
                                      watchesHerdr: { settings.watchesHerdr })
+        self.codexHooks = AgentHooks(board: agents, agent: .codex,
+                                     isOn: { settings.idleLeft == .agents || settings.idleRight == .agents },
+                                     watchesHerdr: { settings.watchesHerdr })
         Publishers.CombineLatest4(nowPlaying.$track.map { $0?.isPlaying == true }, timer.$anchor.map { $0 != nil },
                                   settings.$collapsedMusic, settings.$collapsedTimer)
             .map { music, timer, showMusic, showTimer in (music && showMusic) || (timer && showTimer) }
@@ -212,13 +216,16 @@ final class NotchViewModel: ObservableObject {
         herdr.onStates = { [weak self] socket, panes in
             self?.agents.replace(source: "herdr:\(socket)", with: Herdr.boardAgents(panes))
         }
-        // Claude Code sessions anywhere, through its hooks; kept only while the count is shown.
-        notifyServer.onAgent = { [agentHooks] in agentHooks.apply($0) }
+        // Claude Code and Codex sessions anywhere, through their hooks; kept only while the count is shown.
+        notifyServer.onAgent = { [agentHooks, codexHooks] in ($0.agent == .codex ? codexHooks : agentHooks).apply($0) }
         settings.$idleLeft.combineLatest(settings.$idleRight)
             .map { $0 == .agents || $1 == .agents }
             .removeDuplicates()
             .filter { !$0 }
-            .sink { [weak self] _ in self?.agentHooks.reset() }
+            .sink { [weak self] _ in
+                self?.agentHooks.reset()
+                self?.codexHooks.reset()
+            }
             .store(in: &cancellables)
         agents.$counts
             .removeDuplicates()
