@@ -220,10 +220,45 @@ const pickLang = async (page, lang) => {
   const scrollX = await mobile.evaluate(() => { window.scrollTo(1000, 0); return window.scrollX; });
   check(scrollX === 0, `mobile: page scrolls sideways by ${scrollX}px`);
 
+  // Install command Copy button: "Copied" only when the clipboard write really succeeded.
+  const copied = { en: 'Copied', ko: '복사됨', ja: 'コピーしました', zh: '已复制', es: 'Copiado', de: 'Kopiert', fr: 'Copié' };
+  const copyFailed = { en: 'Copy failed', ko: '복사 실패', ja: 'コピーできませんでした', zh: '复制失败', es: 'No se pudo copiar', de: 'Kopieren fehlgeschlagen', fr: 'Échec de la copie' };
+  const command = 'brew install --cask namekun/tap/nunsseop';
+  const clipboards = {
+    ok: 'Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: () => Promise.resolve() } })',
+    rejected: 'Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: () => Promise.reject(new Error("denied")) } })',
+    throwing: 'Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: () => { throw new Error("denied"); } } })',
+    missing: 'Object.defineProperty(navigator, "clipboard", { configurable: true, value: undefined })',
+  };
+  for (const [kind, script] of Object.entries(clipboards)) {
+    for (const lang of langs) {
+      const ctx = await browser.newContext({ locale: 'en-US' });
+      const p = await ctx.newPage();
+      await p.addInitScript(script);
+      await p.addInitScript(`localStorage.setItem('nunsseop-lang', '${lang}')`);
+      await p.goto(url);
+      const btn = p.locator('.panel.active .copy');
+      const idle = await btn.innerHTML();
+      await btn.click();
+      const label = (await btn.textContent()).trim();
+      if (kind === 'ok') {
+        check(label === copied[lang], `${lang}: copy button said "${label}" after a successful write`);
+      } else {
+        check(label !== copied[lang], `${lang}: copy button said "${label}" although the clipboard write failed (${kind})`);
+        check(label === copyFailed[lang], `${lang}: copy button said "${label}" after a failed write (${kind}), expected "${copyFailed[lang]}"`);
+        const selected = await p.evaluate(() => String(getSelection()));
+        check(selected.trim() === command, `${lang}: failed copy (${kind}) left "${selected}" selected, expected the command`);
+      }
+      await p.waitForFunction(html => document.querySelector('.panel.active .copy').innerHTML === html, idle, { timeout: 3000 })
+        .catch(() => failures.push(`${lang}: copy button did not go back to its label (${kind})`));
+      await ctx.close();
+    }
+  }
+
   await browser.close();
   if (failures.length) {
     console.error(failures.map(f => 'FAIL ' + f).join('\n'));
     process.exit(1);
   }
-  console.log(`site OK: ${langs.length} languages, images, version badge, meta tags, anchors, tour, copy buttons, persistence, locale detection, mobile width`);
+  console.log(`site OK: ${langs.length} languages, images, version badge, meta tags, anchors, tour, copy buttons, failed copies, persistence, locale detection, mobile width`);
 })().catch(e => { console.error(e); process.exit(1); });

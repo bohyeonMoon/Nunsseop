@@ -810,6 +810,7 @@ open build/Nunsseop.app</pre></div>
 (function () {
   var LANGS = ['en', 'ko', 'ja', 'zh', 'es', 'de', 'fr'];
   var COPIED = { en: 'Copied', ko: '복사됨', ja: 'コピーしました', zh: '已复制', es: 'Copiado', de: 'Kopiert', fr: 'Copié' };
+  var COPY_FAILED = { en: 'Copy failed', ko: '복사 실패', ja: 'コピーできませんでした', zh: '复制失败', es: 'No se pudo copiar', de: 'Kopieren fehlgeschlagen', fr: 'Échec de la copie' };
   var langBox = document.getElementById('lang');
   var langBtn = langBox.querySelector('.lang-btn');
   var langOptions = langBox.querySelectorAll('[role="option"]');
@@ -875,11 +876,21 @@ open build/Nunsseop.app</pre></div>
     btn.addEventListener('click', function () {
       var text = btn.getAttribute('data-copy');
       var original = btn.innerHTML;
-      var done = function () {
-        btn.textContent = COPIED[document.body.dataset.lang] || COPIED.en;
+      var show = function (labels) {
+        btn.textContent = labels[document.body.dataset.lang] || labels.en;
         setTimeout(function () { btn.innerHTML = original; }, 1400);
       };
-      if (navigator.clipboard) { navigator.clipboard.writeText(text).then(done, done); } else { done(); }
+      var done = function () { show(COPIED); };
+      var failed = function () {
+        var pre = btn.parentNode.querySelector('pre');
+        var sel = window.getSelection();
+        var range = document.createRange();
+        range.selectNodeContents(pre);
+        sel.removeAllRanges();
+        sel.addRange(range);
+        show(COPY_FAILED);
+      };
+      try { navigator.clipboard.writeText(text).then(done, failed); } catch (e) { failed(); }
     });
   });
 
