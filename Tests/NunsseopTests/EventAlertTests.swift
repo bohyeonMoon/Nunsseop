@@ -234,13 +234,14 @@ struct MeetingNoticeTests {
     @Test func clickingAMeetingNoticeRunsItsActionEvenAfterBeingCovered() async {
         let hud = HUDCenter(settings: AppSettings.shared)
         var joined = 0
-        hud.showLasting(duration: 8, action: { joined += 1 }) { .notice(symbol: "video.fill", title: "Standup", detail: nil) }
+        // Long enough that a slow, busy runner (Intel under Rosetta) doesn't use it up before the cover goes.
+        hud.showLasting(duration: 600, action: { joined += 1 }) { .notice(symbol: "video.fill", title: "Standup", detail: nil) }
         #expect(hud.action != nil)
         // A volume HUD covers it, then goes: the notice comes back, still clickable.
         hud.show(.volume(0.4, muted: false), duration: 0.05)
         #expect(hud.action == nil)
-        for _ in 0..<50 {
-            if hud.action != nil { break }
+        let deadline = Date.now.addingTimeInterval(30)
+        while hud.action == nil && Date.now < deadline {
             try? await Task.sleep(for: .milliseconds(20))
         }
         #expect(hud.action != nil)

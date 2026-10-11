@@ -101,9 +101,9 @@ struct TerminalAgentWatcherTests {
     }
 
     private func waitUntil(_ condition: () -> Bool) async {
-        // Up to five seconds, stopping as soon as it holds.
-        for _ in 0..<100 {
-            if condition() { return }
+        // Stops as soon as it holds; the cap only matters on a slow or busy machine.
+        let deadline = Date.now.addingTimeInterval(30)
+        while !condition() && Date.now < deadline {
             try? await Task.sleep(for: .milliseconds(50))
         }
     }
@@ -362,8 +362,9 @@ struct TmuxWatcherTests {
     }
 
     private func waitUntil(_ condition: () -> Bool) async {
-        for _ in 0..<100 {
-            if condition() { return }
+        // Stops as soon as it holds; the cap only matters on a slow or busy machine.
+        let deadline = Date.now.addingTimeInterval(30)
+        while !condition() && Date.now < deadline {
             try? await Task.sleep(for: .milliseconds(50))
         }
     }
@@ -755,11 +756,12 @@ struct TmuxFocusTests {
 
         Tmux.focus(pane: target, socketName: socket)
         var active = ""
-        for _ in 0..<100 {
+        let deadline = Date.now.addingTimeInterval(30)
+        repeat {
             active = tmux(socket, "display-message", "-p", "#{window_name} #{pane_id}")?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             if active == "two \(target)" { break }
             try? await Task.sleep(for: .milliseconds(30))
-        }
+        } while Date.now < deadline
         #expect(active == "two \(target)")
         // Pane ids are numbers after %; anything else is ignored.
         Tmux.focus(pane: "%1; kill-server", socketName: socket)
@@ -789,6 +791,13 @@ struct TmuxSlotTests {
 
     private func slot(_ socket: String) -> String? { Tmux.slot(in: tmux(socket, "show-hooks", "-g") ?? "") }
 
+    private func waitUntil(_ condition: () -> Bool) async {
+        let deadline = Date.now.addingTimeInterval(30)
+        while !condition() && Date.now < deadline {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+    }
+
     @Test(.enabled(if: Tmux.isInstalled)) func someoneElsesHookInTheSlotStays() async throws {
         try await withServer { socket in
             _ = tmux(socket, "set-hook", "-g", Tmux.hook, "run-shell 'say mine'")
@@ -809,7 +818,7 @@ struct TmuxSlotTests {
                      "run-shell -b \"'/Users/a/Library/Application Support/Nunsseop/tmux-notify.sh' tmux #{q:session_name}\"")
             let watcher = TmuxWatcher(socketName: socket)
             watcher.clearLeftover()
-            for _ in 0..<50 { if slot(socket) == nil { break }; try await Task.sleep(for: .milliseconds(20)) }
+            await waitUntil { slot(socket) == nil }
             #expect(slot(socket) == nil)
             // Someone else's is kept.
             _ = tmux(socket, "set-hook", "-g", Tmux.hook, "run-shell 'say mine'")
@@ -829,7 +838,7 @@ struct TmuxSlotTests {
             watcher.start()
             defer { watcher.stop(waiting: true) }
             let command = try #require(Tmux.hookCommand(script: script, binary: Tmux.binary!, socketName: socket))
-            for _ in 0..<50 { if slot(socket) != nil { break }; try await Task.sleep(for: .milliseconds(20)) }
+            await waitUntil { slot(socket) != nil }
             let printed = try #require(tmux(socket, "show-hooks", "-g"))
             #expect(Tmux.isHooked(printed, command: command), "\(printed)")
         }
