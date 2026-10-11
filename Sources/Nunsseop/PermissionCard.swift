@@ -57,9 +57,22 @@ enum PermissionLayout {
         let caption: CGFloat
     }
 
-    /// What the title takes in a closed card's top row on a display without a camera, which is the narrowest: the row less
-    /// the symbol, the gaps and a "1 of 3".
-    static let titleRoom: CGFloat = 260
+    /// The top row of the closed card on a display without a camera, which is the narrowest: the body and the padding on its
+    /// sides. The symbol, the title, the space that gives and the position label are laid out in it, a gap between each.
+    static let topRowWidth: CGFloat = Place.card.width + 12
+    static let symbolWidth: CGFloat = 20
+    static let topRowGap: CGFloat = 8
+    /// The most prompts the label "1 of N" is made room for.
+    static let maxQueue = 999
+    /// Left over after the title on its line, for what measures a little differently when drawn.
+    static let titleMargin: CGFloat = 20
+    static let positionFont = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+
+    /// What the title takes in that row: what the symbol, the gaps and the widest label leave, less the margin.
+    static var titleRoom: CGFloat {
+        let label = (String(localized: "1 of \(maxQueue)") as NSString).size(withAttributes: [.font: positionFont]).width
+        return topRowWidth - symbolWidth - 3 * topRowGap - ceil(label) - titleMargin
+    }
     static let titleFont = NSFont.systemFont(ofSize: 11, weight: .semibold)
 
     /// Whether the title and the folder after it show in full on one line.
@@ -340,11 +353,11 @@ struct PermissionCard: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
+            HStack(spacing: PermissionLayout.topRowGap) {
                 Image(systemName: prompt.symbol)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.white)
-                    .frame(width: hasNotch ? earWidth - 16 : 20, alignment: .leading)
+                    .frame(width: hasNotch ? earWidth - 16 : PermissionLayout.symbolWidth, alignment: .leading)
                 if hasNotch {
                     Spacer()
                 } else {

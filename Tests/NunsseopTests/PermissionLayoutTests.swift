@@ -1,4 +1,5 @@
 import AppKit
+import CoreText
 import SwiftUI
 import Testing
 import Vision
@@ -30,10 +31,14 @@ struct PermissionLayoutTests {
          String(repeating: "/very/long/path/segment", count: 12), String(repeating: "⟨U+200B⟩", count: 30),
          "    indented\n        more indented\n\tsh", sixTokens, threeWords, longRule, "a\n", "a\n\n\n", "\n\n\n", "x\n\n y", " \n \n ",
          String(repeating: "e\u{301}", count: 200), rtl, "⇥ tabbed ⇥ ⇥ text", "⚠️ ❤️ 👨‍👩‍👧 done", "אבגד " + String(repeating: "שלום עולם ", count: 30),
-         "مرحبا " + String(repeating: "echo ", count: 40), "\(rtl)\n\(rtl)\n\n\(rtl)", arabicDetail, arabicRule]
+         "مرحبا " + String(repeating: "echo ", count: 40), "\(rtl)\n\(rtl)\n\n\(rtl)", arabicDetail, arabicRule,
+         PermissionText.escape(chain(60), multiline: true), PermissionText.escape("rm -rf /home/אבג/דהו\n/tmp/مرحبا/١٢٣/456", multiline: true),
+         chain(4) + " " + chain(5) + " ©⟨U+200D⟩® ❤\u{FE0F}\u{200D}🔥"]
     }
 
     private let rtl = "א echo safe ; ב rm -rf /tmp/x ג ls"
+    /// `people` women joined by joiners, with a joiner after the last.
+    private func chain(_ people: Int) -> String { String(repeating: "👩\u{200D}", count: people) }
     /// Arabic text that wraps in one row fewer when it is not isolated: in the width of the card's scrolling text, and of its rules.
     private let arabicDetail = "ا.ثبث1اثب1ثتب1ث1  .تاب1تب.ثبت1 11. .ثا  تا1.1اببا 1ثبثااا1ثبث  اات بثت1ت.ثثث11بت.تبتبتا "
     private let arabicRule = "1 1تثثب  ات اثاتث.1بباتاثا ب.ت1تثبثبتاا1.ت1ثث1ت1ثت1ب1بب1.1ا ببتب.ات.1.ثث 1تث "
@@ -343,6 +348,121 @@ struct PermissionLayoutTests {
         // A view that doesn't hold its direction does change, so the check can tell.
         let loose = PermissionBody(prompt: shown, showsTitle: true, stacked: true, place: .card, gate: gate) { _ in }
         #expect(try png(loose, width: 332, direction: .rightToLeft) != png(loose, width: 332, direction: .leftToRight))
+    }
+
+    // MARK: Honest order
+
+    /// Whether any run of glyphs `text` is drawn in goes right to left, as CoreText, which draws the card's text, lays it out.
+    private func runsRightToLeft(_ text: String) -> Bool {
+        let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: [.font: PermissionLayout.codeFont]))
+        return (CTLineGetGlyphRuns(line) as! [CTRun]).contains { CTRunGetStatus($0).contains(.rightToLeft) }
+    }
+
+    @Test func nothingOfTheDetailIsDrawnRightToLeftSoItsOrderIsTheOrderItWasWritten() throws {
+        let commands = ["rm -rf /home/אבג/דהו", "ls /tmp/مرحبا/١٢٣/456", "echo א 1 ; ב 2", rtl, arabicDetail]
+        for command in commands {
+            // Raw, with the isolates the card used to rely on alone, the letters still run right to left among themselves.
+            #expect(runsRightToLeft(PermissionText.isolated(command)), "\(command)")
+            let shown = try #require(PermissionPrompt.parse(PermissionTestServer.hookInput(tool: "Bash", input: ["command": command]))).prompt
+            #expect(!runsRightToLeft(PermissionText.isolated(shown.detail)), "\(command)")
+            let drawn = PermissionDetail(prompt: shown, visible: 40, planned: 40)
+            #expect(!runsRightToLeft(String(drawn.styled.characters)), "\(command)")
+        }
+        // The same for a rule, the title and the folder.
+        let hook = PermissionTestServer.hookInput(tool: "mcp__שרת__ملف", input: [:], cwd: "/Users/me/תיקייה",
+                                                  suggestions: [["type": "addRules", "behavior": "allow", "destination": "session",
+                                                                 "rules": [["toolName": "Bash", "ruleContent": "echo א 1 ; ב 2"]]]])
+        let shown = try #require(PermissionPrompt.parse(hook))
+        #expect(shown.prompt.grant == nil && shown.suggestion == nil)
+        for part in [shown.prompt.title, shown.prompt.folder, shown.prompt.toolLine, shown.prompt.scrollText] {
+            #expect(!runsRightToLeft(PermissionText.isolated(part)), "\(part)")
+        }
+    }
+
+    @Test func aLongChainOfJoinersWrapsInRowsThatAreCountedAndSaidNotClipped() throws {
+        func prompt(_ people: Int) throws -> PermissionPrompt {
+            try #require(PermissionPrompt.parse(PermissionTestServer.hookInput(tool: "Bash", input: ["command": chain(people)]))).prompt
+        }
+        for people in [60, 300] {
+            let long = try prompt(people)
+            for place in [PermissionLayout.Place.card, .panel] {
+                let measured = PermissionLayout.height(PermissionText.isolated(long.detail), font: PermissionLayout.codeFont, width: place.scrollWidth)
+                let real = drawn(PermissionText.isolated(long.detail), width: place.scrollWidth)
+                #expect(abs(measured - real) <= 1, "\(people) women, \(place): drawn \(real), measured \(measured)")
+                // Several rows, not one that is wider than the card.
+                #expect(PermissionLayout.rows(real) > 1)
+            }
+        }
+        // 300 women are more rows than show: the note says how many more, as many as the drawn text has.
+        let long = try prompt(300)
+        let shown = PermissionLayout.visibleDetail(long, .card)
+        let rows = PermissionLayout.rows(long.measure(.card).scroll)
+        let say = PermissionLayout.hiddenRows(content: long.measure(.card).scroll, visible: shown)
+        #expect(say > 0 && say == rows - PermissionLayout.rows(shown))
+        let read = try reading(PermissionDetail(prompt: long, visible: shown, planned: long.measure(.card).scroll),
+                               width: PermissionLayout.Place.card.width, height: 140)
+        #expect(read.contains("\(say) more lines"), "read \(read), expected \(say)")
+        // Sixty of them: the row count is what the view reports once drawn.
+        let sixty = try prompt(60)
+        let reported = try reading(PermissionDetail(prompt: sixty, visible: PermissionLayout.visibleDetail(sixty, .card), planned: sixty.measure(.card).scroll),
+                                   width: PermissionLayout.Place.card.width, height: 140)
+        let sixtyHidden = PermissionLayout.hiddenRows(content: sixty.measure(.card).scroll, visible: PermissionLayout.visibleDetail(sixty, .card))
+        if sixtyHidden == 0 {
+            #expect(!reported.contains("more line"), "read \(reported)")
+        } else {
+            #expect(reported.contains("\(sixtyHidden) more line"), "read \(reported), expected \(sixtyHidden)")
+        }
+        // Family and flame stay what they are.
+        #expect(try #require(PermissionPrompt.parse(PermissionTestServer.hookInput(tool: "Bash", input: ["command": "👨\u{200D}👩\u{200D}👧 ❤\u{FE0F}\u{200D}🔥"]))).prompt.detail
+                == "👨\u{200D}👩\u{200D}👧 ❤\u{FE0F}\u{200D}🔥")
+    }
+
+    // MARK: The title and the position label
+
+    /// The closed card as the notch draws it on a display without a camera at the narrowest, 380 wide with 18 on each side.
+    private func topRow(_ prompt: PermissionPrompt, count: Int) throws -> NSBitmapImageRep {
+        let card = PermissionCard(prompt: prompt, count: count, height: 32, earWidth: 102, hasNotch: false, gate: PermissionClickGate()) { _ in }
+            .padding(.horizontal, 18)
+        return try snapshot(card, width: 380, height: 260)
+    }
+
+    /// The pixels of the top row of `bitmap` left of `x` points.
+    private func leftOf(_ x: CGFloat, _ bitmap: NSBitmapImageRep) throws -> Data {
+        let image = try #require(bitmap.cgImage)
+        let scale = CGFloat(image.width) / bitmap.size.width
+        let cut = try #require(image.cropping(to: CGRect(x: 0, y: 0, width: x * scale, height: 32 * scale)))
+        return try #require(NSBitmapImageRep(cgImage: cut).representation(using: .png, properties: [:]))
+    }
+
+    @Test func aTitleThatIsSaidToFitIsNotCutWhateverIsQueuedBehindIt() throws {
+        // The label's room is made for 999 prompts, with at least 20 points to spare.
+        let label = NSHostingView(rootView: Text("1 of 999").font(.system(size: 11, weight: .medium).monospacedDigit()).fixedSize()).fittingSize.width
+        #expect(PermissionLayout.titleRoom <= PermissionLayout.topRowWidth - 20 - 3 * 8 - label - 20)
+        for unit in ["m", "W", "i", "0", "한", "Mi"] {
+            for folder in ["", "proj", "nunsseop-web-app"] {
+                let longest = (1...200).last { PermissionLayout.titleFits(String(repeating: unit, count: $0), folder: folder) } ?? 0
+                #expect(longest > 0, "\(unit)")
+                let title = String(repeating: unit, count: longest)
+                let fits = PermissionPrompt(id: UUID(), title: title, symbol: "terminal", detail: "", folder: folder, grant: nil)
+                #expect(fits.toolLine.isEmpty)
+                // The same prompt with nothing queued has all the room there is; with others queued its title looks no different.
+                let alone = try leftOf(280, try topRow(fits, count: 1))
+                for count in [2, 12, 100, 999] {
+                    #expect(try leftOf(280, try topRow(fits, count: count)) == alone, "\(unit) x\(longest), folder \(folder), \(count) queued")
+                }
+                // One more and the tool's name is written out in the scrolling text.
+                let more = PermissionPrompt(id: UUID(), title: title + unit, symbol: "terminal", detail: "", folder: folder, grant: nil)
+                #expect(more.toolLine == "tool: " + title + unit)
+            }
+        }
+    }
+
+    @Test func aTitleTooLongForItsLineIsDrawnDifferentlyWhichIsWhatTheCheckAboveTellsApart() throws {
+        // A name that does not fit is cut in the top row, and then the scrolling text has it whole; the cut shows in the pixels.
+        let name = String(repeating: "m", count: 40)
+        let cut = PermissionPrompt(id: UUID(), title: name, symbol: "terminal", detail: "", folder: "proj", grant: nil)
+        #expect(cut.toolLine == "tool: " + name)
+        #expect(try leftOf(280, try topRow(cut, count: 999)) != leftOf(280, try topRow(cut, count: 1)))
     }
 
     // MARK: A one-line edit

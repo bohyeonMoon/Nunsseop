@@ -309,7 +309,8 @@ struct PermissionPromptParseTests {
 
     @Test func whatEmojiAreMadeOfDisplaysAndNothingElseOfTheKindDoes() {
         let emoji = ["⚠\u{FE0F}", "❤\u{FE0F}", "👨\u{200D}👩\u{200D}👧", "❤\u{FE0F}\u{200D}🔥", "👩🏽\u{200D}⚕\u{FE0F}", "1\u{FE0F}\u{20E3}",
-                     "✔\u{FE0E}", "🏳\u{FE0F}\u{200D}🌈", "©\u{FE0F}", "echo ⚠\u{FE0F} done"]
+                     "✔\u{FE0E}", "🏳\u{FE0F}\u{200D}🌈", "👩🏽\u{200D}🤝\u{200D}🧑🏻", "🧑\u{200D}🧑\u{200D}🧒\u{200D}🧒",
+                     "echo ⚠\u{FE0F} done"]
         for text in emoji {
             #expect(PermissionText.escape(text, multiline: true) == text, "\(text.unicodeScalars.map(\.value))")
         }
@@ -339,9 +340,108 @@ struct PermissionPromptParseTests {
         }
     }
 
+    @Test func joinersAndSelectorsNeverStayBesideATextSymbol() {
+        func hex(_ value: UInt32) -> String { String(format: "⟨U+%04X⟩", value) }
+        for symbol in ["©", "®", "™", "↔", "↩", "ℹ", "‼", "Ⓜ", "▶", "⤴", "〰", "㊗"] {
+            #expect(PermissionText.escape(symbol + "\u{FE0F}", multiline: true) == symbol + hex(0xFE0F), "\(symbol) then selector")
+            #expect(PermissionText.escape(symbol + "\u{200D}" + symbol, multiline: true) == symbol + hex(0x200D) + symbol, "\(symbol) joined")
+            #expect(PermissionText.escape(symbol + "\u{200D}😀", multiline: true) == symbol + hex(0x200D) + "😀", "\(symbol) before a face")
+            #expect(PermissionText.escape("😀\u{200D}" + symbol, multiline: true) == "😀" + hex(0x200D) + symbol, "\(symbol) after a face")
+        }
+        #expect(PermissionText.escape("©\u{200D}®", multiline: true) == "©⟨U+200D⟩®")
+        // Neither a flag letter, a skin tone nor a digit takes a joiner.
+        for other in ["🇫", "🏽", "1"] {
+            #expect(PermissionText.escape("😀\u{200D}" + other, multiline: true) == "😀" + hex(0x200D) + other)
+        }
+        // The pictures that joiners and selectors really serve stay.
+        for text in ["👨\u{200D}👩\u{200D}👧", "❤\u{FE0F}\u{200D}🔥", "🏳\u{FE0F}\u{200D}⚧\u{FE0F}", "🏴\u{200D}☠\u{FE0F}", "👁\u{FE0F}\u{200D}🗨\u{FE0F}",
+                     "🏃\u{200D}♀\u{FE0F}", "🐻\u{200D}❄\u{FE0F}", "👩\u{200D}⚖\u{FE0F}", "1\u{FE0F}\u{20E3}"] {
+            #expect(PermissionText.escape(text, multiline: true) == text, "\(text.unicodeScalars.map(\.value))")
+        }
+    }
+
+    @Test func aChainOfJoinersIsCutAfterFourSoItCanAlwaysWrap() {
+        func hex(_ value: UInt32) -> String { String(format: "⟨U+%04X⟩", value) }
+        let woman = "👩", joiner = "\u{200D}"
+        func chain(_ people: Int) -> String { Array(repeating: woman, count: people).joined(separator: joiner) }
+        #expect(PermissionText.escape(chain(5), multiline: true) == chain(5))
+        #expect(PermissionText.escape(chain(6), multiline: true) == chain(5) + hex(0x200D) + woman)
+        // A selector in the chain doesn't start the count over, nor does a skin tone.
+        let heart = "❤\u{FE0F}", tone = "👩🏽"
+        #expect(PermissionText.escape([heart, heart, heart, heart, heart, heart].joined(separator: joiner), multiline: true)
+                == [heart, heart, heart, heart, heart].joined(separator: joiner) + hex(0x200D) + heart)
+        #expect(PermissionText.escape([tone, tone, tone, tone, tone, tone].joined(separator: joiner), multiline: true)
+                == [tone, tone, tone, tone, tone].joined(separator: joiner) + hex(0x200D) + tone)
+        // Sixty of them, each with its joiner after it: groups of five, a joiner written out after each, and nothing is lost.
+        let sixty = String(repeating: woman + joiner, count: 60)
+        let shown = PermissionText.escape(sixty, multiline: true)
+        let groups = shown.components(separatedBy: hex(0x200D))
+        #expect(groups.count == 13 && groups.dropLast().allSatisfy { $0 == chain(5) } && groups.last == "")
+        #expect(shown.unicodeScalars.filter { $0.value == 0x200D }.count == 48)
+        // A cluster breaks the count when anything else comes between.
+        #expect(PermissionText.escape(chain(5) + " " + chain(5), multiline: true) == chain(5) + " " + chain(5))
+    }
+
+    @Test func lettersAndDigitsThatReadRightToLeftAreWrittenOutSoNoRunOfThemIsReordered() throws {
+        func hex(_ values: UInt32...) -> String { values.map { String(format: "⟨U+%04X⟩", $0) }.joined() }
+        let hebrewPath = try #require(parse("Bash", ["command": "rm -rf /home/אבג/דהו"])).prompt
+        #expect(hebrewPath.detail == "rm -rf /home/" + hex(0x5D0, 0x5D1, 0x5D2) + "/" + hex(0x5D3, 0x5D4, 0x5D5))
+        let arabicPath = try #require(parse("Bash", ["command": "ls /tmp/مرحبا/١٢٣/456"])).prompt
+        #expect(arabicPath.detail == "ls /tmp/" + hex(0x645, 0x631, 0x62D, 0x628, 0x627) + "/" + hex(0x661, 0x662, 0x663) + "/456")
+        // Every part that is drawn: the title, the folder, the other fields, a tool's own input.
+        let named = try #require(parse("mcp__שרת__tool", ["ש": "ב"], cwd: "/Users/me/תיקייה")).prompt
+        #expect(named.title == "mcp__" + hex(0x5E9, 0x5E8, 0x5EA) + "__tool" && named.folder == hex(0x5EA, 0x5D9, 0x5E7, 0x5D9, 0x5D9, 0x5D4))
+        #expect(named.detail.contains(hex(0x5E9)) && named.detail.contains(hex(0x5D1)) && !named.detail.contains("ש"))
+        let described = try #require(parse("Bash", ["command": "ls", "description": "רשימה", "timeout": 5])).prompt
+        #expect(described.secondary.contains(hex(0x5E8, 0x5E9, 0x5D9, 0x5DE, 0x5D4)))
+        // Hebrew points, Arabic marks and Syriac, N'Ko, Adlam and Arabic mathematical letters are right to left as well.
+        for scalar in [0x05B0, 0x061C, 0x064B, 0x0710, 0x07CA, 0x0840, 0x08A0, 0xFB1D, 0xFB50, 0xFE70, 0x10800, 0x10D00, 0x1E900, 0x1EE00] as [UInt32] {
+            #expect(PermissionText.escape("a\(Character(Unicode.Scalar(scalar)!))b", multiline: true) == "a" + hex(scalar) + "b", "U+\(String(scalar, radix: 16))")
+        }
+        // The digits of the Latin script and the signs between them are not.
+        #expect(PermissionText.escape("echo 456 ; 1.5, (x) -- é", multiline: true) == "echo 456 ; 1.5, (x) -- é")
+    }
+
+    /// The system's ICU, which knows every scalar's bidi class, asked about all of them.
+    @Test func everyScalarOfBidiClassRightToLeftOrArabicNumberIsWrittenOut() throws {
+        typealias CharDirection = @convention(c) (Int32) -> Int32
+        let library = try #require(dlopen("/usr/lib/libicucore.dylib", RTLD_NOW))
+        let direction = unsafeBitCast(try #require(dlsym(library, "u_charDirection")), to: CharDirection.self)
+        // R, AN and AL.
+        let strong: Set<Int32> = [1, 5, 13]
+        var checked = 0
+        for value in UInt32(0)...0x10FFFF {
+            guard let scalar = Unicode.Scalar(value), strong.contains(direction(Int32(value))) else { continue }
+            let text = "a" + String(Character(scalar)) + "b"
+            #expect(PermissionText.escape(text, multiline: true) != text, "U+\(String(value, radix: 16, uppercase: true))")
+            checked += 1
+        }
+        #expect(checked > 1_000)
+        // The letters of Latin, Greek, Cyrillic, CJK and Hangul text are not touched by it.
+        for range in [0x41...0x24F, 0x370...0x3FF, 0x400...0x52F, 0x4E00...0x4FFF, 0xAC00...0xACFF] {
+            for value in range {
+                guard let scalar = Unicode.Scalar(UInt32(value)), scalar.properties.isAlphabetic, direction(Int32(value)) == 0 else { continue }
+                let text = "a" + String(Character(scalar)) + "b"
+                #expect(PermissionText.escape(text, multiline: true) == text.precomposedStringWithCanonicalMapping, "U+\(String(value, radix: 16, uppercase: true))")
+            }
+        }
+    }
+
+    @Test func aRuleWithRightToLeftTextIsNotOfferedAsAlwaysAllow() throws {
+        func offered(_ content: String) throws -> PermissionPrompt.Parsed {
+            try #require(parse("Bash", ["command": "ls"], suggestions: [addRules([["toolName": "Bash", "ruleContent": content]])]))
+        }
+        for content in ["echo א 1 ; ב 2", "ls /tmp/مرحبا", "echo ١٢٣", "ls:*" + "\u{05B0}"] {
+            let parsed = try offered(content)
+            #expect(parsed.prompt.grant == nil && parsed.suggestion == nil, "\(content)")
+        }
+        #expect(try offered("echo a 1 ; b 2").prompt.grant != nil)
+        let tool = try #require(parse("Bash", ["command": "ls"], suggestions: [addRules([["toolName": "mcp__אבג", "ruleContent": "x"]])]))
+        #expect(tool.prompt.grant == nil && tool.suggestion == nil)
+    }
+
     @Test func lettersThatSitOnTheCharacterBeforeThemCountTowardTheMarkCap() {
-        let letters: [UInt32] = Array(0xFE70...0xFE7F).filter { $0 != 0xFE75 } + Array(0xFC5E...0xFC63)
-            + [0x0674, 0x0D4E, 0x0EB3, 0x0F88, 0x1843, 0x0F3E, 0x0F3F, 0x0F7F, 0x1A55]
+        let letters: [UInt32] = [0x0D4E, 0x0EB3, 0x0F88, 0x1843, 0x0F3E, 0x0F3F, 0x0F7F, 0x1A55]
         for value in letters {
             let letter = Character(Unicode.Scalar(value)!)
             let name = "U+\(String(value, radix: 16, uppercase: true))"
@@ -352,7 +452,11 @@ struct PermissionPromptParseTests {
             #expect(PermissionText.escape("x\u{323}\(letter)\u{301}", multiline: false) == "x\u{323}\(letter)" + "⟨U+0301⟩", "\(name)")
         }
         // A letter of their kind that stands alone is not touched.
-        #expect(PermissionText.escape("ab\u{FE70}c", multiline: false) == "ab\u{FE70}c")
+        #expect(PermissionText.escape("ab\u{0D4E}c", multiline: false) == "ab\u{0D4E}c")
+        // The Arabic ones that did are letters that read right to left, which are written out anyway.
+        for value in Array(0xFE70...0xFE7F) + Array(0xFC5E...0xFC63) + [0x0674] {
+            #expect(PermissionText.escape("a\(Character(Unicode.Scalar(value)!))", multiline: false) == "a" + String(format: "⟨U+%04X⟩", value))
+        }
     }
 
     @Test func everyLineIsBetweenAnIsolateAndItsEndAndTheTextsOwnIsolatesStayWrittenOut() throws {

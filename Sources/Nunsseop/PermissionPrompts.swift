@@ -61,20 +61,32 @@ enum PermissionText {
         + Array(0xFE00...0xFE0F) + Array(0xE0100...0xE01EF) + Array(0x180B...0x180F))
     /// Letters and signs that draw no width of their own and sit on the character before them, as marks do, though they are
     /// not marks in the Unicode table; they count toward `maxMarks`.
-    private static let markLike: Set<UInt32> = Set(Array(0xFE70...0xFE7F) + Array(0xFC5E...0xFC63)
-        + [0x0674, 0x0D4E, 0x0EB3, 0x0F88, 0x1843, 0x0F3E, 0x0F3F, 0x0F7F, 0x1A55])
+    private static let markLike: Set<UInt32> = [0x0D4E, 0x0EB3, 0x0F88, 0x1843, 0x0F3E, 0x0F3F, 0x0F7F, 0x1A55]
     /// Combining marks that may follow one base character; any further ones are written out.
     static let maxMarks = 2
+    /// The blocks of the scripts that read right to left, assigned or not yet: every scalar of bidi class R or AL, and the
+    /// Arabic-Indic digits (AN), are in them. The isolates of `isolated` fix the order of the clauses of a line, not the
+    /// order inside a run of these, so none is drawn.
+    private static let rightToLeft: [ClosedRange<UInt32>] = [0x0590...0x08FF, 0xFB1D...0xFDFF, 0xFE70...0xFEFF, 0x10800...0x10FFF,
+                                                              0x1E800...0x1EFFF]
+    /// Emoji that are symbols first: ASCII and Latin-1 (©, ®), punctuation (‼), letterlike (™, ℹ), arrows (↔), enclosed
+    /// letters (Ⓜ), shapes (▶), supplemental arrows (⤴), CJK signs (〰, ㊗). Nothing joins to them, and no variation selector
+    /// turns them into pictures.
+    private static let textSymbols: [ClosedRange<UInt32>] = [0x00...0xFF, 0x2000...0x206F, 0x2100...0x214F, 0x2190...0x21FF, 0x2460...0x24FF,
+                                                             0x25A0...0x25FF, 0x2900...0x297F, 0x3000...0x303F, 0x3200...0x32FF]
+    /// Joiners one emoji may hold. A cluster is one unit that can't be broken across rows, so a longer chain could not wrap.
+    static let maxJoiners = 4
     /// What a tab is shown as; `⇥` itself is written out, so this can't be faked.
     static let tab = "⇥ "
 
     /// Text is first put in normalization form C, so a path macOS stored decomposed reads as it was typed. Then control,
     /// formatting (zero-width, direction marks and overrides, tags), every default-ignorable scalar, blanks that draw
     /// nothing (braille blank, Hangul fillers), line and paragraph separators, every space but U+0020, private-use and
-    /// unassigned scalars, and combining marks past `maxMarks` on one base are written out as `⟨U+202E⟩`, and so are the
-    /// angle brackets that mark one, so an escape can't be faked. A tab is shown as `tab`. What emoji are made of stays:
-    /// a variation selector right after an emoji, and a zero-width joiner between two. A line break stays one when
-    /// `multiline`; otherwise it is escaped too. CR LF counts as one break.
+    /// unassigned scalars, scalars that read right to left (letters, and Arabic-Indic digits), and combining marks past
+    /// `maxMarks` on one base are written out as `⟨U+202E⟩`, and so are the angle brackets that mark one, so an escape can't
+    /// be faked. A tab is shown as `tab`. What emoji are made of stays: a variation selector right after an emoji, and a
+    /// zero-width joiner between two pictographs, up to `maxJoiners` in a row; neither stays beside a text symbol such as
+    /// ©. A line break stays one when `multiline`; otherwise it is escaped too. CR LF counts as one break.
     static func escape(_ text: String, multiline: Bool) -> String {
         var result = String.UnicodeScalarView()
         var run = String.UnicodeScalarView()
@@ -97,6 +109,8 @@ enum PermissionText {
         // The scalar just shown as it is, and whether it was a variation selector.
         var previous: Unicode.Scalar?
         var selected = false
+        // The joiners in the pictograph being shown, nil when what was just shown isn't one.
+        var joined: Int?
         while index < scalars.count {
             let scalar = scalars[index]
             index += 1
@@ -106,16 +120,19 @@ enum PermissionText {
                 flush()
                 result.append(scalar)
                 previous = nil
+                joined = nil
             } else if scalar == "\t" {
                 flush()
                 result.append(contentsOf: tab.unicodeScalars)
                 previous = nil
-            } else if let before = previous, !selected, scalar.value == 0xFE0E || scalar.value == 0xFE0F,
-                      before.properties.isEmoji, before.value >= 0x80 || next?.value == 0x20E3 {
+                joined = nil
+            } else if let before = previous, !selected, scalar.value == 0xFE0E || scalar.value == 0xFE0F, before.properties.isEmoji,
+                      before.value >= 0x80 ? !isTextSymbol(before) : next?.value == 0x20E3 {
                 run.append(scalar)
                 selected = true
-            } else if let before = previous, scalar.value == 0x200D, isEmoji(before), let after = next, isEmoji(after) {
+            } else if scalar.value == 0x200D, let count = joined, count < maxJoiners, let after = next, isPictograph(after) {
                 run.append(scalar)
+                joined = count + 1
                 previous = scalar
                 selected = false
             } else if needsEscape(scalar) {
@@ -123,8 +140,14 @@ enum PermissionText {
                 appendEscape(scalar, to: &result)
                 previous = nil
                 selected = false
+                joined = nil
             } else {
                 run.append(scalar)
+                if isPictograph(scalar) {
+                    joined = previous?.value == 0x200D ? joined : 0
+                } else if !(scalar.properties.isEmojiModifier && joined != nil) {
+                    joined = nil
+                }
                 previous = scalar
                 selected = false
             }
@@ -133,9 +156,14 @@ enum PermissionText {
         return String(result)
     }
 
-    /// An emoji that is not an ASCII digit, `#` or `*`, which are Emoji scalars too but plain text on their own.
-    private static func isEmoji(_ scalar: Unicode.Scalar) -> Bool {
-        scalar.properties.isEmoji && scalar.value >= 0x80
+    private static func isTextSymbol(_ scalar: Unicode.Scalar) -> Bool {
+        textSymbols.contains { $0.contains(scalar.value) }
+    }
+
+    /// An emoji that a joiner may join: not a text symbol, a skin tone (which sits on the one before it) or a flag letter.
+    private static func isPictograph(_ scalar: Unicode.Scalar) -> Bool {
+        scalar.properties.isEmoji && !scalar.properties.isEmojiModifier && !(0x1F1E6...0x1F1FF).contains(scalar.value)
+            && !isTextSymbol(scalar)
     }
 
     /// Every line of `text` between U+2066 and U+2069, so letters that read right to left can't turn the line around or
@@ -159,6 +187,7 @@ enum PermissionText {
     private static func needsEscape(_ scalar: Unicode.Scalar) -> Bool {
         if scalar == "⟨" || scalar == "⟩" || scalar == "⇥" { return true }
         if scalar.properties.isDefaultIgnorableCodePoint || blanks.contains(scalar.value) { return true }
+        if rightToLeft.contains(where: { $0.contains(scalar.value) }) { return true }
         switch scalar.properties.generalCategory {
         case .control, .format, .lineSeparator, .paragraphSeparator, .privateUse, .unassigned: return true
         case .spaceSeparator: return scalar != " "

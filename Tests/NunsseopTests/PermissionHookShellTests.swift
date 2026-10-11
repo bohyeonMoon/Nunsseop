@@ -222,8 +222,14 @@ struct PermissionHookShellTests {
                                    stdin: PermissionTestServer.hookInput())
         let result = try #require(await hook.finish())
         #expect(result.stdout == "" && result.status == 0)
-        // A hook that hung on the missing server would take curl's whole timeout; a busy machine takes a little longer than usual.
-        #expect(Date.now.timeIntervalSince(started) < 5)
+        // A hook that waited for the missing server would take curl's whole 590 s; a loaded machine is slow, never that slow.
+        #expect(Date.now.timeIntervalSince(started) < 15)
+    }
+
+    @Test func theConnectTimeoutIsOneSecondAndTheWholeRequestIsBoundedBelowTheHooksOwn() {
+        let command = NotifyServer.permissionHookCommand
+        #expect(command.contains("--connect-timeout 1 ") && !command.contains("--connect-timeout 10"))
+        #expect(command.contains("curl -s -m 590 "))
     }
 
     // MARK: The token stays out of arguments and off the wire
