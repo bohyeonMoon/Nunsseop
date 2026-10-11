@@ -176,8 +176,8 @@ struct AgentsBoardFeedTests {
         #expect(!settings.visibleTabs.contains(.agents))
     }
 
-    @Test func theTabIsOffByDefaultAndSitsBeforeMirror() {
-        #expect(UserDefaults.standard.object(forKey: "agentsTab") != nil || !AppSettings.shared.agentsTab)
+    @Test func theTabIsOnByDefaultAndSitsBeforeMirror() {
+        #expect(UserDefaults.standard.object(forKey: "agentsTab") != nil || AppSettings.shared.agentsTab)
         let order = AppSettings.orderedTabs(saved: [])
         #expect(order.contains(.agents))
         #expect(order.firstIndex(of: .agents)! < order.firstIndex(of: .mirror)!)

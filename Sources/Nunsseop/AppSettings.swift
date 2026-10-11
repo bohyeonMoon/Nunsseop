@@ -135,7 +135,7 @@ final class AppSettings: ObservableObject {
     /// Off by default: macOS's Notification Center covers most of it; this is for going back to the exact terminal pane.
     @Published var noticesTab: Bool = AppSettings.load("noticesTab", default: false) { didSet { save(noticesTab, "noticesTab") } }
     /// Off by default, like Notifications: a list of the coding agent sessions at work, for going back to one's terminal.
-    @Published var agentsTab: Bool = AppSettings.load("agentsTab", default: false) { didSet { save(agentsTab, "agentsTab"); updateWatchesHerdr() } }
+    @Published var agentsTab: Bool = AppSettings.load("agentsTab", default: true) { didSet { save(agentsTab, "agentsTab"); updateWatchesHerdr() } }
     @Published var mirrorEnabled: Bool = AppSettings.load("mirrorEnabled", default: true) { didSet { save(mirrorEnabled, "mirrorEnabled") } }
     /// AVCaptureDevice.uniqueID; empty means the system default camera.
     @Published var mirrorCameraID: String = AppSettings.load("mirrorCameraID", default: "") { didSet { save(mirrorCameraID, "mirrorCameraID") } }
