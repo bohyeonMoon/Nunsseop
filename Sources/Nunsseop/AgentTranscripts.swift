@@ -1,15 +1,49 @@
 import Foundation
 
-/// What a session's transcript on disk says about it, for the Agents tab. Only these three values are kept: the
-/// hooks send no folder, model or token count, and what the sessions say stays in the tools' own files.
+/// How a session handles permissions. `standard` is the tool's default, which has no label.
+enum AgentMode: Equatable {
+    case standard, plan, acceptEdits, auto, dontAsk, bypass, fullAccess
+
+    /// Claude Code's `permissionMode`; one it doesn't know is `standard`.
+    init(claude raw: String) {
+        switch raw {
+        case "plan": self = .plan
+        case "acceptEdits": self = .acceptEdits
+        case "auto": self = .auto
+        case "dontAsk": self = .dontAsk
+        case "bypassPermissions": self = .bypass
+        default: self = .standard
+        }
+    }
+
+    var label: String? {
+        switch self {
+        case .standard: nil
+        case .plan: String(localized: "Plan")
+        case .acceptEdits: String(localized: "Auto-accept edits")
+        case .auto: String(localized: "Auto")
+        case .dontAsk: String(localized: "Don't ask")
+        case .bypass: String(localized: "Bypass permissions")
+        case .fullAccess: String(localized: "Full access")
+        }
+    }
+
+    /// Nothing asks before it acts.
+    var warns: Bool { self == .bypass || self == .fullAccess }
+}
+
+/// What a session's transcript on disk says about it, for the Agents tab. Only these four values are kept: the
+/// hooks send no folder, model, token count or mode, and what the sessions say stays in the tools' own files.
 struct AgentTranscript: Equatable {
     var cwd: String? = nil
     var model: String? = nil
     /// The context the last request used.
     var tokens: Int? = nil
+    var mode: AgentMode? = nil
 
-    /// Claude Code's lines carry `cwd` and, on assistant messages, `message.model` and `message.usage`; Codex's
-    /// `session_meta` and `turn_context` carry `cwd` and `model`, and its `token_count` events the usage. The first
+    /// Claude Code's lines carry `cwd` and, on assistant messages, `message.model` and `message.usage`, and on prompts
+    /// and `permission-mode` lines the `permissionMode`; Codex's `session_meta` and `turn_context` carry `cwd` and
+    /// `model`, `turn_context` also the sandbox and collaboration mode, and its `token_count` events the usage. The first
     /// folder is the one the session started in (the shell can move on later); for the rest the later line wins. A line
     /// that doesn't parse (a half-written last one, or the cut one a tail starts with) is skipped.
     static func parse(_ kind: AgentKind, head: Data = Data(), tail: Data) -> AgentTranscript {
@@ -29,6 +63,7 @@ struct AgentTranscript: Equatable {
     private mutating func absorbClaude(_ object: [String: Any]) {
         // A subagent's lines are its own; synthetic messages (no reply was asked for) carry no real usage.
         guard object["isSidechain"] as? Bool != true else { return }
+        if let raw = object["permissionMode"] as? String { mode = AgentMode(claude: raw) }
         if self.cwd == nil, let cwd = object["cwd"] as? String, !cwd.isEmpty { self.cwd = cwd }
         guard object["type"] as? String == "assistant", let message = object["message"] as? [String: Any],
               let model = message["model"] as? String, !model.isEmpty, model != "<synthetic>" else { return }
@@ -45,6 +80,11 @@ struct AgentTranscript: Equatable {
         case "session_meta", "turn_context":
             if self.cwd == nil, let cwd = payload["cwd"] as? String, !cwd.isEmpty { self.cwd = cwd }
             if let model = payload["model"] as? String, !model.isEmpty { self.model = model }
+            if object["type"] as? String == "turn_context" {
+                let planning = (payload["collaboration_mode"] as? [String: Any])?["mode"] as? String == "plan"
+                let sandbox = (payload["sandbox_policy"] as? [String: Any])?["type"] as? String
+                mode = planning ? .plan : sandbox == "danger-full-access" ? .fullAccess : .standard
+            }
         case "event_msg":
             // The first token_count of a session has no `info`; its input tokens include the cached ones.
             guard payload["type"] as? String == "token_count", let info = payload["info"] as? [String: Any],
@@ -56,8 +96,8 @@ struct AgentTranscript: Equatable {
         }
     }
 
-    /// Where a read starts from the end of a file, and how far it widens when the last assistant message or token
-    /// count isn't in it (one line can be megabytes); the start of the file is read for the folder the session began in.
+    /// Where a read starts from the end of a file, and how far it widens when the last assistant message, token count
+    /// or mode isn't in it (one line can be megabytes, and only a Claude Code prompt says the mode); the start of the file is read for the folder the session began in.
     static let firstWindow = 256 << 10
     static let lastWindow = 4 << 20
     static let headWindow = 128 << 10
@@ -71,7 +111,7 @@ struct AgentTranscript: Equatable {
             guard (try? handle.seek(toOffset: start)) != nil,
                   let tail = end == start ? Data() : try? handle.read(upToCount: Int(end - start)) else { return nil }
             var result = parse(kind, tail: tail)
-            guard (result.model != nil && result.tokens != nil) || start == 0 || window >= UInt64(lastWindow) else {
+            guard (result.model != nil && result.tokens != nil && result.mode != nil) || start == 0 || window >= UInt64(lastWindow) else {
                 window *= 4
                 continue
             }

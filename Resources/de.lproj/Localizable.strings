@@ -358,5 +358,11 @@
 "Agents" = "Agenten";
 "Needs input" = "Wartet auf Eingabe";
 "Your turn" = "Du bist dran";
+"Plan" = "Plan";
+"Auto-accept edits" = "Änderungen automatisch annehmen";
+"Auto" = "Auto";
+"Don't ask" = "Nicht fragen";
+"Bypass permissions" = "Berechtigungen umgehen";
+"Full access" = "Vollzugriff";
 "Connect Claude Code and Codex in Settings › Alerts to see their sessions here" = "Verbinde Claude Code und Codex unter Einstellungen › Hinweise, um ihre Sitzungen hier zu sehen";
-"The Agents tab lists their sessions with folder, model and context used, read from the tools' own session files on this Mac." = "Der Tab „Agenten“ listet ihre Sitzungen mit Ordner, Modell und genutztem Kontext auf, gelesen aus den eigenen Sitzungsdateien der Tools auf diesem Mac.";
+"The Agents tab lists their sessions with folder, model, context used and permission mode, read from the tools' own session files on this Mac." = "Der Tab „Agenten“ listet ihre Sitzungen mit Ordner, Modell, genutztem Kontext und Berechtigungsmodus auf, gelesen aus den eigenen Sitzungsdateien der Tools auf diesem Mac.";

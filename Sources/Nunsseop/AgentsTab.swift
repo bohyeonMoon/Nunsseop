@@ -25,6 +25,7 @@ struct AgentRow: Identifiable, Equatable {
     let path: String?
     let model: String?
     let tokens: Int?
+    let mode: AgentMode?
     let target: Target?
 
     init(_ entry: AgentBoard.Entry, transcript: AgentTranscript?) {
@@ -37,6 +38,7 @@ struct AgentRow: Identifiable, Equatable {
         path = [agent.cwd, transcript?.cwd].lazy.compactMap { $0 }.first { !$0.isEmpty }
         model = transcript?.model
         tokens = transcript?.tokens
+        mode = transcript?.mode
         target = Self.target(for: agent)
     }
 
@@ -44,13 +46,17 @@ struct AgentRow: Identifiable, Equatable {
 
     var title: String { folder ?? tool }
 
-    /// The state when it is waiting, then the tool (unless it is the title), model and context used.
-    var details: [String] {
-        var parts: [String] = []
-        if state == .waiting { parts.append(finished ? String(localized: "Your turn") : String(localized: "Needs input")) }
-        if folder != nil { parts.append(tool) }
-        if let model { parts.append(AgentTranscript.modelLabel(model)) }
-        if let tokens { parts.append(AgentTranscript.tokensLabel(tokens)) }
+    /// The state when it is waiting, then the tool (unless it is the title), the mode when it isn't the default (before
+    /// the model, so a long line cuts that off last), model and context used.
+    var details: [String] { detailParts.map(\.text) }
+
+    var detailParts: [(text: String, warns: Bool)] {
+        var parts: [(text: String, warns: Bool)] = []
+        if state == .waiting { parts.append((finished ? String(localized: "Your turn") : String(localized: "Needs input"), false)) }
+        if folder != nil { parts.append((tool, false)) }
+        if let mode, let label = mode.label { parts.append((label, mode.warns)) }
+        if let model { parts.append((AgentTranscript.modelLabel(model), false)) }
+        if let tokens { parts.append((AgentTranscript.tokensLabel(tokens), false)) }
         return parts
     }
 
@@ -215,9 +221,12 @@ private struct AgentRowView: View {
                         Text(verbatim: elapsed).font(.system(size: 10).monospacedDigit()).foregroundStyle(.white.opacity(0.4))
                     }
                 }
-                if !row.details.isEmpty {
-                    Text(verbatim: row.details.joined(separator: " · "))
-                        .font(.system(size: 11)).foregroundStyle(.white.opacity(0.6)).lineLimit(1)
+                if !row.detailParts.isEmpty {
+                    row.detailParts.enumerated().reduce(Text(verbatim: "")) { text, item in
+                        let part = Text(verbatim: item.element.text)
+                        return text + Text(verbatim: item.offset == 0 ? "" : " · ") + (item.element.warns ? part.foregroundStyle(.orange) : part)
+                    }
+                    .font(.system(size: 11)).foregroundStyle(.white.opacity(0.6)).lineLimit(1)
                 }
             }
         }

@@ -22,6 +22,26 @@ struct AgentsTabTests {
         #expect(row.symbol == "bolt.fill")
     }
 
+    @Test func theModeIsShownAfterTheToolOnlyWhenItIsNotTheDefault() {
+        let agent = AgentBoard.Agent(state: .working, tool: "claude", cwd: "/a/b")
+        let details = { (mode: AgentMode?) in rowFor(agent, AgentTranscript(model: "claude-opus-5-5", tokens: 84_300, mode: mode)).details }
+        #expect(details(.plan) == ["Claude Code", "Plan", "Opus 5.5", "84k"])
+        #expect(details(.bypass) == ["Claude Code", "Bypass permissions", "Opus 5.5", "84k"])
+        #expect(details(.standard) == ["Claude Code", "Opus 5.5", "84k"])
+        #expect(details(nil) == ["Claude Code", "Opus 5.5", "84k"])
+        let waiting = AgentBoard.Agent(state: .waiting, tool: "codex")
+        #expect(rowFor(waiting, AgentTranscript(mode: .fullAccess)).details == ["Needs input", "Full access"])
+    }
+
+    @Test func modeLabelsAndWhichOnesWarn() {
+        #expect(AgentMode.standard.label == nil)
+        #expect(AgentMode.plan.label == "Plan" && AgentMode.acceptEdits.label == "Auto-accept edits")
+        #expect(AgentMode.auto.label == "Auto" && AgentMode.dontAsk.label == "Don't ask")
+        #expect(AgentMode.bypass.label == "Bypass permissions" && AgentMode.fullAccess.label == "Full access")
+        #expect([AgentMode.standard, .plan, .acceptEdits, .auto, .dontAsk].allSatisfy { !$0.warns })
+        #expect(AgentMode.bypass.warns && AgentMode.fullAccess.warns)
+    }
+
     @Test func aMissingTranscriptStillShowsTheRowWithoutWhatIsUnknown() {
         let unknown = rowFor(AgentBoard.Agent(state: .working, tool: "codex", app: "com.apple.Terminal"))
         #expect(unknown.title == "Codex" && unknown.path == nil && unknown.model == nil && unknown.tokens == nil)
@@ -209,6 +229,8 @@ struct AgentsTabModelTests {
         #expect(model.rows.map(\.state) == [.waiting, .working, .working, .working])
         #expect(model.rows.filter { $0.tool == "Codex" }.count == 1)
         #expect(model.rows[0].details == ["Needs input", "Claude Code", "Opus 5.5", "142k"])
+        #expect(model.rows[1].details == ["Claude Code", "Plan", "Sonnet 5.5", "32k"])
+        #expect(model.rows.filter { $0.mode != nil }.count == 1)
         #expect(model.rows[3].details == ["Codex", "gpt-5.6", "20k"])
     }
 
@@ -217,7 +239,7 @@ struct AgentsTabModelTests {
         defer { try? FileManager.default.removeItem(at: home) }
         let file = home.appendingPathComponent(".claude/projects/-Users-me-api/s1.jsonl")
         try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try Data((["{\"type\":\"user\",\"cwd\":\"/Users/me/api\"}",
+        try Data((["{\"type\":\"user\",\"cwd\":\"/Users/me/api\",\"permissionMode\":\"acceptEdits\"}",
                    "{\"type\":\"assistant\",\"message\":{\"model\":\"claude-opus-5-5\",\"usage\":{\"input_tokens\":5,"
                    + "\"cache_read_input_tokens\":60000,\"cache_creation_input_tokens\":0}}}"].joined(separator: "\n") + "\n").utf8).write(to: file)
 
@@ -234,7 +256,7 @@ struct AgentsTabModelTests {
         #expect(model.rows.count == 2)
         #expect(await eventually { model.rows.first { $0.id == "hooks:claude|s1" }?.tokens != nil })
         let found = try #require(model.rows.first { $0.id == "hooks:claude|s1" })
-        #expect(found.title == "api" && found.details == ["Claude Code", "Opus 5.5", "60k"] && found.target == .app("com.apple.Terminal"))
+        #expect(found.title == "api" && found.details == ["Claude Code", "Auto-accept edits", "Opus 5.5", "60k"] && found.target == .app("com.apple.Terminal"))
         let missing = try #require(model.rows.first { $0.id == "hooks:claude|gone" })
         #expect(missing.title == "Claude Code" && missing.model == nil && missing.tokens == nil)
 

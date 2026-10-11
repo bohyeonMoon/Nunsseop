@@ -172,7 +172,7 @@ extension AgentBoard {
     /// What their transcripts would say, by `Entry.key`.
     static let demoTranscripts: [String: AgentTranscript] = [
         "demo|a": AgentTranscript(model: "claude-opus-5-5", tokens: 84_300),
-        "demo|b": AgentTranscript(model: "claude-sonnet-5-5", tokens: 31_900),
+        "demo|b": AgentTranscript(model: "claude-sonnet-5-5", tokens: 31_900, mode: .plan),
         "demo|c": AgentTranscript(model: "claude-opus-5-5", tokens: 142_000),
         "demo|d": AgentTranscript(model: "gpt-5.6", tokens: 19_500),
     ]
