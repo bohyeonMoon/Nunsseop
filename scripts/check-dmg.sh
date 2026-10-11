@@ -1,7 +1,6 @@
 #!/bin/bash
-# Checks the DMG that is about to ship: the app inside has this version, runs on Apple silicon and Intel,
-# has an intact signature, and starts, natively and as Intel under Rosetta. Starting it quits a running Nunsseop
-# and reopens it afterwards. Without Rosetta the Intel start is skipped, unless REQUIRE_INTEL=1 (as in CI).
+# Checks the DMG that is about to ship: the app inside has this version, runs on Apple silicon, has an intact
+# signature, and starts. Starting it quits a running Nunsseop and reopens it afterwards.
 #
 #   scripts/check-dmg.sh build/Nunsseop-<version>.dmg <version>
 set -euo pipefail
@@ -36,9 +35,9 @@ SHIPPED="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")" == "io.github.namekun.Nunsseop" ]] \
     || fail "Unexpected bundle identifier"
 
-step "Apple silicon and Intel"
+step "Apple silicon"
 for binary in Contents/MacOS/Nunsseop Contents/Resources/libNowPlayingHelper.dylib; do
-    lipo "$APP/$binary" -verify_arch arm64 x86_64 || fail "$binary is $(lipo -archs "$APP/$binary") only"
+    lipo "$APP/$binary" -verify_arch arm64 || fail "$binary is $(lipo -archs "$APP/$binary")"
 done
 
 step "Signature"
@@ -49,6 +48,7 @@ for item in Contents/Resources/nowplaying.pl Contents/Resources/AppIcon.icns Con
     [[ -e "$APP/$item" ]] || fail "Missing $item"
 done
 
+step "It starts and answers on its local port"
 if pgrep -x Nunsseop >/dev/null; then
     RUNNING=1
     osascript -e 'quit app "Nunsseop"' >/dev/null 2>&1 || true
@@ -56,35 +56,13 @@ if pgrep -x Nunsseop >/dev/null; then
     pkill -x Nunsseop 2>/dev/null || true
 fi
 ditto "$APP" "$WORK/Nunsseop.app"
-
-# Starts the copied app with the given prefix (empty, or arch -x86_64) and checks it stays up and answers.
-starts() {
-    "$@" "$WORK/Nunsseop.app/Contents/MacOS/Nunsseop" >"$WORK/run.log" 2>&1 &
-    local pid=$!
-    sleep 6
-    kill -0 "$pid" 2>/dev/null || { tail -20 "$WORK/run.log" >&2; fail "It quit within 6 seconds"; }
-    if [[ "${1:-}" == arch ]]; then
-        # P_TRANSLATED: the process really runs the Intel code, under Rosetta.
-        (( 0x$(ps -o flags= -p "$pid" | tr -d ' ') & 0x20000 )) || fail "It didn't run as Intel"
-    fi
-    # No token: the server is up and refuses it.
-    local code
-    code="$(curl -s -o /dev/null -w '%{http_code}' -m 2 -X POST http://127.0.0.1:47750/notify -d '{}' || true)"
-    kill "$pid"; wait "$pid" 2>/dev/null || true
-    [[ "$code" == "401" ]] || fail "The local port answered '$code' instead of 401"
-    for _ in $(seq 1 20); do curl -s -o /dev/null -m 1 http://127.0.0.1:47750/ || break; sleep 0.25; done
-}
-
-step "It starts and answers on its local port"
-starts
-
-if arch -x86_64 /usr/bin/true 2>/dev/null; then
-    step "It starts as Intel, under Rosetta"
-    starts arch -x86_64
-elif [[ "${REQUIRE_INTEL:-0}" == 1 ]]; then
-    fail "Rosetta isn't installed, so the Intel start can't be checked"
-else
-    echo "  Skipped the Intel start: Rosetta isn't installed here (CI checks it)" >&2
-fi
+"$WORK/Nunsseop.app/Contents/MacOS/Nunsseop" >"$WORK/run.log" 2>&1 &
+PID=$!
+sleep 6
+kill -0 "$PID" 2>/dev/null || { tail -20 "$WORK/run.log" >&2; fail "It quit within 6 seconds"; }
+# No token: the server is up and refuses it.
+CODE="$(curl -s -o /dev/null -w '%{http_code}' -m 2 -X POST http://127.0.0.1:47750/notify -d '{}' || true)"
+[[ "$CODE" == "401" ]] || fail "The local port answered '$CODE' instead of 401"
+kill "$PID"; wait "$PID" 2>/dev/null || true
 
 echo "✔ $DMG is ready to ship" >&2

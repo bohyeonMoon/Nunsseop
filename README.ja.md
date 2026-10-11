@@ -32,7 +32,7 @@ brew install --cask namekun/tap/nunsseop
 
 [Homebrew](https://brew.sh) が必要です。Homebrew が隔離フラグを外すので、すぐに開けます。アップデートは `brew update && brew upgrade --cask nunsseop` で行えます。新しいバージョンが出ると、設定 › 一般 › アップデートでそのコマンドをクリップボードにコピーできます(旧 dmg からインストールしたアプリには、Homebrew へ移行するコマンドがコピーされます)。
 
-macOS 14 Sonoma 以降が必要です。Apple シリコンと Intel の両方に対応し、ノッチのない画面でも動作します。
+macOS 14 Sonoma 以降が必要です。Apple シリコン搭載の Mac に対応し（Intel は非対応）、ノッチのない画面でも動作します。
 
 ## 最初の1分
 
