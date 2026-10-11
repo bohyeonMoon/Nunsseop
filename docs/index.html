@@ -882,10 +882,10 @@ open build/Nunsseop.app</pre></div>
       };
       var done = function () { show(COPIED); };
       var failed = function () {
-        var pre = btn.parentNode.querySelector('pre');
+        var shown = btn.parentNode.querySelector('pre, code');
         var sel = window.getSelection();
         var range = document.createRange();
-        range.selectNodeContents(pre);
+        range.selectNodeContents(shown);
         sel.removeAllRanges();
         sel.addRange(range);
         show(COPY_FAILED);
