@@ -58,6 +58,55 @@ struct AgentHookEventTests {
         #expect(NotifyServer.agentHookCommand.contains("X-Background: ${CLAUDE_JOB_DIR:+1}"))
     }
 
+    @Test func aBackgroundNoticeHasNoApp() {
+        let headers = ["x-app": "com.apple.Terminal"]
+        #expect(NotifyServer.noticeApp(json: nil, headers: headers) == "com.apple.Terminal")
+        #expect(NotifyServer.noticeApp(json: nil, headers: headers.merging(["x-background": ""]) { $1 }) == "com.apple.Terminal")
+        #expect(NotifyServer.noticeApp(json: nil, headers: headers.merging(["x-background": "1"]) { $1 }) == nil)
+        #expect(NotifyServer.noticeApp(json: ["app": "com.apple.Terminal"], headers: ["x-background": "1"]) == nil)
+    }
+
+    /// The notice hook as shipped, run in a shell with `curl` replaced by a stand-in that records its headers;
+    /// the app the server would take from those headers.
+    private func appOfNotice(inBackground: Bool) throws -> String? {
+        let dir = URL(fileURLWithPath: "/tmp/nunsseop-test-\(UUID().uuidString.prefix(8))")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let support = dir.appendingPathComponent("Library/Application Support/Nunsseop")
+        let bin = dir.appendingPathComponent("bin")
+        for url in [support, bin] { try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true) }
+        try "secret-token".write(to: support.appendingPathComponent("notify-token"), atomically: true, encoding: .utf8)
+        let curl = bin.appendingPathComponent("curl")
+        try "#!/bin/sh\nfor arg; do printf '%s\\n' \"$arg\"; done > \"\(dir.path)/args\"\ncat >/dev/null\n"
+            .write(to: curl, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: curl.path)
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", NotifyServer.hookCommand]
+        var environment = ["HOME": dir.path, "PATH": "\(bin.path):/usr/bin:/bin", "__CFBundleIdentifier": "com.apple.Terminal"]
+        if inBackground { environment["CLAUDE_JOB_DIR"] = "/tmp/jobs/1" }
+        process.environment = environment
+        let input = Pipe()
+        process.standardInput = input
+        try process.run()
+        input.fileHandleForWriting.write(Data(#"{"message":"hi"}"#.utf8))
+        try input.fileHandleForWriting.close()
+        process.waitUntilExit()
+        let args = try String(contentsOf: dir.appendingPathComponent("args"), encoding: .utf8).split(separator: "\n").map(String.init)
+        var headers: [String: String] = [:]
+        for arg in args where arg.contains(": ") {
+            let parts = arg.split(separator: ":", maxSplits: 1)
+            headers[parts[0].lowercased()] = parts[1].trimmingCharacters(in: .whitespaces)
+        }
+        return NotifyServer.noticeApp(json: nil, headers: headers)
+    }
+
+    @Test func theNoticeHookNamesTheAppExceptInABackgroundSession() throws {
+        #expect(NotifyServer.hookCommand.contains("X-Background: ${CLAUDE_JOB_DIR:+1}"))
+        #expect(try appOfNotice(inBackground: false) == "com.apple.Terminal")
+        #expect(try appOfNotice(inBackground: true) == nil)
+    }
+
     @Test func subagentCallsAreDropped() {
         #expect(AgentHook.event(headers: ["x-session": "s", "x-event": "Stop", "x-subagent": "agent-1"]) == nil)
         #expect(AgentHook.event(headers: ["x-session": "s", "x-event": "Stop", "x-subagent": ""]) != nil)

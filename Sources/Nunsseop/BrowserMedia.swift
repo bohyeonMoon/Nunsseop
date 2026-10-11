@@ -12,6 +12,7 @@ struct BrowserMedia {
     static let all: [BrowserMedia] = [
         BrowserMedia(bundleID: "com.apple.Safari", dialect: .safari),
         BrowserMedia(bundleID: "com.google.Chrome", dialect: .chromium),
+        BrowserMedia(bundleID: "com.google.Chrome.canary", dialect: .chromium),
         BrowserMedia(bundleID: "com.microsoft.edgemac", dialect: .chromium),
         BrowserMedia(bundleID: "com.brave.Browser", dialect: .chromium),
         BrowserMedia(bundleID: "company.thebrowser.Browser", dialect: .chromium),
