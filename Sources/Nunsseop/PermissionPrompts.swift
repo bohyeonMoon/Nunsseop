@@ -54,116 +54,180 @@ enum PermissionWire {
     }
 }
 
-/// What a prompt shows is what the tool would do, so nothing is dropped or joined and nothing invisible is left invisible.
+/// What a prompt shows is what the tool would do, so nothing is dropped or joined, nothing invisible is left invisible, and
+/// nothing is drawn that the card can't lay out inside its row. Only what is listed here is shown; every other scalar is
+/// written out.
 enum PermissionText {
-    /// Scalars that draw nothing, or only blank, yet are not Default_Ignorable_Code_Point (or are, on an older Unicode table).
-    private static let blanks: Set<UInt32> = Set([0x2800, 0x3164, 0xFFA0, 0x115F, 0x1160, 0x17B4, 0x17B5, 0x034F, 0xFFFC]
-        + Array(0xFE00...0xFE0F) + Array(0xE0100...0xE01EF) + Array(0x180B...0x180F))
-    /// Letters and signs that draw no width of their own and sit on the character before them, as marks do, though they are
-    /// not marks in the Unicode table; they count toward `maxMarks`.
-    private static let markLike: Set<UInt32> = [0x0D4E, 0x0EB3, 0x0F88, 0x1843, 0x0F3E, 0x0F3F, 0x0F7F, 0x1A55]
-    /// Combining marks that may follow one base character; any further ones are written out.
-    static let maxMarks = 2
-    /// The blocks of the scripts that read right to left, assigned or not yet: every scalar of bidi class R or AL, and the
-    /// Arabic-Indic digits (AN), are in them. The isolates of `isolated` fix the order of the clauses of a line, not the
-    /// order inside a run of these, so none is drawn.
-    private static let rightToLeft: [ClosedRange<UInt32>] = [0x0590...0x08FF, 0xFB1D...0xFDFF, 0xFE70...0xFEFF, 0x10800...0x10FFF,
-                                                              0x1E800...0x1EFFF]
-    /// Emoji that are symbols first: ASCII and Latin-1 (©, ®), punctuation (‼), letterlike (™, ℹ), arrows (↔), enclosed
-    /// letters (Ⓜ), shapes (▶), supplemental arrows (⤴), CJK signs (〰, ㊗). Nothing joins to them, and no variation selector
-    /// turns them into pictures.
-    private static let textSymbols: [ClosedRange<UInt32>] = [0x00...0xFF, 0x2000...0x206F, 0x2100...0x214F, 0x2190...0x21FF, 0x2460...0x24FF,
-                                                             0x25A0...0x25FF, 0x2900...0x297F, 0x3000...0x303F, 0x3200...0x32FF]
+    /// Shown as they are, besides ASCII and the space: Latin-1, Latin Extended-A, -B and Additional, Greek, Cyrillic, general
+    /// punctuation (not the separators, the joiners or the marks of direction), currency, letterlike symbols, arrows, box
+    /// drawing, CJK signs, kana, Hangul compatibility letters, CJK ideographs, Hangul syllables, and full and half width
+    /// forms. Only letters, numbers, punctuation and symbols of them count: no mark, no space, no unassigned scalar.
+    private static let shown: [ClosedRange<UInt32>] = [
+        0xA1...0xFF, 0x100...0x24F, 0x1E00...0x1EFF, 0x370...0x3FF, 0x400...0x4FF, 0x2010...0x2027, 0x2030...0x205E,
+        0x20A0...0x20C0, 0x2100...0x214F, 0x2190...0x21FF, 0x2500...0x257F, 0x3001...0x303F, 0x3041...0x309F, 0x30A0...0x30FF,
+        0x3131...0x318E, 0x3400...0x4DBF, 0x4E00...0x9FFF, 0xAC00...0xD7A3, 0xFF01...0xFF5E, 0xFF61...0xFF9D]
+    /// Scalars of those ranges that are written out nonetheless: the soft hyphen, the Hangul filler, the arrow that stands
+    /// for a tab, and what drew outside its row, or nothing, when every shown scalar was laid out in the card's fonts: Latin
+    /// letters whose accents reach past the row, the box-drawing pieces that run past it, and a few more.
+    private static let withheld: [ClosedRange<UInt32>] = [
+        0xAD...0xAD, 0x3164...0x3164, 0x21E5...0x21E5,
+        0x1D7...0x1D7, 0x1D9...0x1D9, 0x1DB...0x1DB, 0x1FA...0x1FA, 0x37A...0x37A, 0x47C...0x47C, 0x1E00...0x1E01, 0x1E14...0x1E14,
+        0x1E16...0x1E16, 0x1E2E...0x1E2E, 0x1E4C...0x1E4C, 0x1E4E...0x1E4E, 0x1E50...0x1E50, 0x1E52...0x1E52, 0x1E66...0x1E66,
+        0x1E78...0x1E78, 0x1E7A...0x1E7A, 0x1EA4...0x1EA4, 0x1EA6...0x1EA6, 0x1EA8...0x1EA8, 0x1EAA...0x1EAA, 0x1EAE...0x1EAE,
+        0x1EB0...0x1EB0, 0x1EB2...0x1EB2, 0x1EB4...0x1EB4, 0x1EBE...0x1EBE, 0x1EC0...0x1EC0, 0x1EC2...0x1EC2, 0x1EC4...0x1EC4,
+        0x1ED0...0x1ED0, 0x1ED2...0x1ED2, 0x1ED4...0x1ED4, 0x1ED6...0x1ED6, 0x2017...0x2017, 0x2038...0x2038,
+        0x2502...0x2503, 0x250C...0x2513, 0x251C...0x2533, 0x253C...0x254B, 0x254E...0x254F, 0x2551...0x2557, 0x255E...0x2566,
+        0x256A...0x256E, 0x2577...0x2577, 0x257B...0x257B, 0x257D...0x257D, 0x257F...0x257F]
+    /// The letters of ASCII that rise no higher than the middle of the row and sink no lower than its baseline: the only ones
+    /// that may carry a combining mark, because a mark on a taller or deeper one reaches into the next row.
+    private static let markBases = Set("acemnorsuvwxz".unicodeScalars.map(\.value))
+    /// The combining marks that fit above or below those letters in every font the card uses. Not among them: the double
+    /// marks of U+035C-0362, which reach over the next letter, the grapheme joiner, which draws nothing, and the marks that
+    /// normalization turns into others.
+    private static let marks: [ClosedRange<UInt32>] = [
+        0x300...0x315, 0x31A...0x31B, 0x320...0x320, 0x323...0x324, 0x327...0x328, 0x32B...0x32B, 0x32E...0x332, 0x334...0x338,
+        0x33C...0x33F, 0x342...0x342, 0x346...0x346, 0x34A...0x34A, 0x350...0x352, 0x357...0x358, 0x363...0x364, 0x366...0x368,
+        0x36B...0x36C, 0x36E...0x36F]
+    /// The pictures: assigned emoji of the Mahjong tiles to Symbols and Pictographs Extended-A, and of Miscellaneous Symbols
+    /// and Dingbats. Text symbols such as ©, ™ and ↔ are not among them, and nothing joins to those.
+    private static let pictures: [ClosedRange<UInt32>] = [0x2600...0x27BF, 0x1F000...0x1FAFF]
     /// Joiners one emoji may hold. A cluster is one unit that can't be broken across rows, so a longer chain could not wrap.
     static let maxJoiners = 4
     /// What a tab is shown as; `⇥` itself is written out, so this can't be faked.
     static let tab = "⇥ "
 
-    /// Text is first put in normalization form C, so a path macOS stored decomposed reads as it was typed. Then control,
-    /// formatting (zero-width, direction marks and overrides, tags), every default-ignorable scalar, blanks that draw
-    /// nothing (braille blank, Hangul fillers), line and paragraph separators, every space but U+0020, private-use and
-    /// unassigned scalars, scalars that read right to left (letters, and Arabic-Indic digits), and combining marks past
-    /// `maxMarks` on one base are written out as `⟨U+202E⟩`, and so are the angle brackets that mark one, so an escape can't
-    /// be faked. A tab is shown as `tab`. What emoji are made of stays: a variation selector right after an emoji, and a
-    /// zero-width joiner between two pictographs, up to `maxJoiners` in a row; neither stays beside a text symbol such as
-    /// ©. A line break stays one when `multiline`; otherwise it is escaped too. CR LF counts as one break.
+    /// A scalar whose own normalization form C is another is written out first, so normalizing can never turn what is shown
+    /// into something else (the Kelvin sign into K, the Greek question mark into a semicolon, a compatibility ideograph
+    /// into its unified one). The rest is put in form C, so a path macOS stored decomposed reads as it was typed.
+    /// What is shown is ASCII, the space, and the scalars of `shown`; a tab is shown as `tab`, and a line break stays one
+    /// when `multiline`. Anything else is written out as `⟨U+202E⟩`, and so are the angle brackets that mark one, so an
+    /// escape can't be faked. What emoji are made of stays: a variation selector right after a picture, and a zero-width
+    /// joiner between two pictures, up to `maxJoiners` in a row; one skin tone right after a picture that takes it;
+    /// regional indicators two by two; the keycap of a digit, `#` or `*`. A combining mark of `marks` stays when it is the
+    /// only one on a letter of `markBases`. CR LF counts as one break.
     static func escape(_ text: String, multiline: Bool) -> String {
-        var result = String.UnicodeScalarView()
+        var tokens: [(scalar: Unicode.Scalar, changes: Bool)] = []
         var run = String.UnicodeScalarView()
         func flush() {
             guard !run.isEmpty else { return }
-            var marks = 0
-            for scalar in String(run).precomposedStringWithCanonicalMapping.unicodeScalars {
-                if isMark(scalar) {
-                    marks += 1
-                    if marks > maxMarks { appendEscape(scalar, to: &result) } else { result.append(scalar) }
-                } else {
-                    marks = 0
-                    result.append(scalar)
-                }
-            }
+            tokens.append(contentsOf: String(run).precomposedStringWithCanonicalMapping.unicodeScalars.map { ($0, false) })
             run = String.UnicodeScalarView()
         }
-        let scalars = Array(text.unicodeScalars)
-        var index = 0
-        // The scalar just shown as it is, and whether it was a variation selector.
-        var previous: Unicode.Scalar?
-        var selected = false
-        // The joiners in the pictograph being shown, nil when what was just shown isn't one.
-        var joined: Int?
-        while index < scalars.count {
-            let scalar = scalars[index]
-            index += 1
-            let next = index < scalars.count ? scalars[index] : nil
-            if scalar == "\r", next == "\n" { continue }
-            if scalar == "\n" && multiline {
-                flush()
-                result.append(scalar)
-                previous = nil
-                joined = nil
-            } else if scalar == "\t" {
-                flush()
-                result.append(contentsOf: tab.unicodeScalars)
-                previous = nil
-                joined = nil
-            } else if let before = previous, !selected, scalar.value == 0xFE0E || scalar.value == 0xFE0F, before.properties.isEmoji,
-                      before.value >= 0x80 ? !isTextSymbol(before) : next?.value == 0x20E3 {
+        for scalar in text.unicodeScalars {
+            if scalar.value < 0x300 || String(scalar).precomposedStringWithCanonicalMapping.unicodeScalars.elementsEqual([scalar]) {
                 run.append(scalar)
-                selected = true
-            } else if scalar.value == 0x200D, let count = joined, count < maxJoiners, let after = next, isPictograph(after) {
-                run.append(scalar)
-                joined = count + 1
-                previous = scalar
-                selected = false
-            } else if needsEscape(scalar) {
-                flush()
-                appendEscape(scalar, to: &result)
-                previous = nil
-                selected = false
-                joined = nil
             } else {
-                run.append(scalar)
-                if isPictograph(scalar) {
-                    joined = previous?.value == 0x200D ? joined : 0
-                } else if !(scalar.properties.isEmojiModifier && joined != nil) {
-                    joined = nil
-                }
-                previous = scalar
-                selected = false
+                flush()
+                tokens.append((scalar, true))
             }
         }
         flush()
+
+        var result = String.UnicodeScalarView()
+        // What was just shown, and what may follow it.
+        var previous: Unicode.Scalar?
+        var takesMark = false, takesTone = false, selected = false, keycap = false, pairOpen = false
+        // The joiners in the picture being shown, nil when what was just shown isn't one.
+        var joined: Int?
+        func reset() {
+            previous = nil
+            takesMark = false
+            takesTone = false
+            selected = false
+            keycap = false
+            pairOpen = false
+            joined = nil
+        }
+        var index = 0
+        while index < tokens.count {
+            let (scalar, changes) = tokens[index]
+            index += 1
+            let next = index < tokens.count && !tokens[index].changes ? tokens[index].scalar : nil
+            if scalar == "\r", next == "\n" { continue }
+            if scalar == "\n" && multiline {
+                result.append(scalar)
+                reset()
+            } else if scalar == "\t" {
+                result.append(contentsOf: tab.unicodeScalars)
+                reset()
+            } else if changes {
+                appendEscape(scalar, to: &result)
+                reset()
+            } else if scalar.value == 0xFE0E || scalar.value == 0xFE0F, let before = previous, !selected,
+                      isPicture(before) || (scalar.value == 0xFE0F && next?.value == 0x20E3 && isKeycapBase(before)) {
+                result.append(scalar)
+                keycap = !isPicture(before)
+                selected = true
+                takesMark = false
+                takesTone = false
+            } else if scalar.value == 0x20E3, keycap, selected {
+                result.append(scalar)
+                reset()
+                previous = scalar
+            } else if scalar.value == 0x200D, let count = joined, count < maxJoiners, let after = next, isPicture(after) {
+                result.append(scalar)
+                joined = count + 1
+                previous = scalar
+                takesMark = false
+                takesTone = false
+                selected = false
+            } else if (0x1F3FB...0x1F3FF).contains(scalar.value), takesTone {
+                result.append(scalar)
+                previous = scalar
+                takesTone = false
+                selected = false
+            } else if isRegional(scalar), pairOpen || next.map(isRegional) == true {
+                result.append(scalar)
+                let opened = !pairOpen
+                reset()
+                previous = scalar
+                pairOpen = opened
+            } else if takesMark, marks.contains(where: { $0.contains(scalar.value) }) {
+                result.append(scalar)
+                reset()
+                previous = scalar
+            } else if isPicture(scalar) {
+                result.append(scalar)
+                let afterJoiner = previous?.value == 0x200D
+                let count = joined
+                reset()
+                previous = scalar
+                joined = afterJoiner ? count : 0
+                takesTone = scalar.properties.isEmojiModifierBase
+            } else if isShown(scalar) {
+                result.append(scalar)
+                reset()
+                previous = scalar
+                takesMark = markBases.contains(scalar.value)
+            } else {
+                appendEscape(scalar, to: &result)
+                reset()
+            }
+        }
         return String(result)
     }
 
-    private static func isTextSymbol(_ scalar: Unicode.Scalar) -> Bool {
-        textSymbols.contains { $0.contains(scalar.value) }
+    private static func isShown(_ scalar: Unicode.Scalar) -> Bool {
+        if (0x20...0x7E).contains(scalar.value) { return true }
+        guard shown.contains(where: { $0.contains(scalar.value) }), !withheld.contains(where: { $0.contains(scalar.value) }) else { return false }
+        switch scalar.properties.generalCategory {
+        case .uppercaseLetter, .lowercaseLetter, .titlecaseLetter, .modifierLetter, .otherLetter,
+             .decimalNumber, .letterNumber, .otherNumber,
+             .connectorPunctuation, .dashPunctuation, .openPunctuation, .closePunctuation, .initialPunctuation, .finalPunctuation,
+             .otherPunctuation, .mathSymbol, .currencySymbol, .modifierSymbol, .otherSymbol: return true
+        default: return false
+        }
     }
 
-    /// An emoji that a joiner may join: not a text symbol, a skin tone (which sits on the one before it) or a flag letter.
-    private static func isPictograph(_ scalar: Unicode.Scalar) -> Bool {
-        scalar.properties.isEmoji && !scalar.properties.isEmojiModifier && !(0x1F1E6...0x1F1FF).contains(scalar.value)
-            && !isTextSymbol(scalar)
+    private static func isPicture(_ scalar: Unicode.Scalar) -> Bool {
+        scalar.properties.isEmoji && !scalar.properties.isEmojiModifier && !isRegional(scalar)
+            && pictures.contains { $0.contains(scalar.value) } && scalar.properties.generalCategory != .unassigned
+    }
+
+    private static func isRegional(_ scalar: Unicode.Scalar) -> Bool { (0x1F1E6...0x1F1FF).contains(scalar.value) }
+
+    private static func isKeycapBase(_ scalar: Unicode.Scalar) -> Bool {
+        (0x30...0x39).contains(scalar.value) || scalar == "#" || scalar == "*"
     }
 
     /// Every line of `text` between U+2066 and U+2069, so letters that read right to left can't turn the line around or
@@ -177,22 +241,6 @@ enum PermissionText {
 
     private static func appendEscape(_ scalar: Unicode.Scalar, to result: inout String.UnicodeScalarView) {
         result.append(contentsOf: String(format: "⟨U+%04X⟩", scalar.value).unicodeScalars)
-    }
-
-    private static func isMark(_ scalar: Unicode.Scalar) -> Bool {
-        scalar.properties.generalCategory == .nonspacingMark || scalar.properties.generalCategory == .enclosingMark
-            || markLike.contains(scalar.value)
-    }
-
-    private static func needsEscape(_ scalar: Unicode.Scalar) -> Bool {
-        if scalar == "⟨" || scalar == "⟩" || scalar == "⇥" { return true }
-        if scalar.properties.isDefaultIgnorableCodePoint || blanks.contains(scalar.value) { return true }
-        if rightToLeft.contains(where: { $0.contains(scalar.value) }) { return true }
-        switch scalar.properties.generalCategory {
-        case .control, .format, .lineSeparator, .paragraphSeparator, .privateUse, .unassigned: return true
-        case .spaceSeparator: return scalar != " "
-        default: return scalar.properties.isWhitespace && scalar != " "
-        }
     }
 
     /// `text` cut to `limit` characters with a visible mark, for what is only context.

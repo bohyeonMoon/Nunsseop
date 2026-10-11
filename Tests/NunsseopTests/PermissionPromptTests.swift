@@ -302,9 +302,8 @@ struct PermissionPromptParseTests {
         #expect(PermissionText.escape("a⇥ b", multiline: true) == "a⟨U+21E5⟩ b")
         let prompt = try #require(parse("Bash", ["command": "if x\n\tthen y", "description": "a\tb"])).prompt
         #expect(prompt.detail == "if x\n⇥ then y" && prompt.secondary == "description: a⇥ b")
-        // Marks after a tab start a count of their own, as after any other escape.
-        #expect(scalars(PermissionText.escape("x\u{323}\u{323}\t\u{323}\u{323}\u{323}", multiline: true))
-                == scalars("x\u{323}\u{323}⇥ \u{323}\u{323}⟨U+0323⟩"))
+        // A mark has nothing to sit on after a tab, as after any other escape.
+        #expect(scalars(PermissionText.escape("x\u{323}\t\u{323}", multiline: true)) == scalars("x\u{323}⇥ ⟨U+0323⟩"))
     }
 
     @Test func whatEmojiAreMadeOfDisplaysAndNothingElseOfTheKindDoes() {
@@ -342,17 +341,23 @@ struct PermissionPromptParseTests {
 
     @Test func joinersAndSelectorsNeverStayBesideATextSymbol() {
         func hex(_ value: UInt32) -> String { String(format: "⟨U+%04X⟩", value) }
-        for symbol in ["©", "®", "™", "↔", "↩", "ℹ", "‼", "Ⓜ", "▶", "⤴", "〰", "㊗"] {
+        for symbol in ["©", "®", "™", "↔", "↩", "ℹ", "‼", "〰"] {
             #expect(PermissionText.escape(symbol + "\u{FE0F}", multiline: true) == symbol + hex(0xFE0F), "\(symbol) then selector")
             #expect(PermissionText.escape(symbol + "\u{200D}" + symbol, multiline: true) == symbol + hex(0x200D) + symbol, "\(symbol) joined")
             #expect(PermissionText.escape(symbol + "\u{200D}😀", multiline: true) == symbol + hex(0x200D) + "😀", "\(symbol) before a face")
             #expect(PermissionText.escape("😀\u{200D}" + symbol, multiline: true) == "😀" + hex(0x200D) + symbol, "\(symbol) after a face")
         }
+        // Text symbols that no block of the allowlist holds are written out whole, and nothing is left to join to.
+        for symbol: UInt32 in [0x24C2, 0x25B6, 0x2934, 0x3297] {
+            let text = String(Unicode.Scalar(symbol)!)
+            #expect(PermissionText.escape(text + "\u{FE0F}", multiline: true) == hex(symbol) + hex(0xFE0F), "U+\(String(symbol, radix: 16))")
+            #expect(PermissionText.escape("😀\u{200D}" + text, multiline: true) == "😀" + hex(0x200D) + hex(symbol), "U+\(String(symbol, radix: 16))")
+        }
         #expect(PermissionText.escape("©\u{200D}®", multiline: true) == "©⟨U+200D⟩®")
         // Neither a flag letter, a skin tone nor a digit takes a joiner.
-        for other in ["🇫", "🏽", "1"] {
-            #expect(PermissionText.escape("😀\u{200D}" + other, multiline: true) == "😀" + hex(0x200D) + other)
-        }
+        #expect(PermissionText.escape("😀\u{200D}🇫", multiline: true) == "😀" + hex(0x200D) + hex(0x1F1EB))
+        #expect(PermissionText.escape("😀\u{200D}🏽", multiline: true) == "😀" + hex(0x200D) + hex(0x1F3FD))
+        #expect(PermissionText.escape("😀\u{200D}1", multiline: true) == "😀" + hex(0x200D) + "1")
         // The pictures that joiners and selectors really serve stay.
         for text in ["👨\u{200D}👩\u{200D}👧", "❤\u{FE0F}\u{200D}🔥", "🏳\u{FE0F}\u{200D}⚧\u{FE0F}", "🏴\u{200D}☠\u{FE0F}", "👁\u{FE0F}\u{200D}🗨\u{FE0F}",
                      "🏃\u{200D}♀\u{FE0F}", "🐻\u{200D}❄\u{FE0F}", "👩\u{200D}⚖\u{FE0F}", "1\u{FE0F}\u{20E3}"] {
@@ -418,7 +423,7 @@ struct PermissionPromptParseTests {
         }
         #expect(checked > 1_000)
         // The letters of Latin, Greek, Cyrillic, CJK and Hangul text are not touched by it.
-        for range in [0x41...0x24F, 0x370...0x3FF, 0x400...0x52F, 0x4E00...0x4FFF, 0xAC00...0xACFF] {
+        for range in [0x41...0x7A, 0xC0...0xFF, 0x3B1...0x3C9, 0x410...0x44F, 0x4E00...0x4FFF, 0xAC00...0xACFF] {
             for value in range {
                 guard let scalar = Unicode.Scalar(UInt32(value)), scalar.properties.isAlphabetic, direction(Int32(value)) == 0 else { continue }
                 let text = "a" + String(Character(scalar)) + "b"
@@ -435,25 +440,25 @@ struct PermissionPromptParseTests {
             let parsed = try offered(content)
             #expect(parsed.prompt.grant == nil && parsed.suggestion == nil, "\(content)")
         }
+        // Nor one the card would show as something else: normalization turns the Kelvin sign into K, the Greek question mark into ;.
+        for content in ["echo \u{212A}", "echo a\u{37E} rm", "echo \u{1FEF}x\u{1FEF}", "ls /a/\u{1100}", "ls \u{1DD8}", "ls \u{FF76}\u{FF9E}"] {
+            let parsed = try offered(content)
+            #expect(parsed.prompt.grant == nil && parsed.suggestion == nil, "\(content)")
+        }
         #expect(try offered("echo a 1 ; b 2").prompt.grant != nil)
+        #expect(try offered("echo r\u{E9}sum\u{E9} \u{D55C}\u{AE00} \u{65E5}\u{672C}").prompt.grant != nil)
         let tool = try #require(parse("Bash", ["command": "ls"], suggestions: [addRules([["toolName": "mcp__אבג", "ruleContent": "x"]])]))
         #expect(tool.prompt.grant == nil && tool.suggestion == nil)
     }
 
-    @Test func lettersThatSitOnTheCharacterBeforeThemCountTowardTheMarkCap() {
+    @Test func lettersThatSitOnTheCharacterBeforeThemAreWrittenOutLikeMarks() {
         let letters: [UInt32] = [0x0D4E, 0x0EB3, 0x0F88, 0x1843, 0x0F3E, 0x0F3F, 0x0F7F, 0x1A55]
         for value in letters {
             let letter = Character(Unicode.Scalar(value)!)
-            let name = "U+\(String(value, radix: 16, uppercase: true))"
-            #expect(PermissionText.escape("a\(letter)\(letter)", multiline: false) == "a\(letter)\(letter)", "\(name)")
-            #expect(PermissionText.escape("a\(letter)\(letter)\(letter)", multiline: false)
-                    == "a\(letter)\(letter)" + String(format: "⟨U+%04X⟩", value), "\(name)")
-            // Mixed with real marks they share the count.
-            #expect(PermissionText.escape("x\u{323}\(letter)\u{301}", multiline: false) == "x\u{323}\(letter)" + "⟨U+0301⟩", "\(name)")
+            #expect(PermissionText.escape("a\(letter)", multiline: false) == "a" + String(format: "⟨U+%04X⟩", value), "U+\(String(value, radix: 16, uppercase: true))")
+            #expect(PermissionText.escape("ab\(letter)c", multiline: false) == "ab" + String(format: "⟨U+%04X⟩", value) + "c")
         }
-        // A letter of their kind that stands alone is not touched.
-        #expect(PermissionText.escape("ab\u{0D4E}c", multiline: false) == "ab\u{0D4E}c")
-        // The Arabic ones that did are letters that read right to left, which are written out anyway.
+        // As are the Arabic ones that did, which are letters that read right to left.
         for value in Array(0xFE70...0xFE7F) + Array(0xFC5E...0xFC63) + [0x0674] {
             #expect(PermissionText.escape("a\(Character(Unicode.Scalar(value)!))", multiline: false) == "a" + String(format: "⟨U+%04X⟩", value))
         }
@@ -509,39 +514,41 @@ struct PermissionPromptParseTests {
         let decomposed = "re\u{301}sume\u{301}-nai\u{308}ve.pdf"
         #expect(scalars(PermissionText.escape(decomposed, multiline: false)) == scalars("r\u{E9}sum\u{E9}-na\u{EF}ve.pdf"))
         #expect(scalars(try #require(parse("Read", ["file_path": "/a/" + decomposed])).prompt.detail) == scalars("/a/r\u{E9}sum\u{E9}-na\u{EF}ve.pdf"))
-        // A letter that has no composed form keeps its marks, up to two.
-        #expect(scalars(PermissionText.escape("x\u{301}\u{323}", multiline: false)) == [0x78, 0x323, 0x301])
+        // A letter that has no composed form keeps one mark, in the order normalization puts them; the other is written out.
+        #expect(scalars(PermissionText.escape("x\u{301}\u{323}", multiline: false)) == scalars("x\u{323}⟨U+0301⟩"))
     }
 
-    @Test func combiningMarksPastTwoOnOneBaseAreWrittenOut() {
+    @Test func aCombiningMarkPastTheFirstOnOneLetterIsWrittenOut() {
         let escape = "⟨U+0301⟩"
-        // "s" with the first acute composes to U+015B; the 39 marks left then count from zero: two stay, 37 are written out.
+        // "s" with the first acute composes to U+015B, which takes no mark: the 39 left are written out.
         let ls = PermissionText.escape("ls" + String(repeating: "\u{301}", count: 40), multiline: false)
-        #expect(Array(scalars(ls).prefix(4)) == [0x6C, 0x15B, 0x301, 0x301])
-        #expect(ls.components(separatedBy: escape).count - 1 == 37)
-        #expect(ls.unicodeScalars.filter { $0.value == 0x301 }.count == 2)
+        #expect(Array(scalars(ls).prefix(2)) == [0x6C, 0x15B])
+        #expect(ls.components(separatedBy: escape).count - 1 == 39)
+        #expect(ls.unicodeScalars.filter { $0.value == 0x301 }.count == 0)
 
         let x = PermissionText.escape("x" + String(repeating: "\u{323}", count: 40), multiline: false)
-        #expect(x.components(separatedBy: "⟨U+0323⟩").count - 1 == 38 && x.unicodeScalars.filter { $0.value == 0x323 }.count == 2)
-        // Marks after a line break or an escape start a count of their own; a mark before any base counts too.
-        #expect(scalars(PermissionText.escape("x\u{323}\u{323}\u{323}\n\u{323}\u{323}\u{323}", multiline: true))
-                == scalars("x\u{323}\u{323}⟨U+0323⟩\n\u{323}\u{323}⟨U+0323⟩"))
-        #expect(scalars(PermissionText.escape("\u{200B}\u{323}\u{323}\u{323}", multiline: true)) == scalars("⟨U+200B⟩\u{323}\u{323}⟨U+0323⟩"))
-        // Two marks on each of two letters are all kept.
-        #expect(scalars(PermissionText.escape("x\u{20D2}\u{20D3}y\u{20D2}\u{20D3}", multiline: false)) == [0x78, 0x20D2, 0x20D3, 0x79, 0x20D2, 0x20D3])
+        #expect(x.components(separatedBy: "⟨U+0323⟩").count - 1 == 39 && x.unicodeScalars.filter { $0.value == 0x323 }.count == 1)
+        // A mark after a line break or an escape has no letter to sit on, and nor has one before any letter.
+        #expect(scalars(PermissionText.escape("x\u{323}\u{323}\n\u{323}", multiline: true)) == scalars("x\u{323}⟨U+0323⟩\n⟨U+0323⟩"))
+        #expect(scalars(PermissionText.escape("\u{200B}\u{323}", multiline: true)) == scalars("⟨U+200B⟩⟨U+0323⟩"))
+        // Enclosing marks are marks of another block: written out.
+        #expect(scalars(PermissionText.escape("x\u{20D2}\u{20D3}", multiline: false)) == scalars("x⟨U+20D2⟩⟨U+20D3⟩"))
+        // One mark on each of two letters is kept.
+        #expect(scalars(PermissionText.escape("x\u{323}c\u{331}", multiline: false)) == [0x78, 0x323, 0x63, 0x331])
+        #expect(scalars(PermissionText.escape("x\u{323}c\u{331}\u{331}", multiline: false)) == scalars("x\u{323}c\u{331}⟨U+0331⟩"))
     }
 
     @Test func theLimitCountsScalarsNotCharacters() {
-        // A letter with two marks is one character and three scalars.
-        func command(marks: Int, plain: Int) -> String { "x" + String(repeating: "\u{323}", count: marks) + String(repeating: "b", count: plain) }
-        let exact = command(marks: 2, plain: PermissionPrompt.detailLimit - 3)
-        #expect(exact.unicodeScalars.count == PermissionPrompt.detailLimit && exact.count == PermissionPrompt.detailLimit - 2)
+        // A letter with a mark is one character and two scalars.
+        func command(letters: Int, plain: Int) -> String { String(repeating: "x\u{323}", count: letters) + String(repeating: "b", count: plain) }
+        let exact = command(letters: 100, plain: PermissionPrompt.detailLimit - 200)
+        #expect(exact.unicodeScalars.count == PermissionPrompt.detailLimit && exact.count == PermissionPrompt.detailLimit - 100)
         #expect(parse("Bash", ["command": exact]) != nil)
-        let over = command(marks: 2, plain: PermissionPrompt.detailLimit - 2)
+        let over = command(letters: 100, plain: PermissionPrompt.detailLimit - 199)
         #expect(over.unicodeScalars.count == PermissionPrompt.detailLimit + 1 && over.count < PermissionPrompt.detailLimit)
         #expect(parse("Bash", ["command": over]) == nil)
-        // The marks past two are written out, eight scalars each, and count as such.
-        let escaped = command(marks: 4, plain: PermissionPrompt.detailLimit - 5)
+        // A second mark is written out, eight scalars, and counts as such.
+        let escaped = "x\u{323}\u{323}" + String(repeating: "b", count: PermissionPrompt.detailLimit - 3)
         #expect(escaped.unicodeScalars.count == PermissionPrompt.detailLimit && parse("Bash", ["command": escaped]) == nil)
     }
 
