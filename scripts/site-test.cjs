@@ -197,6 +197,12 @@ const pickLang = async (page, lang) => {
     check(await label() === 'Copied', `copy button ${i}: label is not Copied after click`);
     await cp.clock.runFor(1500);
     check(await label() === 'Copy', `copy button ${i}: label did not return to Copy`);
+    // A second click before the label resets must not keep "Copied" for good.
+    await copyBtns[i].click();
+    await cp.clock.runFor(500);
+    await copyBtns[i].click();
+    await cp.clock.runFor(1500);
+    check(await label() === 'Copy', `copy button ${i}: label stuck on "${await label()}" after two quick clicks`);
   }
   await cctx.close();
 

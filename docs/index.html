@@ -873,12 +873,14 @@ open build/Nunsseop.app</pre></div>
   document.addEventListener('touchstart', function () {}, { passive: true });
 
   document.querySelectorAll('[data-copy]').forEach(function (btn) {
+    var original = btn.innerHTML;
+    var reset;
     btn.addEventListener('click', function () {
       var text = btn.getAttribute('data-copy');
-      var original = btn.innerHTML;
       var show = function (labels) {
         btn.textContent = labels[document.body.dataset.lang] || labels.en;
-        setTimeout(function () { btn.innerHTML = original; }, 1400);
+        clearTimeout(reset);
+        reset = setTimeout(function () { btn.innerHTML = original; }, 1400);
       };
       var done = function () { show(COPIED); };
       var failed = function () {
