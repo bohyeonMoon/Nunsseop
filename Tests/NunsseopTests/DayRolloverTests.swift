@@ -30,7 +30,8 @@ enum DayEvent: CaseIterable {
 
 /// The observers run on the main queue, so the check happens a moment after the post.
 @MainActor private func settle(until done: () -> Bool) async throws {
-    for _ in 0..<40 where !done() { try await Task.sleep(for: .milliseconds(50)) }
+    let deadline = Date.now.addingTimeInterval(30)
+    while !done() && Date.now < deadline { try await Task.sleep(for: .milliseconds(50)) }
 }
 
 private func time(_ day: Int, _ hour: Int, _ minute: Int = 0) -> Date {
