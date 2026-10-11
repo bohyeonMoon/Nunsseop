@@ -115,4 +115,18 @@ struct CallServiceTests {
         #expect(CallMonitor.browser(for: "com.google.Chrome.canary")?.bundleID == "com.google.Chrome.canary")
         #expect(CallMonitor.browser(for: "com.google.Chrome.canary.helper")?.bundleID == "com.google.Chrome.canary")
     }
+
+    @Test(arguments: [
+        ("com.google.Chrome", "com.google.Chrome"), ("com.google.Chrome.beta", "com.google.Chrome.beta"),
+        ("com.google.Chrome.dev", "com.google.Chrome.dev"),
+        ("com.microsoft.edgemac", "com.microsoft.edgemac"), ("com.microsoft.edgemac.Beta", "com.microsoft.edgemac.Beta"),
+        ("com.microsoft.edgemac.Dev", "com.microsoft.edgemac.Dev"), ("com.microsoft.edgemac.Canary", "com.microsoft.edgemac.Canary"),
+        ("com.brave.Browser", "com.brave.Browser"), ("com.brave.Browser.beta", "com.brave.Browser.beta"),
+        ("com.brave.Browser.dev", "com.brave.Browser.dev"),
+        ("com.brave.Browser.nightly", "com.brave.Browser.nightly"),
+    ])
+    func releaseChannelsAreNotTheStableBrowser(bundleID: String, expected: String) {
+        #expect(CallMonitor.browser(for: bundleID)?.bundleID == expected)
+        #expect(CallMonitor.browser(for: bundleID + ".helper")?.bundleID == expected)
+    }
 }
