@@ -182,10 +182,15 @@ final class NotifyServer: @unchecked Sendable {
     var onNotify: (@MainActor (Notice) -> Void)?
     var onAgent: (@MainActor (AgentEvent) -> Void)?
 
-    private var listener: NWListener?
+    private let listenPort: UInt16
     private let queue = DispatchQueue(label: "nunsseop.notify")
     /// Touched only on `queue`.
+    private var listener: NWListener?
+    private var retry: DispatchWorkItem?
+    private var retryDelay = NotifyServer.firstRetryDelay
     private var openConnections = 0
+    private static let firstRetryDelay = 1.0
+    private static let lastRetryDelay = 4.0
     private static let maxConnections = 8
     static let maxRequestBytes = 65_536
     let token: String
@@ -233,7 +238,8 @@ final class NotifyServer: @unchecked Sendable {
             .appendingPathComponent("Nunsseop/notify-token")
     }
 
-    init() {
+    init(port: UInt16 = NotifyServer.port) {
+        listenPort = port
         let url = Self.tokenURL
         if let existing = try? String(contentsOf: url, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines),
            existing.count >= 32 {
@@ -247,19 +253,50 @@ final class NotifyServer: @unchecked Sendable {
     }
 
     func start() {
-        guard listener == nil else { return }
-        let parameters = NWParameters.tcp
-        parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: NWEndpoint.Port(rawValue: Self.port)!)
-        parameters.allowLocalEndpointReuse = true
-        guard let listener = try? NWListener(using: parameters) else { return }
-        listener.newConnectionHandler = { [weak self] connection in self?.handle(connection) }
-        listener.start(queue: queue)
-        self.listener = listener
+        queue.sync {
+            guard listener == nil, retry == nil else { return }
+            listen()
+        }
     }
 
     func stop() {
-        listener?.cancel()
-        listener = nil
+        queue.sync {
+            retry?.cancel()
+            retry = nil
+            retryDelay = Self.firstRetryDelay
+            listener?.cancel()
+            listener = nil
+        }
+    }
+
+    /// Runs on `queue`. The port can still be held when the app starts, by sockets of the previous run in TIME_WAIT: the
+    /// listener then fails with EADDRINUSE and stays failed, so it is replaced after a delay until one is ready.
+    private func listen() {
+        let parameters = NWParameters.tcp
+        parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: NWEndpoint.Port(rawValue: listenPort)!)
+        parameters.allowLocalEndpointReuse = true
+        guard let listener = try? NWListener(using: parameters) else { return }
+        listener.newConnectionHandler = { [weak self] connection in self?.handle(connection) }
+        listener.stateUpdateHandler = { [weak self, weak listener] state in
+            guard let self, let listener, self.listener === listener else { return }
+            switch state {
+            case .ready:
+                retryDelay = Self.firstRetryDelay
+            case .failed:
+                listener.cancel()
+                self.listener = nil
+                let work = DispatchWorkItem { [weak self] in
+                    self?.retry = nil
+                    self?.listen()
+                }
+                retry = work
+                queue.asyncAfter(deadline: .now() + retryDelay, execute: work)
+                retryDelay = min(retryDelay * 2, Self.lastRetryDelay)
+            default: break
+            }
+        }
+        listener.start(queue: queue)
+        self.listener = listener
     }
 
     private func handle(_ connection: NWConnection) {
