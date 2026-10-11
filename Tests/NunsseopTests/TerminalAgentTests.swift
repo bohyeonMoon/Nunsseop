@@ -539,8 +539,11 @@ struct WezTermSnippetTests {
         WezTerm.focus(pane: "١٢", cli: cli)   // not ASCII digits: ignored
         WezTerm.focus(pane: "7", cli: cli)
         let args = dir.appendingPathComponent("args")
-        for _ in 0..<100 where !FileManager.default.fileExists(atPath: args.path) { usleep(20_000) }
-        #expect((try? String(contentsOf: args, encoding: .utf8)) == "cli --no-auto-start activate-pane --pane-id 7 ")
+        // The CLI runs in the background: wait for what it writes, not just for the file, which exists before the write.
+        let read = { (try? String(contentsOf: args, encoding: .utf8)) ?? "" }
+        let deadline = Date.now.addingTimeInterval(30)
+        while !read().hasSuffix("--pane-id 7 ") && Date.now < deadline { usleep(20_000) }
+        #expect(read() == "cli --no-auto-start activate-pane --pane-id 7 ")
     }
 }
 
@@ -704,7 +707,8 @@ struct NoticeClickTests {
         server.arguments = ["-c", script, path]
         try server.run()
         defer { server.terminate(); try? FileManager.default.removeItem(atPath: path) }
-        for _ in 0..<100 where !FileManager.default.fileExists(atPath: path) { usleep(20_000) }
+        let deadline = Date.now.addingTimeInterval(30)
+        while !FileManager.default.fileExists(atPath: path) && Date.now < deadline { usleep(20_000) }
         #expect(TerminalFocus.send(["switch-project|A", "switch-tab|B"], toSocket: path) == ["ok:switch-project|A", "ok:switch-tab|B"])
         #expect(TerminalFocus.send(["x"], toSocket: "/tmp/nunsseop-missing.sock").isEmpty)
     }
@@ -724,7 +728,8 @@ struct NoticeClickTests {
         server.arguments = ["-c", script, path]
         try server.run()
         defer { server.terminate(); try? FileManager.default.removeItem(atPath: path) }
-        for _ in 0..<100 where !FileManager.default.fileExists(atPath: path) { usleep(20_000) }
+        let deadline = Date.now.addingTimeInterval(30)
+        while !FileManager.default.fileExists(atPath: path) && Date.now < deadline { usleep(20_000) }
         let commands = ["switch-project|A", "switch-worktree|B|A", "switch-tab|C"]
         #expect(MuxyNotice.send(commands, toSocket: path) == commands.map { "ok \($0)" })
         // On one connection only the first would get through.
