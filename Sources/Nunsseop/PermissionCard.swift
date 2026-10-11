@@ -57,9 +57,21 @@ enum PermissionLayout {
         let caption: CGFloat
     }
 
-    static func measure(scrollText: String, grant: PermissionPrompt.Grant?, place: Place) -> Measure {
-        Measure(scroll: height(scrollText, font: codeFont, width: place.scrollWidth),
-                rules: grant?.rules.reduce(0) { $0 + height($1, font: codeFont, width: place.width) } ?? 0,
+    /// What the title takes in a closed card's top row on a display without a camera, which is the narrowest: the row less
+    /// the symbol, the gaps and a "1 of 3".
+    static let titleRoom: CGFloat = 260
+    static let titleFont = NSFont.systemFont(ofSize: 11, weight: .semibold)
+
+    /// Whether the title and the folder after it show in full on one line.
+    static func titleFits(_ title: String, folder: String) -> Bool {
+        func width(_ text: String, _ font: NSFont) -> CGFloat { (text as NSString).size(withAttributes: [.font: font]).width }
+        return width(title, titleFont) + (folder.isEmpty ? 0 : 6 + width(folder, NSFont.systemFont(ofSize: 11))) <= titleRoom
+    }
+
+    /// `isolatedText` is the scrolling text with its lines already isolated, as it is drawn.
+    static func measure(isolatedText: String, grant: PermissionPrompt.Grant?, place: Place) -> Measure {
+        Measure(scroll: height(isolatedText, font: codeFont, width: place.scrollWidth),
+                rules: grant?.rules.reduce(0) { $0 + height(PermissionText.isolated($1), font: codeFont, width: place.width) } ?? 0,
                 caption: grant.map { height($0.caption, font: captionFont, width: place.width) } ?? 0)
     }
 
@@ -69,7 +81,7 @@ enum PermissionLayout {
 
     /// Whether every rule shows whole in the rows the card has for them.
     static func offers(_ grant: PermissionPrompt.Grant, place: Place) -> Bool {
-        rows(measure(scrollText: "", grant: grant, place: place).rules) <= PermissionPrompt.Grant.maxRuleRows
+        rows(measure(isolatedText: "", grant: grant, place: place).rules) <= PermissionPrompt.Grant.maxRuleRows
     }
 
     /// The rule "Always allow" would add, only when all of it shows without clipping.
@@ -193,10 +205,22 @@ struct PermissionDetail: View {
     let visible: CGFloat
     /// How tall the text was measured to be before it was drawn, used until the drawn text reports its own height.
     let planned: CGFloat
-    @State private var drawn: CGFloat?
+    @State private var drawn: Drawn?
+
+    /// A height the drawn text reported, and the prompt it was drawn for.
+    struct Drawn: Equatable {
+        let prompt: UUID
+        let height: CGFloat
+    }
+
+    /// What the text takes: what was drawn for this prompt, never what was drawn for the one before it.
+    static func contentHeight(planned: CGFloat, drawn: Drawn?, prompt: UUID) -> CGFloat {
+        guard let drawn, drawn.prompt == prompt else { return planned }
+        return drawn.height
+    }
 
     var body: some View {
-        let hidden = PermissionLayout.hiddenRows(content: drawn ?? planned, visible: visible)
+        let hidden = PermissionLayout.hiddenRows(content: Self.contentHeight(planned: planned, drawn: drawn, prompt: prompt.id), visible: visible)
         VStack(alignment: .leading, spacing: PermissionLayout.noteHeight - 12) {
             ScrollView(.vertical) {
                 Text(styled)
@@ -206,7 +230,7 @@ struct PermissionDetail: View {
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                     .background(GeometryReader { Color.clear.preference(key: DrawnHeight.self, value: $0.size.height) })
             }
-            .onPreferenceChange(DrawnHeight.self) { drawn = $0 }
+            .onPreferenceChange(DrawnHeight.self) { drawn = Drawn(prompt: prompt.id, height: $0) }
             .scrollIndicators(.visible)
             .frame(height: visible)
             if hidden > 0 {
@@ -219,16 +243,18 @@ struct PermissionDetail: View {
         }
     }
 
-    /// Flags first, the sandbox being off in the warning colour, then the detail, then the rest quieter.
+    /// The tool's name when the title cuts it, flags next, the sandbox being off in the warning colour, then the detail,
+    /// then the rest quieter; every line isolated, as it was measured.
     var styled: AttributedString {
         var result = AttributedString()
         func add(_ text: String, _ color: Color) {
             guard !text.isEmpty else { return }
             if !result.characters.isEmpty { result.append(AttributedString("\n")) }
-            var part = AttributedString(text)
+            var part = AttributedString(PermissionText.isolated(text))
             part.foregroundColor = color
             result.append(part)
         }
+        add(prompt.toolLine, .white.opacity(0.85))
         for flag in prompt.flags { add(flag.text, flag.warns ? .orange : .white) }
         add(prompt.detail, .white.opacity(0.85))
         add(prompt.secondary, .white.opacity(0.6))
@@ -249,7 +275,7 @@ private struct PermissionGrantNote: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(grant.rules.enumerated()), id: \.offset) { _, rule in
-                Text(verbatim: rule)
+                Text(verbatim: PermissionText.isolated(rule))
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(.white)
                     .fixedSize(horizontal: false, vertical: true)
@@ -270,10 +296,10 @@ struct PermissionTitle: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Text(verbatim: prompt.title).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
+            Text(verbatim: PermissionText.isolated(prompt.title)).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
                 .truncationMode(PermissionLayout.titleTruncation)
             if !prompt.folder.isEmpty {
-                Text(verbatim: prompt.folder).font(.system(size: 11)).foregroundStyle(.white.opacity(0.55))
+                Text(verbatim: PermissionText.isolated(prompt.folder)).font(.system(size: 11)).foregroundStyle(.white.opacity(0.55))
                     .truncationMode(PermissionLayout.titleTruncation)
             }
         }
@@ -334,6 +360,8 @@ struct PermissionCard: View {
                            answer: answer)
                 .padding(.horizontal, 6)
         }
+        // Whatever the system's language: nothing here may be mirrored.
+        .environment(\.layoutDirection, .leftToRight)
     }
 }
 
@@ -364,5 +392,7 @@ struct PermissionPanel: View {
                            answer: answer)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // Whatever the system's language: nothing here may be mirrored.
+        .environment(\.layoutDirection, .leftToRight)
     }
 }

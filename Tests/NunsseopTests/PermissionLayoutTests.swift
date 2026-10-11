@@ -29,12 +29,20 @@ struct PermissionLayoutTests {
          String(repeating: "😀", count: 80), "a\n\nb\n" + String(repeating: "c", count: 100) + "\nd",
          String(repeating: "/very/long/path/segment", count: 12), String(repeating: "⟨U+200B⟩", count: 30),
          "    indented\n        more indented\n\tsh", sixTokens, threeWords, longRule, "a\n", "a\n\n\n", "\n\n\n", "x\n\n y", " \n \n ",
-         String(repeating: "e\u{301}", count: 200)]
+         String(repeating: "e\u{301}", count: 200), rtl, "⇥ tabbed ⇥ ⇥ text", "⚠️ ❤️ 👨‍👩‍👧 done", "אבגד " + String(repeating: "שלום עולם ", count: 30),
+         "مرحبا " + String(repeating: "echo ", count: 40), "\(rtl)\n\(rtl)\n\n\(rtl)", arabicDetail, arabicRule]
     }
 
+    private let rtl = "א echo safe ; ב rm -rf /tmp/x ג ls"
+    /// Arabic text that wraps in one row fewer when it is not isolated: in the width of the card's scrolling text, and of its rules.
+    private let arabicDetail = "ا.ثبث1اثب1ثتب1ث1  .تاب1تب.ثبت1 11. .ثا  تا1.1اببا 1ثبثااا1ثبث  اات بثت1ت.ثثث11بت.تبتبتا "
+    private let arabicRule = "1 1تثثب  ات اثاتث.1بباتاثا ب.ت1تثبثبتاا1.ت1ثث1ت1ثت1ب1بب1.1ا ببتب.ات.1.ثث 1تث "
+    /// A tool name of 100 characters, as an MCP server would send one.
+    private let longName = "mcp__enterprise_wikis__search_documents_by_title_and_return_every_matching_paragraph_and_all_authors"
+
     private func prompt(_ detail: String, grant: PermissionPrompt.Grant? = nil, flags: [PermissionPrompt.Flag] = [],
-                        secondary: String = "") -> PermissionPrompt {
-        PermissionPrompt(id: UUID(), title: "Run a command", symbol: "terminal", detail: detail, flags: flags, secondary: secondary,
+                        secondary: String = "", title: String = "Run a command") -> PermissionPrompt {
+        PermissionPrompt(id: UUID(), title: title, symbol: "terminal", detail: detail, flags: flags, secondary: secondary,
                          folder: "proj", grant: grant)
     }
 
@@ -43,21 +51,33 @@ struct PermissionLayoutTests {
     @Test func theMeasuredHeightIsWhatTheViewDrawsAtTheNarrowestCardAndPanel() {
         for place in [PermissionLayout.Place.card, .panel] {
             for text in samples {
-                let measured = PermissionLayout.height(text, font: PermissionLayout.codeFont, width: place.scrollWidth)
-                let real = drawn(text, width: place.scrollWidth)
+                let isolated = PermissionText.isolated(text)
+                let measured = PermissionLayout.height(isolated, font: PermissionLayout.codeFont, width: place.scrollWidth)
+                let real = drawn(isolated, width: place.scrollWidth)
                 #expect(abs(measured - real) <= 1, "\(place), \(text.prefix(20))…: drawn \(real), measured \(measured)")
             }
         }
     }
 
+    @Test func theMeasureIsOfTheIsolatedTextBecauseIsolatingChangesTheRowsOfSomeArabic() {
+        func rows(_ text: String, width: CGFloat) -> Int {
+            PermissionLayout.rows(PermissionLayout.height(text, font: PermissionLayout.codeFont, width: width))
+        }
+        let scroll = PermissionLayout.Place.card.scrollWidth, rule = PermissionLayout.Place.card.width
+        #expect(rows(arabicDetail, width: scroll) == 2 && rows(PermissionText.isolated(arabicDetail), width: scroll) == 3)
+        #expect(rows(arabicRule, width: rule) == 2 && rows(PermissionText.isolated(arabicRule), width: rule) == 3)
+        let shown = prompt(arabicDetail, grant: .init(rules: [arabicRule], place: .session))
+        #expect(PermissionLayout.rows(shown.measure(.card).scroll) == 3 && PermissionLayout.rows(shown.measure(.card).rules) == 3)
+    }
+
     @Test func longTokensTakeTheRowsTheViewReallyNeeds() {
         // A token too long to share a row with the next one wraps to a row of its own, which no character count sees.
-        let rows = { (text: String) in PermissionLayout.rows(PermissionLayout.height(text, font: PermissionLayout.codeFont,
+        let rows = { (text: String) in PermissionLayout.rows(PermissionLayout.height(PermissionText.isolated(text), font: PermissionLayout.codeFont,
                                                                                     width: PermissionLayout.Place.card.scrollWidth)) }
         #expect(rows(sixTokens) == 6)
         #expect(rows(threeWords) == 3)
         #expect(rows(longRule) == 4)
-        #expect(abs(drawn(sixTokens, width: PermissionLayout.Place.card.scrollWidth) - 6 * PermissionLayout.rowHeight) <= 1)
+        #expect(abs(drawn(PermissionText.isolated(sixTokens), width: PermissionLayout.Place.card.scrollWidth) - 6 * PermissionLayout.rowHeight) <= 1)
     }
 
     // MARK: Nothing the prompt shows is hidden without saying so
@@ -166,12 +186,15 @@ struct PermissionLayoutTests {
         let gate = PermissionClickGate()
         let grants: [PermissionPrompt.Grant?] = [nil, .init(rules: ["Bash(npm run *)"], place: .localSettings),
                                                  .init(rules: ["Bash(git status:*)", "Read(/a/**)", "WebFetch"], place: .userSettings),
-                                                 .init(rules: ["Bash(" + token(29) + " " + token(29) + " " + token(29) + ")"], place: .session)]
+                                                 .init(rules: ["Bash(" + token(29) + " " + token(29) + " " + token(29) + ")"], place: .session),
+                                                 .init(rules: [arabicRule], place: .session)]
         let flags = [PermissionPrompt.Flag(text: "Sandbox off", warns: true), PermissionPrompt.Flag(text: "Runs in the background", warns: false)]
         for grant in grants {
-            for detail in ["", "ls", "a\nb\nc\nd", String(repeating: "line of text\n", count: 30), token(900), sixTokens, threeWords] {
+            for detail in ["", "ls", "a\nb\nc\nd", String(repeating: "line of text\n", count: 30), token(900), sixTokens, threeWords, rtl,
+                           "\(rtl)\n\n\(rtl)\n", "⇥ ⇥ ⚠️ 👨‍👩‍👧", arabicDetail] {
                 for hasNotch in [true, false] {
-                    let prompt = prompt(detail, grant: grant, flags: detail.isEmpty ? [] : flags, secondary: detail.isEmpty ? "" : "why: tests")
+                    let prompt = prompt(detail, grant: grant, flags: detail.isEmpty ? [] : flags, secondary: detail.isEmpty ? "" : "why: tests",
+                                        title: detail == rtl ? longName : "Run a command")
                     let view = PermissionBody(prompt: prompt, showsTitle: hasNotch, stacked: true, place: .card, gate: gate) { _ in }
                         .padding(.horizontal, 6)
                     // The room under the buttons is the shape's, not the body's.
@@ -193,6 +216,10 @@ struct PermissionLayoutTests {
         hosting.layoutSubtreeIfNeeded()
         let bitmap = try #require(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
         hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
+        return try recognized(bitmap)
+    }
+
+    private func recognized(_ bitmap: NSBitmapImageRep) throws -> String {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.usesLanguageCorrection = false
@@ -223,6 +250,182 @@ struct PermissionLayoutTests {
 
     // MARK: The note
 
+    // MARK: Right-to-left letters
+
+    /// The view drawn four pixels to the point, white on black, for reading ink off.
+    private func snapshot<V: View>(_ view: V, width: CGFloat, height: CGFloat, direction: LayoutDirection = .leftToRight) throws -> NSBitmapImageRep {
+        let hosting = NSHostingView(rootView: view.environment(\.layoutDirection, direction)
+            .frame(width: width, height: height, alignment: .topLeading).background(Color.black).environment(\.colorScheme, .dark))
+        hosting.frame = CGRect(x: 0, y: 0, width: width, height: height)
+        hosting.layoutSubtreeIfNeeded()
+        let bitmap = try #require(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(width) * 4, pixelsHigh: Int(height) * 4, bitsPerSample: 8,
+                                                   samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+                                                   bytesPerRow: 0, bitsPerPixel: 0))
+        bitmap.size = hosting.bounds.size
+        hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
+        return bitmap
+    }
+
+    /// Where the ink is from left to right: runs of columns that have some, as x ranges in points, told apart by gaps wider than `gap`.
+    private func inkRuns(_ bitmap: NSBitmapImageRep, gap: CGFloat = 3.5) throws -> [ClosedRange<CGFloat>] {
+        let image = try #require(bitmap.cgImage)
+        let width = image.width, height = image.height
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        let context = try #require(CGContext(data: &pixels, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+                                             space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        let scale = CGFloat(width) / bitmap.size.width
+        var runs: [ClosedRange<CGFloat>] = []
+        var start: Int?, last = 0
+        for x in 0..<width where (0..<height).contains(where: { pixels[($0 * width + x) * 4 + 1] > 90 }) {
+            if let first = start, CGFloat(x - last) > gap * scale {
+                runs.append(CGFloat(first) / scale...CGFloat(last + 1) / scale)
+                start = x
+            } else if start == nil {
+                start = x
+            }
+            last = x
+        }
+        if let first = start { runs.append(CGFloat(first) / scale...CGFloat(last + 1) / scale) }
+        return runs
+    }
+
+    /// The width in letters of every run wider than a Hebrew letter: for the sample, "echo safe ; ב rm -rf /tmp/x ג ls" is
+    /// 4 4 2 3 6 2 left to right, and 2 2 3 6 4 4 once the clauses are turned around.
+    private func clauses(_ runs: [ClosedRange<CGFloat>]) -> [Int] {
+        let cell = PermissionLayout.codeFont.maximumAdvancement.width
+        return runs.map { Int((($0.upperBound - $0.lowerBound) / cell).rounded()) }.filter { $0 >= 2 }
+    }
+
+    private let inOrder = [4, 4, 2, 3, 6, 2]
+    private let turnedAround = [2, 2, 3, 6, 4, 4]
+
+    @Test func rightToLeftLettersDoNotReorderTheClausesOfTheDetailTheRulesOrTheTitle() throws {
+        // Without the isolates the same text, drawn the same way, is turned around; that is what the check tells apart.
+        let plain = try snapshot(Text(verbatim: rtl).font(.system(size: 11, design: .monospaced)).foregroundStyle(.white), width: 332, height: 20)
+        #expect(clauses(try inkRuns(plain)) == turnedAround)
+
+        let shown = prompt(rtl)
+        let detail = try snapshot(PermissionDetail(prompt: shown, visible: 40, planned: 40), width: 332, height: 40)
+        #expect(clauses(try inkRuns(detail)) == inOrder)
+
+        let withRule = prompt("", grant: .init(rules: [rtl], place: .session))
+        let rule = try snapshot(PermissionBody(prompt: withRule, showsTitle: false, stacked: true, place: .card, gate: PermissionClickGate()) { _ in }
+            .frame(height: PermissionLayout.rowHeight, alignment: .top).clipped(), width: 332, height: 40)
+        #expect(clauses(try inkRuns(rule)) == inOrder)
+
+        // The title is not monospaced, so its three words are told apart by length: 10, 5 and 3 letters, longest first.
+        let words = "א mmmmmmmmmm ב mmmmm ג mmm"
+        func widths(title: String, folder: String) throws -> [CGFloat] {
+            let titled = PermissionPrompt(id: UUID(), title: title, symbol: "terminal", detail: "", folder: folder, grant: nil)
+            let runs = try inkRuns(try snapshot(PermissionTitle(prompt: titled), width: 332, height: 20))
+            return runs.map { $0.upperBound - $0.lowerBound }.filter { $0 > 15 }
+        }
+        for (title, folder) in [(words, ""), ("x", words)] {
+            let widths = try widths(title: title, folder: folder)
+            #expect(widths.count == 3 && widths == widths.sorted(by: >), "\(title.prefix(3)) \(widths)")
+        }
+    }
+
+    @Test func whatIsDrawnDoesNotChangeWhenTheSystemReadsRightToLeft() throws {
+        let rule = PermissionPrompt.Grant(rules: ["Bash(ls:*)"], place: .session)
+        let shown = prompt(rtl + "\nsecond line", grant: rule, flags: [.init(text: "Sandbox off", warns: true)], secondary: "description: x", title: longName)
+        let gate = PermissionClickGate()
+        func png(_ view: some View, width: CGFloat, direction: LayoutDirection) throws -> Data {
+            try #require(try snapshot(view, width: width, height: 260, direction: direction).representation(using: .png, properties: [:]))
+        }
+        for hasNotch in [true, false] {
+            let card = PermissionCard(prompt: shown, count: 2, height: 32, earWidth: 102, hasNotch: hasNotch, gate: gate) { _ in }
+            #expect(try png(card, width: 380, direction: .rightToLeft) == png(card, width: 380, direction: .leftToRight), "card, notch \(hasNotch)")
+        }
+        let panel = PermissionPanel(prompt: shown, count: 2, gate: gate) { _ in }
+        #expect(try png(panel, width: 476, direction: .rightToLeft) == png(panel, width: 476, direction: .leftToRight))
+        // A view that doesn't hold its direction does change, so the check can tell.
+        let loose = PermissionBody(prompt: shown, showsTitle: true, stacked: true, place: .card, gate: gate) { _ in }
+        #expect(try png(loose, width: 332, direction: .rightToLeft) != png(loose, width: 332, direction: .leftToRight))
+    }
+
+    // MARK: A one-line edit
+
+    private func edit(old: String = "let a = 1", new: String = "let a = 2", rule: Bool) throws -> PermissionPrompt {
+        let suggestions: [[String: Any]]? = rule
+            ? [["type": "addRules", "behavior": "allow", "destination": "localSettings", "rules": [["toolName": "Edit", "ruleContent": "/a/b.swift"]]]]
+            : nil
+        let body = PermissionTestServer.hookInput(tool: "Edit", input: ["file_path": "/a/b.swift", "old_string": old, "new_string": new],
+                                                  cwd: "/Users/me/proj", suggestions: suggestions)
+        let prompt = try #require(PermissionPrompt.parse(body)).prompt
+        #expect((prompt.grant != nil) == rule)
+        return prompt
+    }
+
+    @Test func aOneLineEditFitsWithoutScrollingWithOrWithoutARuleToAdd() throws {
+        for rule in [false, true] {
+            let prompt = try edit(rule: rule)
+            #expect(prompt.detail == "/a/b.swift\nold:\nlet a = 1\nnew:\nlet a = 2")
+            for place in [PermissionLayout.Place.card, .panel] {
+                #expect(hidden(prompt, place) == 0 && PermissionLayout.rows(prompt.measure(place).scroll) == 5, "\(place), rule \(rule)")
+                #expect(PermissionLayout.rows(PermissionLayout.visibleDetail(prompt, place)) == 5, "\(place), rule \(rule)")
+            }
+            let gate = PermissionClickGate()
+            let read = try reading(PermissionBody(prompt: prompt, showsTitle: false, stacked: true, place: .card, gate: gate) { _ in },
+                                   width: PermissionLayout.Place.card.width, height: 200)
+            #expect(read.contains("let a = 2") && !letters(read).contains("scrollfortherest"), "rule \(rule), read \(read)")
+        }
+        // What does overflow is still counted and said.
+        let long = try edit(old: "a\nb\nc", new: "d\ne\nf\ng\nh", rule: true)
+        #expect(hidden(long, .card) == PermissionLayout.rows(long.measure(.card).scroll) - 5 && hidden(long, .card) > 0)
+    }
+
+    // MARK: The tool's own name
+
+    @Test func aLongToolNameIsReadableInFullInTheScrollingText() throws {
+        #expect(longName.count == 100)
+        let prompt = try #require(PermissionPrompt.parse(PermissionTestServer.hookInput(tool: longName, input: ["query": "x"]))).prompt
+        #expect(prompt.title == longName && prompt.toolLine == "tool: " + longName)
+        let rows = PermissionLayout.rows(prompt.measure(.card).scroll)
+        // Its own rows, then the input.
+        #expect(rows > PermissionLayout.rows(PermissionLayout.height("{\n  \"query\" : \"x\"\n}", font: PermissionLayout.codeFont,
+                                                                      width: PermissionLayout.Place.card.scrollWidth)))
+        let read = try reading(PermissionDetail(prompt: prompt, visible: PermissionLayout.visibleDetail(prompt, .card), planned: prompt.measure(.card).scroll),
+                               width: PermissionLayout.Place.card.width, height: 120)
+        #expect(letters(read).hasPrefix("tool") && letters(read).contains("enterprisewikis") && read.contains("more line"), "read \(read)")
+        // The title still loses its middle, so the name is on the card twice and neither is cut at its end.
+        let title = try reading(PermissionTitle(prompt: prompt), width: 240)
+        #expect(letters(title).hasPrefix("mcp") && letters(title).contains("allauthors"), "read \(title)")
+    }
+
+    // MARK: A new prompt in front
+
+    @Test func aPromptNeverStartsWithTheHeightTheOneBeforeItWasDrawnAt() throws {
+        let one = UUID(), other = UUID()
+        let drawn = PermissionDetail.Drawn(prompt: one, height: 126)
+        #expect(PermissionDetail.contentHeight(planned: 14, drawn: drawn, prompt: one) == 126)
+        #expect(PermissionDetail.contentHeight(planned: 14, drawn: drawn, prompt: other) == 14)
+        #expect(PermissionDetail.contentHeight(planned: 14, drawn: nil, prompt: one) == 14)
+
+        // Drawn: the card of nine lines is replaced by one of a line, and then the other way round.
+        let gate = PermissionClickGate()
+        let long = prompt((1...9).map { "line \($0)" }.joined(separator: "\n")), short = prompt("ls")
+        func front(_ prompt: PermissionPrompt) -> some View {
+            PermissionBody(prompt: prompt, showsTitle: false, stacked: true, place: .card, gate: gate) { _ in }
+                .frame(width: PermissionLayout.Place.card.width, height: 200, alignment: .topLeading).background(Color.black)
+                .environment(\.colorScheme, .dark)
+        }
+        func read(_ hosting: NSHostingView<some View>) throws -> String {
+            hosting.layoutSubtreeIfNeeded()
+            let bitmap = try #require(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
+            hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
+            return try recognized(bitmap)
+        }
+        let hosting = NSHostingView(rootView: AnyView(front(long)))
+        hosting.frame = CGRect(x: 0, y: 0, width: PermissionLayout.Place.card.width, height: 200)
+        #expect(try read(hosting).contains("3 more lines"))
+        hosting.rootView = AnyView(front(short))
+        #expect(!(try read(hosting)).contains("more line"))
+        hosting.rootView = AnyView(front(long))
+        #expect(try read(hosting).contains("3 more lines"))
+    }
+
     @Test func theDrawnCardSaysHowManyRowsItLeavesOut() throws {
         func detail(_ text: String) -> PermissionDetail {
             let prompt = prompt(text)
@@ -237,6 +440,14 @@ struct PermissionLayoutTests {
         #expect(!letters(six).contains("scroll") && letters(six).contains("line"), "read \(six)")
         let blank = try reading(detail(String(repeating: "\n", count: 12)), width: PermissionLayout.Place.card.width, height: 120)
         #expect(blank.contains("7 more lines"), "read \(blank)")
+    }
+
+    @Test func theHeightTheTextReportsOnceDrawnReplacesTheMeasuredOne() throws {
+        // A plan that is wrong, as one is for text the measure can't predict: the drawn text decides what is hidden.
+        let nine = prompt((1...9).map { "line \($0)" }.joined(separator: "\n"))
+        let wrong = try reading(PermissionDetail(prompt: nine, visible: 6 * PermissionLayout.rowHeight, planned: 2 * PermissionLayout.rowHeight),
+                                width: PermissionLayout.Place.card.width, height: 120)
+        #expect(wrong.contains("3 more lines"), "read \(wrong)")
     }
 
     @Test func theAlwaysAllowButtonIsDrawnOnlyWhenTheWholeRuleListFits() throws {
@@ -265,13 +476,17 @@ struct PermissionLayoutTests {
 
     @Test func theSandboxBeingOffIsDrawnInTheWarningColourAndTheRestIsNot() {
         let prompt = prompt("curl x", flags: [.init(text: "Sandbox off", warns: true), .init(text: "Runs in the background", warns: false)],
-                            secondary: "description: y")
+                            secondary: "description: y", title: longName)
         let styled = PermissionDetail(prompt: prompt, visible: 40, planned: 40).styled
-        #expect(String(styled.characters) == prompt.scrollText)
+        #expect(prompt.toolLine == "tool: " + longName)
+        #expect(String(styled.characters) == PermissionText.isolated(prompt.scrollText))
         var colours: [String: Color?] = [:]
         for run in styled.runs { colours[String(styled[run.range].characters)] = run.foregroundColor }
-        #expect(colours["Sandbox off"] == .some(.orange))
-        #expect(colours["Runs in the background"] != .some(.orange) && colours["curl x"] != .some(.orange))
-        #expect(colours["description: y"] != nil)
+        func colour(_ line: String) -> Color?? { colours[PermissionText.isolated(line)] }
+        #expect(colour("Sandbox off") == .some(.orange))
+        #expect(colour("Runs in the background") != .some(.orange) && colour("curl x") != .some(.orange))
+        #expect(colour("tool: " + longName) != .some(.orange))
+        // The description is quieter than the command, like every other field after it.
+        #expect(colour("description: y") == .some(.white.opacity(0.6)) && colour("curl x") == .some(.white.opacity(0.85)))
     }
 }

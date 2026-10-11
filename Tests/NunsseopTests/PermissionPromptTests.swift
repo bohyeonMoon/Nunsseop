@@ -110,8 +110,8 @@ struct PermissionPromptParseTests {
     @Test func aCommandShowsItsDescriptionAndEveryOtherFieldItWasGiven() throws {
         let prompt = try #require(parse("Bash", ["command": "make", "description": "Build it", "timeout": 120000, "cwd": "/tmp"])).prompt
         #expect(prompt.detail == "make" && prompt.flags.isEmpty)
-        #expect(prompt.secondary == "Build it\ncwd: /tmp\ntimeout: 120000")
-        #expect(prompt.scrollText == "make\nBuild it\ncwd: /tmp\ntimeout: 120000")
+        #expect(prompt.secondary == "description: Build it\ncwd: /tmp\ntimeout: 120000")
+        #expect(prompt.scrollText == "make\ndescription: Build it\ncwd: /tmp\ntimeout: 120000")
         let plain = try #require(parse("Bash", ["command": "make"])).prompt
         #expect(plain.secondary.isEmpty && plain.scrollText == "make")
     }
@@ -125,10 +125,22 @@ struct PermissionPromptParseTests {
         #expect(sandbox.flags == [.init(text: "Sandbox off", warns: true)])
         let background = try #require(parse("Bash", ["command": "x", "run_in_background": true])).prompt
         #expect(background.flags == [.init(text: "Runs in the background", warns: false)])
-        // Anything but a real true is listed as it is, since the tool may read a string or a number as true.
-        for value: Any in [false, "true", 1, "yes", NSNull()] {
+        // Anything that is not true is only listed.
+        for value: Any in [false, "false", "yes", "", 0, 0.0, NSNull(), [1], ["a": 1]] {
             let prompt = try #require(parse("Bash", ["command": "x", "dangerouslyDisableSandbox": value])).prompt
             #expect(prompt.flags.isEmpty && prompt.secondary.hasPrefix("dangerouslyDisableSandbox: "), "\(value)")
+        }
+    }
+
+    @Test func aSandboxSwitchedOffInAnyFormTheToolMayReadAsTrueIsFlaggedAndStillListedAsItCame() throws {
+        let cases: [(Any, String)] = [("true", "dangerouslyDisableSandbox: true"), ("TRUE", "dangerouslyDisableSandbox: TRUE"),
+                                      ("True", "dangerouslyDisableSandbox: True"), (1, "dangerouslyDisableSandbox: 1"),
+                                      (-2, "dangerouslyDisableSandbox: -2"), (0.5, "dangerouslyDisableSandbox: 0.5")]
+        for (value, listed) in cases {
+            let prompt = try #require(parse("Bash", ["command": "x", "dangerouslyDisableSandbox": value])).prompt
+            #expect(prompt.flags == [.init(text: "Sandbox off", warns: true)], "\(value)")
+            #expect(prompt.secondary == listed, "\(value)")
+            #expect(prompt.scrollText == "Sandbox off\nx\n\(listed)", "\(value)")
         }
     }
 
@@ -136,17 +148,17 @@ struct PermissionPromptParseTests {
         let edit = try #require(parse("Edit", ["file_path": "/a/b.swift", "old_string": "let a = 1", "new_string": "let a = 2\nlet b = 3",
                                                 "replace_all": true])).prompt
         #expect(edit.title == "Edit a file")
-        #expect(edit.detail == "/a/b.swift\n\nold_string:\nlet a = 1\n\nnew_string:\nlet a = 2\nlet b = 3")
+        #expect(edit.detail == "/a/b.swift\nold:\nlet a = 1\nnew:\nlet a = 2\nlet b = 3")
         #expect(edit.secondary == "replace_all: true")
         // Deleting text is an edit with nothing new in it, and is shown as one.
         let deletion = try #require(parse("Edit", ["file_path": "/a", "old_string": "x", "new_string": ""])).prompt
-        #expect(deletion.detail == "/a\n\nold_string:\nx\n\nnew_string:\n")
+        #expect(deletion.detail == "/a\nold:\nx\nnew:\n")
     }
 
     @Test func aMultiEditShowsEveryEdit() throws {
         let edits: [[String: Any]] = [["old_string": "a", "new_string": "b"], ["old_string": "c", "new_string": "d", "replace_all": true]]
         let prompt = try #require(parse("MultiEdit", ["file_path": "/a/b.swift", "edits": edits])).prompt
-        #expect(prompt.detail == "/a/b.swift\n\nedit 1 of 2:\nold_string:\na\nnew_string:\nb\n\nedit 2 of 2:\nold_string:\nc\nnew_string:\nd\nreplace_all: true")
+        #expect(prompt.detail == "/a/b.swift\nedit 1 of 2:\nold:\na\nnew:\nb\nedit 2 of 2:\nold:\nc\nnew:\nd\nreplace_all: true")
         #expect(prompt.secondary.isEmpty)
         // Edits that are not a list of objects are listed as they came.
         let odd = try #require(parse("MultiEdit", ["file_path": "/a", "edits": ["x", 3]])).prompt
@@ -156,15 +168,15 @@ struct PermissionPromptParseTests {
     @Test func aWriteShowsThePathAndWhatGoesInTheFile() throws {
         let prompt = try #require(parse("Write", ["file_path": "/a/new.txt", "content": "line 1\nline 2"])).prompt
         #expect(prompt.title == "Write a file")
-        #expect(prompt.detail == "/a/new.txt\n\ncontent:\nline 1\nline 2" && prompt.secondary.isEmpty)
+        #expect(prompt.detail == "/a/new.txt\ncontent:\nline 1\nline 2" && prompt.secondary.isEmpty)
         let hidden = try #require(parse("Write", ["file_path": "/a", "content": "x\u{202E}y"])).prompt
-        #expect(hidden.detail == "/a\n\ncontent:\nx⟨U+202E⟩y")
+        #expect(hidden.detail == "/a\ncontent:\nx⟨U+202E⟩y")
     }
 
     @Test func aNotebookEditShowsThePathTheNewSourceAndTheCell() throws {
         let prompt = try #require(parse("NotebookEdit", ["notebook_path": "/a/n.ipynb", "new_source": "print(1)", "cell_id": "c3",
                                                           "edit_mode": "replace", "cell_type": "code"])).prompt
-        #expect(prompt.detail == "/a/n.ipynb\n\nnew_source:\nprint(1)")
+        #expect(prompt.detail == "/a/n.ipynb\nnew_source:\nprint(1)")
         #expect(prompt.secondary == "cell_id: c3\ncell_type: code\nedit_mode: replace")
     }
 
@@ -252,7 +264,7 @@ struct PermissionPromptParseTests {
             #expect(PermissionText.escape("a\(scalar)b", multiline: true) == "a" + String(format: "⟨U+%04X⟩", value) + "b",
                     "U+\(String(value, radix: 16, uppercase: true))")
         }
-        #expect(PermissionText.escape("a\tb\rc", multiline: true) == "a⟨U+0009⟩b⟨U+000D⟩c")
+        #expect(PermissionText.escape("a\tb\rc", multiline: true) == "a⇥ b⟨U+000D⟩c")
         // A written-out escape can't be told from a real one, so the brackets are escaped too.
         #expect(PermissionText.escape("⟨U+202E⟩", multiline: true) == "⟨U+27E8⟩U+202E⟨U+27E9⟩")
         for plain in ["echo \"한글 😀 é\" 'x' $HOME `id` 100% \\n", "👨‍👩‍👧"] where plain != "👨‍👩‍👧" {
@@ -277,8 +289,102 @@ struct PermissionPromptParseTests {
             checked += 1
         }
         #expect(checked > 300)
-        // An emoji's variation selector is shown too.
-        #expect(PermissionText.escape("❤\u{FE0F}", multiline: true) == "❤⟨U+FE0F⟩")
+        // A variation selector with nothing to select for is written out.
+        #expect(PermissionText.escape("a\u{FE0F}", multiline: true) == "a⟨U+FE0F⟩")
+    }
+
+    // MARK: Noise that is not a danger
+
+    @Test func aTabIsShownAsAGlyphAndAnArrowLikeItIsWrittenOutSoTheTwoCantBeConfused() throws {
+        #expect(PermissionText.escape("a\tb", multiline: true) == "a⇥ b")
+        #expect(PermissionText.escape("a\tb", multiline: false) == "a⇥ b")
+        #expect(PermissionText.escape("\t\tx", multiline: true) == "⇥ ⇥ x")
+        #expect(PermissionText.escape("a⇥ b", multiline: true) == "a⟨U+21E5⟩ b")
+        let prompt = try #require(parse("Bash", ["command": "if x\n\tthen y", "description": "a\tb"])).prompt
+        #expect(prompt.detail == "if x\n⇥ then y" && prompt.secondary == "description: a⇥ b")
+        // Marks after a tab start a count of their own, as after any other escape.
+        #expect(scalars(PermissionText.escape("x\u{323}\u{323}\t\u{323}\u{323}\u{323}", multiline: true))
+                == scalars("x\u{323}\u{323}⇥ \u{323}\u{323}⟨U+0323⟩"))
+    }
+
+    @Test func whatEmojiAreMadeOfDisplaysAndNothingElseOfTheKindDoes() {
+        let emoji = ["⚠\u{FE0F}", "❤\u{FE0F}", "👨\u{200D}👩\u{200D}👧", "❤\u{FE0F}\u{200D}🔥", "👩🏽\u{200D}⚕\u{FE0F}", "1\u{FE0F}\u{20E3}",
+                     "✔\u{FE0E}", "🏳\u{FE0F}\u{200D}🌈", "©\u{FE0F}", "echo ⚠\u{FE0F} done"]
+        for text in emoji {
+            #expect(PermissionText.escape(text, multiline: true) == text, "\(text.unicodeScalars.map(\.value))")
+        }
+        func hex(_ value: UInt32) -> String { String(format: "⟨U+%04X⟩", value) }
+        let escaped: [(String, String)] = [
+            ("a\u{FE0F}", "a" + hex(0xFE0F)),
+            ("\u{FE0F}", hex(0xFE0F)),
+            ("\nx\u{FE0F}", "\nx" + hex(0xFE0F)),
+            ("❤\u{FE0F}\u{FE0F}", "❤\u{FE0F}" + hex(0xFE0F)),
+            ("1\u{FE0F}", "1" + hex(0xFE0F)),
+            ("#\u{FE0F}x", "#" + hex(0xFE0F) + "x"),
+            ("😀\u{FE00}", "😀" + hex(0xFE00)),
+            ("😀\u{FE0D}", "😀" + hex(0xFE0D)),
+            ("\u{200D}", hex(0x200D)),
+            ("a\u{200D}b", "a" + hex(0x200D) + "b"),
+            ("😀\u{200D}b", "😀" + hex(0x200D) + "b"),
+            ("a\u{200D}😀", "a" + hex(0x200D) + "😀"),
+            ("😀\u{200D}", "😀" + hex(0x200D)),
+            ("😀\u{200D}\u{200D}😀", "😀" + hex(0x200D) + hex(0x200D) + "😀"),
+            ("😀\u{200D}1", "😀" + hex(0x200D) + "1"),
+            ("😀\u{200D}\u{FE0F}😀", "😀" + hex(0x200D) + hex(0xFE0F) + "😀"),
+            ("😀\n\u{200D}😀", "😀\n" + hex(0x200D) + "😀"),
+            ("😀\u{202E}\u{200D}😀", "😀" + hex(0x202E) + hex(0x200D) + "😀"),
+        ]
+        for (text, expected) in escaped {
+            #expect(PermissionText.escape(text, multiline: true) == expected, "\(text.unicodeScalars.map(\.value))")
+        }
+    }
+
+    @Test func lettersThatSitOnTheCharacterBeforeThemCountTowardTheMarkCap() {
+        let letters: [UInt32] = Array(0xFE70...0xFE7F).filter { $0 != 0xFE75 } + Array(0xFC5E...0xFC63)
+            + [0x0674, 0x0D4E, 0x0EB3, 0x0F88, 0x1843, 0x0F3E, 0x0F3F, 0x0F7F, 0x1A55]
+        for value in letters {
+            let letter = Character(Unicode.Scalar(value)!)
+            let name = "U+\(String(value, radix: 16, uppercase: true))"
+            #expect(PermissionText.escape("a\(letter)\(letter)", multiline: false) == "a\(letter)\(letter)", "\(name)")
+            #expect(PermissionText.escape("a\(letter)\(letter)\(letter)", multiline: false)
+                    == "a\(letter)\(letter)" + String(format: "⟨U+%04X⟩", value), "\(name)")
+            // Mixed with real marks they share the count.
+            #expect(PermissionText.escape("x\u{323}\(letter)\u{301}", multiline: false) == "x\u{323}\(letter)" + "⟨U+0301⟩", "\(name)")
+        }
+        // A letter of their kind that stands alone is not touched.
+        #expect(PermissionText.escape("ab\u{FE70}c", multiline: false) == "ab\u{FE70}c")
+    }
+
+    @Test func everyLineIsBetweenAnIsolateAndItsEndAndTheTextsOwnIsolatesStayWrittenOut() throws {
+        #expect(PermissionText.isolated("a\nb\n\nc") == "\u{2066}\u{2060}a\u{2069}\n\u{2066}\u{2060}b\u{2069}\n\u{2066}\u{2060}\u{2069}\n\u{2066}\u{2060}c\u{2069}")
+        #expect(PermissionText.isolated("") == "")
+        let prompt = try #require(parse("Bash", ["command": "x\u{2066}y\u{2069}z\n\u{2067}w"])).prompt
+        #expect(prompt.detail == "x⟨U+2066⟩y⟨U+2069⟩z\n⟨U+2067⟩w")
+        let drawn = PermissionText.isolated(prompt.detail)
+        // The only isolates in what is drawn are the two around each line.
+        #expect(drawn.unicodeScalars.filter { $0.value == 0x2066 }.count == 2 && drawn.unicodeScalars.filter { $0.value == 0x2069 }.count == 2)
+        #expect(drawn.contains("x⟨U+2066⟩y⟨U+2069⟩z") && drawn.contains("⟨U+2067⟩w"))
+    }
+
+    @Test func aToolNameTooLongForTheTitleIsAlsoTheFirstLineOfTheScrollingText() throws {
+        let long = "mcp__" + String(repeating: "serverpart_", count: 9) + "tool"
+        #expect(long.count > 100)
+        let prompt = try #require(parse(long, ["q": "x"])).prompt
+        #expect(prompt.title == long && prompt.toolLine == "tool: " + long)
+        #expect(prompt.scrollText.hasPrefix("tool: " + long + "\n{"))
+        // It is escaped like the title.
+        let odd = try #require(parse(long + "\u{202E}", [:])).prompt
+        #expect(odd.toolLine == "tool: " + long + "⟨U+202E⟩")
+        // A name that fits, and the fixed titles of the known tools, add nothing.
+        for (tool, input) in [("mcp__github__create_issue", ["title": "x"]), ("Task", [:]), ("Bash", ["command": "ls"]), ("Edit", ["file_path": "/a"])] as [(String, [String: Any])] {
+            let short = try #require(parse(tool, input)).prompt
+            #expect(short.toolLine.isEmpty && !short.scrollText.contains("tool: "), "\(tool)")
+        }
+        // The folder shares the line with the name, so a name that would fit alone but not beside a long folder is written out too.
+        let name = "mcp__github__create_issue"
+        #expect(try #require(parse(name, [:])).prompt.toolLine.isEmpty)
+        let beside = try #require(parse(name, [:], cwd: "/Users/me/" + String(repeating: "folder", count: 12))).prompt
+        #expect(beside.toolLine == "tool: " + name)
     }
 
     // MARK: Combining marks

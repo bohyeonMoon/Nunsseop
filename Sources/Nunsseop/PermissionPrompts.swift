@@ -59,15 +59,22 @@ enum PermissionText {
     /// Scalars that draw nothing, or only blank, yet are not Default_Ignorable_Code_Point (or are, on an older Unicode table).
     private static let blanks: Set<UInt32> = Set([0x2800, 0x3164, 0xFFA0, 0x115F, 0x1160, 0x17B4, 0x17B5, 0x034F, 0xFFFC]
         + Array(0xFE00...0xFE0F) + Array(0xE0100...0xE01EF) + Array(0x180B...0x180F))
+    /// Letters and signs that draw no width of their own and sit on the character before them, as marks do, though they are
+    /// not marks in the Unicode table; they count toward `maxMarks`.
+    private static let markLike: Set<UInt32> = Set(Array(0xFE70...0xFE7F) + Array(0xFC5E...0xFC63)
+        + [0x0674, 0x0D4E, 0x0EB3, 0x0F88, 0x1843, 0x0F3E, 0x0F3F, 0x0F7F, 0x1A55])
     /// Combining marks that may follow one base character; any further ones are written out.
     static let maxMarks = 2
+    /// What a tab is shown as; `⇥` itself is written out, so this can't be faked.
+    static let tab = "⇥ "
 
     /// Text is first put in normalization form C, so a path macOS stored decomposed reads as it was typed. Then control,
     /// formatting (zero-width, direction marks and overrides, tags), every default-ignorable scalar, blanks that draw
     /// nothing (braille blank, Hangul fillers), line and paragraph separators, every space but U+0020, private-use and
     /// unassigned scalars, and combining marks past `maxMarks` on one base are written out as `⟨U+202E⟩`, and so are the
-    /// angle brackets that mark one, so an escape can't be faked. A line break stays one when `multiline`; otherwise it is
-    /// escaped too. CR LF counts as one break.
+    /// angle brackets that mark one, so an escape can't be faked. A tab is shown as `tab`. What emoji are made of stays:
+    /// a variation selector right after an emoji, and a zero-width joiner between two. A line break stays one when
+    /// `multiline`; otherwise it is escaped too. CR LF counts as one break.
     static func escape(_ text: String, multiline: Bool) -> String {
         var result = String.UnicodeScalarView()
         var run = String.UnicodeScalarView()
@@ -87,22 +94,57 @@ enum PermissionText {
         }
         let scalars = Array(text.unicodeScalars)
         var index = 0
+        // The scalar just shown as it is, and whether it was a variation selector.
+        var previous: Unicode.Scalar?
+        var selected = false
         while index < scalars.count {
             let scalar = scalars[index]
             index += 1
-            if scalar == "\r", index < scalars.count, scalars[index] == "\n" { continue }
+            let next = index < scalars.count ? scalars[index] : nil
+            if scalar == "\r", next == "\n" { continue }
             if scalar == "\n" && multiline {
                 flush()
                 result.append(scalar)
+                previous = nil
+            } else if scalar == "\t" {
+                flush()
+                result.append(contentsOf: tab.unicodeScalars)
+                previous = nil
+            } else if let before = previous, !selected, scalar.value == 0xFE0E || scalar.value == 0xFE0F,
+                      before.properties.isEmoji, before.value >= 0x80 || next?.value == 0x20E3 {
+                run.append(scalar)
+                selected = true
+            } else if let before = previous, scalar.value == 0x200D, isEmoji(before), let after = next, isEmoji(after) {
+                run.append(scalar)
+                previous = scalar
+                selected = false
             } else if needsEscape(scalar) {
                 flush()
                 appendEscape(scalar, to: &result)
+                previous = nil
+                selected = false
             } else {
                 run.append(scalar)
+                previous = scalar
+                selected = false
             }
         }
         flush()
         return String(result)
+    }
+
+    /// An emoji that is not an ASCII digit, `#` or `*`, which are Emoji scalars too but plain text on their own.
+    private static func isEmoji(_ scalar: Unicode.Scalar) -> Bool {
+        scalar.properties.isEmoji && scalar.value >= 0x80
+    }
+
+    /// Every line of `text` between U+2066 and U+2069, so letters that read right to left can't turn the line around or
+    /// reorder the clauses around them. It is applied after `escape` has written out the isolates and overrides the text
+    /// itself held, in drawing and in measuring alike. A word joiner follows the isolate: without it SwiftUI breaks a
+    /// line of Hangul with no spaces right after the isolate, leaving its first row empty and a row taller than measured.
+    static func isolated(_ text: String) -> String {
+        guard !text.isEmpty else { return text }
+        return text.components(separatedBy: "\n").map { "\u{2066}\u{2060}\($0)\u{2069}" }.joined(separator: "\n")
     }
 
     private static func appendEscape(_ scalar: Unicode.Scalar, to result: inout String.UnicodeScalarView) {
@@ -111,10 +153,11 @@ enum PermissionText {
 
     private static func isMark(_ scalar: Unicode.Scalar) -> Bool {
         scalar.properties.generalCategory == .nonspacingMark || scalar.properties.generalCategory == .enclosingMark
+            || markLike.contains(scalar.value)
     }
 
     private static func needsEscape(_ scalar: Unicode.Scalar) -> Bool {
-        if scalar == "⟨" || scalar == "⟩" { return true }
+        if scalar == "⟨" || scalar == "⟩" || scalar == "⇥" { return true }
         if scalar.properties.isDefaultIgnorableCodePoint || blanks.contains(scalar.value) { return true }
         switch scalar.properties.generalCategory {
         case .control, .format, .lineSeparator, .paragraphSeparator, .privateUse, .unassigned: return true
@@ -138,6 +181,8 @@ struct PermissionPrompt: Identifiable, Equatable {
     /// The command, path, address or input in full, escaped; line breaks are line breaks. For a file it is the path and
     /// what goes into the file.
     let detail: String
+    /// The tool's whole name when the title is too long to show in full, so it can be read in the scrolling text; else empty.
+    let toolLine: String
     /// Facts about the call that change what it does, such as a sandbox that is off; shown above `detail`.
     let flags: [Flag]
     /// Everything else the call carries, escaped, shown after `detail` in a quieter colour: a command's description and any
@@ -167,16 +212,17 @@ struct PermissionPrompt: Identifiable, Equatable {
         self.secondary = secondary
         self.folder = folder
         self.grant = grant
-        let text = Self.scrollText(flags: flags, detail: detail, secondary: secondary)
-        card = PermissionLayout.measure(scrollText: text, grant: grant, place: .card)
-        panel = PermissionLayout.measure(scrollText: text, grant: grant, place: .panel)
+        toolLine = PermissionLayout.titleFits(title, folder: folder) ? "" : "tool: \(title)"
+        let text = PermissionText.isolated(Self.scrollText(toolLine: toolLine, flags: flags, detail: detail, secondary: secondary))
+        card = PermissionLayout.measure(isolatedText: text, grant: grant, place: .card)
+        panel = PermissionLayout.measure(isolatedText: text, grant: grant, place: .panel)
     }
 
-    /// The scrolling text as drawn and as measured: flags, detail and the rest, a line break between.
-    var scrollText: String { Self.scrollText(flags: flags, detail: detail, secondary: secondary) }
+    /// The scrolling text before its lines are isolated: the tool's name if needed, flags, detail and the rest, a line break between.
+    var scrollText: String { Self.scrollText(toolLine: toolLine, flags: flags, detail: detail, secondary: secondary) }
 
-    private static func scrollText(flags: [Flag], detail: String, secondary: String) -> String {
-        (flags.map(\.text) + [detail, secondary].filter { !$0.isEmpty }).joined(separator: "\n")
+    private static func scrollText(toolLine: String, flags: [Flag], detail: String, secondary: String) -> String {
+        ([toolLine].filter { !$0.isEmpty } + flags.map(\.text) + [detail, secondary].filter { !$0.isEmpty }).joined(separator: "\n")
     }
 
     func measure(_ place: PermissionLayout.Place) -> PermissionLayout.Measure {
@@ -255,6 +301,13 @@ struct PermissionPrompt: Identifiable, Equatable {
     /// there, and lists every other field it was given; any other tool, or a known one whose field isn't the text it
     /// should be, shows its own name and its whole input.
     private static func describe(tool: String, input: [String: Any]) -> Described {
+        func label(_ name: String) -> String {
+            switch name {
+            case "old_string": "old"
+            case "new_string": "new"
+            default: name
+            }
+        }
         func known(_ key: String, _ title: String, _ symbol: String, texts: [String] = [], flagged: Bool = false) -> Described? {
             guard let value = input[key] as? String, !value.isEmpty else { return nil }
             var rest = input
@@ -262,16 +315,16 @@ struct PermissionPrompt: Identifiable, Equatable {
             var described = Described(title: title, symbol: symbol, detail: value)
             for name in texts {
                 guard let text = rest[name] as? String else { continue }
-                described.detail += "\n\n\(name):\n\(text)"
+                described.detail += "\n\(label(name)):\n\(text)"
                 rest[name] = nil
             }
             if let edits = rest["edits"] as? [Any], !edits.isEmpty, edits.allSatisfy({ $0 is [String: Any] }) {
                 for (index, edit) in edits.enumerated() {
                     var fields = edit as? [String: Any] ?? [:]
-                    described.detail += "\n\nedit \(index + 1) of \(edits.count):"
+                    described.detail += "\nedit \(index + 1) of \(edits.count):"
                     for name in ["old_string", "new_string"] {
                         guard let text = fields[name] as? String else { continue }
-                        described.detail += "\n\(name):\n\(text)"
+                        described.detail += "\n\(label(name)):\n\(text)"
                         fields[name] = nil
                     }
                     if !fields.isEmpty { described.detail += "\n" + listing(fields).joined(separator: "\n") }
@@ -280,16 +333,17 @@ struct PermissionPrompt: Identifiable, Equatable {
             }
             var extra: [String] = []
             if flagged {
-                if isTrue(rest["dangerouslyDisableSandbox"]) {
+                if let value = rest["dangerouslyDisableSandbox"], isTruthy(value) {
                     described.flags.append(Flag(text: String(localized: "Sandbox off"), warns: true))
-                    rest["dangerouslyDisableSandbox"] = nil
+                    // A real true is said by the flag; any other form is listed as it came as well.
+                    if isTrue(value) { rest["dangerouslyDisableSandbox"] = nil }
                 }
                 if isTrue(rest["run_in_background"]) {
                     described.flags.append(Flag(text: String(localized: "Runs in the background"), warns: false))
                     rest["run_in_background"] = nil
                 }
                 if let note = rest["description"] as? String, !note.isEmpty {
-                    extra.append(note)
+                    extra.append("description: \(note)")
                     rest["description"] = nil
                 }
             }
@@ -312,10 +366,18 @@ struct PermissionPrompt: Identifiable, Equatable {
         return Described(title: tool, symbol: "puzzlepiece.extension", detail: input.isEmpty ? "" : json)
     }
 
-    /// Only a real JSON `true`: the string "true" or the number 1 is something the tool may read differently, so it is listed.
+    /// A real JSON `true`.
     private static func isTrue(_ value: Any?) -> Bool {
         guard let number = value as? NSNumber, CFGetTypeID(number) == CFBooleanGetTypeID() else { return false }
         return number.boolValue
+    }
+
+    /// Anything a tool may read as true: `true`, the string "true" in any case, a number that isn't zero.
+    private static func isTruthy(_ value: Any) -> Bool {
+        if isTrue(value) { return true }
+        if let text = value as? String { return text.lowercased() == "true" }
+        guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() else { return false }
+        return number.doubleValue != 0
     }
 
     /// Every field as `key: value`, in key order; text as it is, anything else as JSON.
