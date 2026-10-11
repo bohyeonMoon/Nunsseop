@@ -358,5 +358,11 @@
 "Agents" = "代理";
 "Needs input" = "需要输入";
 "Your turn" = "轮到你了";
+"Plan" = "计划";
+"Auto-accept edits" = "自动接受编辑";
+"Auto" = "自动";
+"Don't ask" = "不再询问";
+"Bypass permissions" = "绕过权限";
+"Full access" = "完全访问";
 "Connect Claude Code and Codex in Settings › Alerts to see their sessions here" = "在“设置 › 提醒”中连接 Claude Code 和 Codex 后，它们的会话会显示在这里";
-"The Agents tab lists their sessions with folder, model and context used, read from the tools' own session files on this Mac." = "“代理”标签会列出它们的会话，并显示文件夹、模型和已用上下文，数据读取自这台 Mac 上工具自己的会话文件。";
+"The Agents tab lists their sessions with folder, model, context used and permission mode, read from the tools' own session files on this Mac." = "“代理”标签会列出它们的会话，并显示文件夹、模型、已用上下文和权限模式，数据读取自这台 Mac 上工具自己的会话文件。";

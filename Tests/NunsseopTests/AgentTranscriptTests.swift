@@ -14,6 +14,12 @@ private enum Fixture {
 
     static func claudeUser(cwd: String) -> String { "{\"type\":\"user\",\"cwd\":\"\(cwd)\",\"message\":{\"role\":\"user\",\"content\":\"hello\"}}" }
 
+    static func claudePrompt(mode: String) -> String {
+        "{\"type\":\"user\",\"permissionMode\":\"\(mode)\",\"message\":{\"role\":\"user\",\"content\":\"hello\"}}"
+    }
+
+    static func claudeModeChange(_ mode: String) -> String { "{\"type\":\"permission-mode\",\"permissionMode\":\"\(mode)\",\"sessionId\":\"s\"}" }
+
     static let snapshot = "{\"type\":\"file-history-snapshot\",\"snapshot\":{}}"
 
     static func codexMeta(cwd: String, id: String) -> String {
@@ -22,6 +28,11 @@ private enum Fixture {
 
     static func codexTurn(model: String, cwd: String) -> String {
         "{\"type\":\"turn_context\",\"payload\":{\"model\":\"\(model)\",\"cwd\":\"\(cwd)\"}}"
+    }
+
+    static func codexPolicy(sandbox: String, collaboration: String = "default", approval: String = "on-request") -> String {
+        "{\"type\":\"turn_context\",\"payload\":{\"model\":\"gpt-5.6\",\"approval_policy\":\"\(approval)\","
+            + "\"sandbox_policy\":{\"type\":\"\(sandbox)\"},\"collaboration_mode\":{\"mode\":\"\(collaboration)\",\"settings\":{}}}}"
     }
 
     static func codexTokens(input: Int?) -> String {
@@ -86,19 +97,63 @@ struct AgentTranscriptParseTests {
             Fixture.codexTokens(input: nil),
             Fixture.codexTokens(input: 19_492),
         ])
-        #expect(AgentTranscript.parse(.codex, tail: tail) == AgentTranscript(cwd: "/Users/me/start", model: "gpt-5.6", tokens: 19_492))
+        #expect(AgentTranscript.parse(.codex, tail: tail) == AgentTranscript(cwd: "/Users/me/start", model: "gpt-5.6", tokens: 19_492, mode: .standard))
     }
 
     @Test func codexSkipsAMalformedLastLine() {
         var tail = Fixture.data([Fixture.codexTurn(model: "gpt-5.6", cwd: "/p"), Fixture.codexTokens(input: 100)])
         tail.append(Data("{\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{\"last_to".utf8))
-        #expect(AgentTranscript.parse(.codex, tail: tail) == AgentTranscript(cwd: "/p", model: "gpt-5.6", tokens: 100))
+        #expect(AgentTranscript.parse(.codex, tail: tail) == AgentTranscript(cwd: "/p", model: "gpt-5.6", tokens: 100, mode: .standard))
     }
 
     @Test func theHeadOnlyAddsWhatTheTailDoesNotHave() {
         let head = Fixture.data([Fixture.codexMeta(cwd: "/Users/me/start", id: "s")])
         let tail = Fixture.data([Fixture.codexTokens(input: 5)])
         #expect(AgentTranscript.parse(.codex, head: head, tail: tail) == AgentTranscript(cwd: "/Users/me/start", model: nil, tokens: 5))
+    }
+
+    @Test func claudeTakesThePermissionModeOfTheLatestPromptOrModeChange() {
+        let parse = { (lines: [String]) in AgentTranscript.parse(.claude, tail: Fixture.data(lines)).mode }
+        #expect(parse([Fixture.claudePrompt(mode: "plan"), Fixture.claudePrompt(mode: "acceptEdits")]) == .acceptEdits)
+        // Shift+Tab writes a line of its own between prompts.
+        #expect(parse([Fixture.claudePrompt(mode: "default"), Fixture.claudeModeChange("plan")]) == .plan)
+        #expect(parse([Fixture.claudePrompt(mode: "plan"), Fixture.claudePrompt(mode: "default")]) == .standard)
+        #expect(parse([Fixture.claudePrompt(mode: "bypassPermissions")]) == .bypass)
+        #expect(parse([Fixture.claudePrompt(mode: "auto")]) == .auto)
+        #expect(parse([Fixture.claudePrompt(mode: "dontAsk")]) == .dontAsk)
+        // A mode the app doesn't know is shown as the default rather than as something it isn't.
+        #expect(parse([Fixture.claudePrompt(mode: "plan"), Fixture.claudePrompt(mode: "somethingNew")]) == .standard)
+    }
+
+    @Test func claudeWithoutAModeHasNone() {
+        let tail = Fixture.data([Fixture.claudeUser(cwd: "/p"), Fixture.claudeAssistant(model: "claude-opus-5-5", input: 1, cacheRead: 0, cacheCreation: 0)])
+        #expect(AgentTranscript.parse(.claude, tail: tail).mode == nil)
+    }
+
+    @Test func aSubagentsPermissionModeIsNotTheSessions() {
+        let tail = Fixture.data([Fixture.claudePrompt(mode: "plan"),
+                                 "{\"type\":\"user\",\"isSidechain\":true,\"permissionMode\":\"bypassPermissions\"}"])
+        #expect(AgentTranscript.parse(.claude, tail: tail).mode == .plan)
+    }
+
+    @Test func codexIsInFullAccessOnlyWhenItsSandboxIsDangerFullAccess() {
+        let parse = { (lines: [String]) in AgentTranscript.parse(.codex, tail: Fixture.data(lines)).mode }
+        #expect(parse([Fixture.codexPolicy(sandbox: "danger-full-access", approval: "never")]) == .fullAccess)
+        #expect(parse([Fixture.codexPolicy(sandbox: "workspace-write")]) == .standard)
+        #expect(parse([Fixture.codexPolicy(sandbox: "read-only", approval: "never")]) == .standard)
+        // The latest turn wins, in both directions.
+        #expect(parse([Fixture.codexPolicy(sandbox: "workspace-write"), Fixture.codexPolicy(sandbox: "danger-full-access")]) == .fullAccess)
+        #expect(parse([Fixture.codexPolicy(sandbox: "danger-full-access"), Fixture.codexPolicy(sandbox: "workspace-write")]) == .standard)
+    }
+
+    @Test func codexInPlanCollaborationModeIsPlan() {
+        let tail = Fixture.data([Fixture.codexPolicy(sandbox: "workspace-write", collaboration: "plan")])
+        #expect(AgentTranscript.parse(.codex, tail: tail).mode == .plan)
+    }
+
+    @Test func codexWithoutATurnHasNoMode() {
+        let tail = Fixture.data([Fixture.codexMeta(cwd: "/p", id: "s"), Fixture.codexTokens(input: 5)])
+        #expect(AgentTranscript.parse(.codex, tail: tail).mode == nil)
     }
 
     @Test func modelsAreShownByTheirFamilyAndVersion() {
@@ -159,6 +214,17 @@ struct AgentTranscriptReadTests {
         #expect(try #require(FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) > AgentTranscript.firstWindow)
         #expect(AgentTranscript.read(url, kind: .claude)
                 == AgentTranscript(cwd: "/Users/me/first", model: "claude-opus-5-5", tokens: 90_004))
+    }
+
+    @Test func aPermissionModeBeyondTheFirstWindowIsStillFound() throws {
+        let url = try scratch()
+        defer { try? FileManager.default.removeItem(at: url) }
+        // A long turn after the prompt that set the mode: only that prompt line carries it.
+        let filler = (0..<4_000).map { _ in "{\"type\":\"attachment\",\"text\":\"\(String(repeating: "x", count: 100))\"}" }
+        try Fixture.write([Fixture.claudePrompt(mode: "bypassPermissions")] + filler
+                          + [Fixture.claudeAssistant(model: "claude-opus-5-5", input: 4, cacheRead: 0, cacheCreation: 0)], to: url)
+        #expect(try #require(FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) > 2 * AgentTranscript.firstWindow)
+        #expect(AgentTranscript.read(url, kind: .claude)?.mode == .bypass)
     }
 
     @Test func aHugeLastLineWidensTheWindow() throws {
@@ -250,7 +316,7 @@ struct AgentTranscriptLookupTests {
             transcripts.refresh([key], home: home, now: start.addingTimeInterval(AgentTranscripts.retryInterval - 1))
             #expect(transcripts.transcript(key) == nil)
             transcripts.refresh([key], home: home, now: start.addingTimeInterval(AgentTranscripts.retryInterval))
-            #expect(transcripts.transcript(key) == AgentTranscript(cwd: "/p", model: "gpt-5.6", tokens: 50))
+            #expect(transcripts.transcript(key) == AgentTranscript(cwd: "/p", model: "gpt-5.6", tokens: 50, mode: .standard))
         }
     }
 
