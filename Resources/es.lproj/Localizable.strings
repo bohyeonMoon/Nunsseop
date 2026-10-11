@@ -329,6 +329,7 @@
 "Not connected." = "No conectado.";
 "Something else has changed Claude Code's status line since you connected. Connect again to use the new one." = "Algo ha cambiado la línea de estado de Claude Code desde que la conectaste. Vuelve a conectar para usar la nueva.";
 "Couldn't change Claude Code's settings." = "No se pudieron cambiar los ajustes de Claude Code.";
+"Your previous status line command couldn't be restored. After you disconnect, you can set it again in ~/.claude/settings.json." = "No se pudo restaurar el comando anterior de tu línea de estado. Tras desconectar, puedes volver a establecerlo en ~/.claude/settings.json.";
 "Live Claude limits?" = "¿Límites de Claude en tiempo real?";
 "Nunsseop can read the sign-in Claude Code keeps in the Keychain and ask Anthropic directly for your 5-hour and weekly limits, about once an hour, so they update without Claude Code running." = "Nunsseop puede leer el inicio de sesión que Claude Code guarda en el llavero y pedir directamente a Anthropic tus límites de 5 horas y semanales, aproximadamente cada hora, para que se actualicen sin tener Claude Code abierto.";
 "Turn On" = "Activar";

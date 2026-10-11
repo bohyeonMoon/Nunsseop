@@ -329,6 +329,7 @@
 "Not connected." = "未连接。";
 "Something else has changed Claude Code's status line since you connected. Connect again to use the new one." = "连接之后，Claude Code 的状态栏被其他程序改动了。要使用新的设置，请重新连接。";
 "Couldn't change Claude Code's settings." = "无法修改 Claude Code 的设置。";
+"Your previous status line command couldn't be restored. After you disconnect, you can set it again in ~/.claude/settings.json." = "无法恢复你之前的状态栏命令。断开连接后,你可以在 ~/.claude/settings.json 中重新设置。";
 "Live Claude limits?" = "实时获取 Claude 用量上限？";
 "Nunsseop can read the sign-in Claude Code keeps in the Keychain and ask Anthropic directly for your 5-hour and weekly limits, about once an hour, so they update without Claude Code running." = "Nunsseop 可以读取 Claude Code 存在钥匙串中的登录信息，大约每小时直接向 Anthropic 查询 5 小时和每周上限，无需运行 Claude Code 即可更新。";
 "Turn On" = "开启";

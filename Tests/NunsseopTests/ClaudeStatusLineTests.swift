@@ -134,6 +134,49 @@ struct ClaudeStatusLineFilesTests {
         #expect(restored["command"] as? String == "echo hi")
     }
 
+    @Test func repairingWithTheSavedOriginalKeepsItAndReportsNoLoss() throws {
+        let root = try temporaryFolder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let paths = ClaudeStatusLine.Paths(settings: root.appendingPathComponent("settings.json"), folder: root.appendingPathComponent("Application Support"))
+        try Data(#"{"statusLine":{"type":"command","command":"echo hi"}}"#.utf8).write(to: paths.settings)
+        try ClaudeStatusLine.connect(paths)
+        #expect(!ClaudeStatusLine.originalLost(paths))
+        try FileManager.default.removeItem(at: paths.script)
+        #expect(!ClaudeStatusLine.originalLost(paths))
+        try ClaudeStatusLine.connect(paths)
+        #expect(!ClaudeStatusLine.originalLost(paths))
+
+        // Nothing was set before Nunsseop: the saved original is empty, which is not a loss.
+        try Data(#"{"model":"opus"}"#.utf8).write(to: paths.settings)
+        try ClaudeStatusLine.disconnect(paths)
+        try ClaudeStatusLine.connect(paths)
+        #expect(ClaudeStatusLine.state(paths) == .connected)
+        #expect(!ClaudeStatusLine.originalLost(paths))
+    }
+
+    @Test func repairingWithoutTheSavedOriginalReportsTheLoss() throws {
+        let root = try temporaryFolder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let paths = ClaudeStatusLine.Paths(settings: root.appendingPathComponent("settings.json"), folder: root.appendingPathComponent("Application Support"))
+        try Data(#"{"model":"opus","statusLine":{"type":"command","command":"echo hi"}}"#.utf8).write(to: paths.settings)
+        try ClaudeStatusLine.connect(paths)
+        // The whole folder goes, as when a cleaner app removes it; the settings still point at the script.
+        try FileManager.default.removeItem(at: paths.folder)
+        #expect(ClaudeStatusLine.state(paths) == .notConnected)
+        #expect(!ClaudeStatusLine.originalLost(paths))
+
+        try ClaudeStatusLine.connect(paths)
+        #expect(ClaudeStatusLine.state(paths) == .connected)
+        #expect(ClaudeStatusLine.originalLost(paths))
+        // The command is not invented, and disconnecting leaves no command pointing at the removed script.
+        #expect(!(try String(contentsOf: paths.script, encoding: .utf8)).contains("echo hi"))
+        try ClaudeStatusLine.disconnect(paths)
+        let after = try settings(at: paths.settings)
+        #expect(after["statusLine"] == nil)
+        #expect(after["model"] as? String == "opus")
+        #expect(!ClaudeStatusLine.originalLost(paths))
+    }
+
     @Test func disconnectWithNoOriginalRemovesTheStatusLine() throws {
         let root = try temporaryFolder()
         defer { try? FileManager.default.removeItem(at: root) }
