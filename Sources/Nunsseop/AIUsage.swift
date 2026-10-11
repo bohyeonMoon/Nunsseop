@@ -205,9 +205,18 @@ final class AIUsageModel: ObservableObject {
         var result: [Family: Limits] = [:]
         for (family, limits) in offers {
             guard let limits, (limits.session ?? limits.weekly) != nil else { continue }
-            if let current = result[family], current.updatedAt >= limits.updatedAt { continue }
-            result[family] = limits
+            result[family] = result[family].map { merged($0, limits) } ?? limits
         }
+        return result
+    }
+
+    /// The newer of two readings of the same limits, with the plan and per-model bars the newer one doesn't carry
+    /// (the status line has neither) kept from the older. A tie keeps the first.
+    nonisolated private static func merged(_ current: Limits, _ other: Limits) -> Limits {
+        let (newer, older) = current.updatedAt >= other.updatedAt ? (current, other) : (other, current)
+        var result = newer
+        if result.models.isEmpty { result.models = older.models }
+        if result.plan == nil { result.plan = older.plan }
         return result
     }
 

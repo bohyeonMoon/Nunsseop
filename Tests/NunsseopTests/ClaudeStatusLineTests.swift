@@ -113,6 +113,27 @@ struct ClaudeStatusLineFilesTests {
         }
     }
 
+    @Test func aMissingScriptIsNotConnectedAndConnectingWritesItAgain() throws {
+        let root = try temporaryFolder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let paths = ClaudeStatusLine.Paths(settings: root.appendingPathComponent("settings.json"), folder: root.appendingPathComponent("Application Support"))
+        try Data(#"{"statusLine":{"type":"command","command":"echo hi"}}"#.utf8).write(to: paths.settings)
+        try ClaudeStatusLine.connect(paths)
+        #expect(ClaudeStatusLine.state(paths) == .connected)
+
+        try FileManager.default.removeItem(at: paths.script)
+        #expect(ClaudeStatusLine.state(paths) == .notConnected)
+
+        try ClaudeStatusLine.connect(paths)
+        #expect(ClaudeStatusLine.state(paths) == .connected)
+        #expect(FileManager.default.isExecutableFile(atPath: paths.script.path))
+        // The status line it ran before is still the one it runs, and still what disconnecting puts back.
+        #expect(try String(contentsOf: paths.script, encoding: .utf8).contains("echo hi"))
+        try ClaudeStatusLine.disconnect(paths)
+        let restored = try #require(settings(at: paths.settings)["statusLine"] as? [String: Any])
+        #expect(restored["command"] as? String == "echo hi")
+    }
+
     @Test func disconnectWithNoOriginalRemovesTheStatusLine() throws {
         let root = try temporaryFolder()
         defer { try? FileManager.default.removeItem(at: root) }
