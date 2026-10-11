@@ -152,6 +152,7 @@ enum DayRolloverTests {
             defer { timer.reset() }
             finishTwoSessionsAndStartAThird(timer, clock)
             #expect(timer.completedPomodoros == 2)
+            timer.pause()  // the real ticker would count the now-due session first if the main actor stalled
             clock.date = time(11, 0, 1)
             event.post()
             try await settle { timer.completedPomodoros == 0 }

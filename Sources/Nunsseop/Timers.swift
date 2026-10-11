@@ -37,7 +37,7 @@ final class TimerModel: ObservableObject {
     private var countedDay: Date
     private var dayObservers: [NSObjectProtocol] = []
 
-    init(defaults: UserDefaults = .standard, calendar: Calendar = .current, now: @escaping () -> Date = { .now },
+    init(defaults: UserDefaults = .standard, calendar: Calendar = .autoupdatingCurrent, now: @escaping () -> Date = { .now },
          chime: @escaping () -> Void = { NSSound(named: "Glass")?.play() }) {
         self.defaults = defaults
         cal = calendar

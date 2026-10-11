@@ -62,7 +62,7 @@ final class CalendarModel: ObservableObject {
     private let isDemo = false
     #endif
 
-    init(calendar: Calendar = .current, now: @escaping () -> Date = { .now }) {
+    init(calendar: Calendar = .autoupdatingCurrent, now: @escaping () -> Date = { .now }) {
         cal = calendar
         self.now = now
         let startOfToday = calendar.startOfDay(for: now())
@@ -184,7 +184,7 @@ final class CalendarModel: ObservableObject {
         ]
     }
 
-    /// The selected day and the six days after it.
+    /// Today and the six days after it.
     var week: [Date] {
         (0..<7).compactMap { cal.date(byAdding: .day, value: $0, to: today) }
     }
