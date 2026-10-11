@@ -55,7 +55,7 @@ final class AppSettings: ObservableObject {
     @Published var herdrNotifications: Bool = AppSettings.load("herdrNotifications", default: true) {
         didSet { save(herdrNotifications, "herdrNotifications"); updateWatchesHerdr() }
     }
-    /// herdr is watched for its notifications, or for the agents count in the closed notch, or both.
+    /// herdr is watched for its notifications, for the agents count in the closed notch or the Agents tab, or any of them.
     @Published private(set) var watchesHerdr = false
     /// Shows bells from tmux windows, through a hook on the running tmux server.
     @Published var tmuxBells: Bool = AppSettings.load("tmuxBells", default: true) { didSet { save(tmuxBells, "tmuxBells") } }
@@ -111,7 +111,7 @@ final class AppSettings: ObservableObject {
     @Published var idleRight: IdleItem = AppSettings.load("idleRight", default: .none) { didSet { save(idleRight.rawValue, "idleRight"); updateWatchesHerdr() } }
 
     private func updateWatchesHerdr() {
-        let wanted = herdrNotifications || idleLeft == .agents || idleRight == .agents
+        let wanted = herdrNotifications || idleLeft == .agents || idleRight == .agents || agentsTab
         if wanted != watchesHerdr { watchesHerdr = wanted }
     }
     @Published var idleAIWindow: AIWindow = AppSettings.load("idleAIWindow", default: .tighter) { didSet { save(idleAIWindow.rawValue, "idleAIWindow") } }
@@ -134,6 +134,8 @@ final class AppSettings: ObservableObject {
     @Published var toolsTab: Bool = AppSettings.load("toolsTab", default: true) { didSet { save(toolsTab, "toolsTab") } }
     /// Off by default: macOS's Notification Center covers most of it; this is for going back to the exact terminal pane.
     @Published var noticesTab: Bool = AppSettings.load("noticesTab", default: false) { didSet { save(noticesTab, "noticesTab") } }
+    /// Off by default, like Notifications: a list of the coding agent sessions at work, for going back to one's terminal.
+    @Published var agentsTab: Bool = AppSettings.load("agentsTab", default: true) { didSet { save(agentsTab, "agentsTab"); updateWatchesHerdr() } }
     @Published var mirrorEnabled: Bool = AppSettings.load("mirrorEnabled", default: true) { didSet { save(mirrorEnabled, "mirrorEnabled") } }
     /// AVCaptureDevice.uniqueID; empty means the system default camera.
     @Published var mirrorCameraID: String = AppSettings.load("mirrorCameraID", default: "") { didSet { save(mirrorCameraID, "mirrorCameraID") } }
@@ -212,6 +214,7 @@ final class AppSettings: ObservableObject {
         case .emoji: return emojiTab
         case .ai: return aiTab
         case .notices: return noticesTab
+        case .agents: return agentsTab
         case .mirror: return mirrorEnabled
         }
     }
@@ -230,6 +233,7 @@ final class AppSettings: ObservableObject {
         case .emoji: emojiTab = visible
         case .ai: aiTab = visible
         case .notices: noticesTab = visible
+        case .agents: agentsTab = visible
         case .mirror: mirrorEnabled = visible
         }
     }

@@ -19,9 +19,12 @@ final class AgentHooks {
         /// Done and not yet looked at, as opposed to asking for input.
         var finished = false
         var app: String?
+        /// When it entered this state; another event in the same state keeps it.
+        var since: Date
         var expiresAt: Date
     }
 
+    private let kind: AgentKind
     private let board: AgentBoard
     private let isOn: () -> Bool
     private let watchesHerdr: () -> Bool
@@ -29,11 +32,12 @@ final class AgentHooks {
     private var entries: [String: Entry] = [:]
     private var activation: NSObjectProtocol?
 
-    /// - isOn: whether the closed notch shows the agents count; nothing is kept while it doesn't.
+    /// - isOn: whether the closed notch shows the agents count or the Agents tab is on; nothing is kept while it isn't.
     /// - watchesHerdr: whether herdr's own count is running, which already includes a session in a herdr pane.
     init(board: AgentBoard, agent: AgentKind = .claude, isOn: @escaping () -> Bool, watchesHerdr: @escaping () -> Bool,
          frontmostApp: @escaping () -> String? = { NSWorkspace.shared.frontmostApplication?.bundleIdentifier }) {
         self.board = board
+        self.kind = agent
         self.source = "hooks:\(agent.rawValue)"
         self.isOn = isOn
         self.watchesHerdr = watchesHerdr
@@ -57,16 +61,15 @@ final class AgentHooks {
         let id = event.session
         switch event.action {
         case .working:
-            entries[id] = Entry(state: .working, app: event.app, expiresAt: now.addingTimeInterval(Self.activeWindow))
+            set(id, .working, app: event.app, until: now.addingTimeInterval(Self.activeWindow), now: now)
         case .needsInput:
-            entries[id] = Entry(state: .waiting, app: event.app, expiresAt: now.addingTimeInterval(Self.activeWindow))
+            set(id, .waiting, app: event.app, until: now.addingTimeInterval(Self.activeWindow), now: now)
         case .finished:
             // Finished in the app that's in front: it's being looked at.
             if event.app != nil, event.app == frontmostApp() {
                 entries[id] = nil
             } else {
-                entries[id] = Entry(state: .waiting, finished: true, app: event.app,
-                                    expiresAt: now.addingTimeInterval(Herdr.doneWindow))
+                set(id, .waiting, finished: true, app: event.app, until: now.addingTimeInterval(Herdr.doneWindow), now: now)
             }
         case .idle:
             // Claude Code only says idle with no dialog open, and Codex when a turn is interrupted, so a question or a
@@ -91,9 +94,17 @@ final class AgentHooks {
         publish(now: .now)
     }
 
+    private func set(_ id: String, _ state: AgentBoard.State, finished: Bool = false, app: String?, until: Date, now: Date) {
+        let same = entries[id].map { $0.state == state && $0.finished == finished } ?? false
+        entries[id] = Entry(state: state, finished: finished, app: app, since: same ? entries[id]!.since : now, expiresAt: until)
+    }
+
     private func publish(now: Date) {
-        board.replace(source: source,
-                      with: entries.mapValues { AgentBoard.Agent(state: $0.state, expiresAt: $0.expiresAt) }, now: now)
+        board.replace(source: source, with: entries.reduce(into: [String: AgentBoard.Agent]()) { agents, entry in
+            let (id, value) = entry
+            agents[id] = AgentBoard.Agent(state: value.state, expiresAt: value.expiresAt, since: value.since,
+                                          finished: value.finished, tool: kind.rawValue, app: value.app, session: id)
+        }, now: now)
     }
 }
 

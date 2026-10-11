@@ -355,3 +355,8 @@
 "The command goes to the clipboard. Paste it in Terminal and press Return." = "命令会拷贝到剪贴板。粘贴到“终端”中并按下 Return 键。";
 "Get Homebrew" = "获取 Homebrew";
 "Updates come through Homebrew. Install it, then come back here to copy the update command." = "更新通过 Homebrew 进行。请先安装 Homebrew，再回到这里拷贝更新命令。";
+"Agents" = "代理";
+"Needs input" = "需要输入";
+"Your turn" = "轮到你了";
+"Connect Claude Code and Codex in Settings › Alerts to see their sessions here" = "在“设置 › 提醒”中连接 Claude Code 和 Codex 后，它们的会话会显示在这里";
+"The Agents tab lists their sessions with folder, model and context used, read from the tools' own session files on this Mac." = "“代理”标签会列出它们的会话，并显示文件夹、模型和已用上下文，数据读取自这台 Mac 上工具自己的会话文件。";

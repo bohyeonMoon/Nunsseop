@@ -56,9 +56,10 @@ struct AgentBoardTests {
 
     @Test func herdrIsWatchedForNoticesOrTheAgentsCount() {
         let settings = AppSettings.shared
-        let saved = (settings.herdrNotifications, settings.idleLeft, settings.idleRight)
-        defer { (settings.herdrNotifications, settings.idleLeft, settings.idleRight) = saved }
+        let saved = (settings.herdrNotifications, settings.idleLeft, settings.idleRight, settings.agentsTab)
+        defer { (settings.herdrNotifications, settings.idleLeft, settings.idleRight, settings.agentsTab) = saved }
         settings.herdrNotifications = false
+        settings.agentsTab = false
         settings.idleLeft = .none
         settings.idleRight = .none
         #expect(!settings.watchesHerdr)

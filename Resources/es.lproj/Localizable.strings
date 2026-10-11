@@ -355,3 +355,8 @@
 "The command goes to the clipboard. Paste it in Terminal and press Return." = "El comando se copia al portapapeles. Pégalo en Terminal y pulsa Retorno.";
 "Get Homebrew" = "Obtener Homebrew";
 "Updates come through Homebrew. Install it, then come back here to copy the update command." = "Las actualizaciones llegan con Homebrew. Instálalo y vuelve aquí para copiar el comando de actualización.";
+"Agents" = "Agentes";
+"Needs input" = "Espera tu respuesta";
+"Your turn" = "Tu turno";
+"Connect Claude Code and Codex in Settings › Alerts to see their sessions here" = "Conecta Claude Code y Codex en Ajustes › Avisos para ver aquí sus sesiones";
+"The Agents tab lists their sessions with folder, model and context used, read from the tools' own session files on this Mac." = "La pestaña Agentes enumera sus sesiones con carpeta, modelo y contexto usado, leídos de los archivos de sesión de las propias herramientas en este Mac.";

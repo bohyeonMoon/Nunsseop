@@ -38,7 +38,7 @@ enum IdleItem: String, CaseIterable, Identifiable {
 }
 
 enum NotchTab: String, CaseIterable, Identifiable {
-    case home, shelf, timer, clipboard, notes, tools, system, apps, search, emoji, ai, notices, mirror
+    case home, shelf, timer, clipboard, notes, tools, system, apps, search, emoji, ai, notices, agents, mirror
 
     var id: String { rawValue }
 
@@ -56,6 +56,7 @@ enum NotchTab: String, CaseIterable, Identifiable {
         case .emoji: return "face.smiling"
         case .ai: return "sparkles"
         case .notices: return "bell.fill"
+        case .agents: return "list.bullet.rectangle"
         case .mirror: return "camera.fill"
         }
     }
@@ -74,6 +75,7 @@ enum NotchTab: String, CaseIterable, Identifiable {
         case .emoji: return String(localized: "Emoji")
         case .ai: return String(localized: "AI usage")
         case .notices: return String(localized: "Notifications")
+        case .agents: return String(localized: "Agents")
         case .mirror: return String(localized: "Mirror")
         }
     }
@@ -108,6 +110,7 @@ final class NotchViewModel: ObservableObject {
     let cmux = CmuxWatcher()
     let herdr = HerdrSessions()
     let agents = AgentBoard()
+    let agentList: AgentsTabModel
     let agentHooks: ToolHooks
     let tmux = TmuxWatcher()
     let stats = SystemStats()
@@ -160,7 +163,8 @@ final class NotchViewModel: ObservableObject {
         self.geometry = geometry
         self.settings = settings
         self.hud = HUDCenter(settings: settings)
-        let isOn = { settings.idleLeft == .agents || settings.idleRight == .agents }
+        let isOn = { settings.idleLeft == .agents || settings.idleRight == .agents || settings.agentsTab }
+        self.agentList = AgentsTabModel(board: agents)
         self.agentHooks = ToolHooks(claude: AgentHooks(board: agents, isOn: isOn, watchesHerdr: { settings.watchesHerdr }),
                                     codex: AgentHooks(board: agents, agent: .codex, isOn: isOn,
                                                       watchesHerdr: { settings.watchesHerdr }))
@@ -209,14 +213,14 @@ final class NotchViewModel: ObservableObject {
         settings.$noticesTab
             .sink { [weak self] in self?.notices.isEnabled = $0 }
             .store(in: &cancellables)
-        // Agents working or waiting, for the closed notch; each herdr session is a source of its own.
+        // Agents working or waiting, for the closed notch and the Agents tab; each herdr session is a source of its own.
         herdr.onStates = { [weak self] socket, panes in
-            self?.agents.replace(source: "herdr:\(socket)", with: Herdr.boardAgents(panes))
+            self?.agents.replace(source: "herdr:\(socket)", with: Herdr.boardAgents(panes, socket: socket))
         }
-        // Claude Code and Codex sessions anywhere, through their hooks; kept only while the count is shown.
+        // Claude Code and Codex sessions anywhere, through their hooks; kept only while the count or the tab is shown.
         notifyServer.onAgent = { [agentHooks] in agentHooks.apply($0) }
-        settings.$idleLeft.combineLatest(settings.$idleRight)
-            .map { $0 == .agents || $1 == .agents }
+        settings.$idleLeft.combineLatest(settings.$idleRight, settings.$agentsTab)
+            .map { $0 == .agents || $1 == .agents || $2 }
             .removeDuplicates()
             .filter { !$0 }
             .sink { [weak self] _ in self?.agentHooks.reset() }

@@ -83,6 +83,8 @@ struct NotchView: View {
                                 AIUsageTab(usage: model.aiUsage)
                             case .notices:
                                 NoticesTab(log: model.notices)
+                            case .agents:
+                                AgentsTab(model: model.agentList)
                             case .mirror:
                                 MirrorTab(mirror: model.mirror, deviceID: model.settings.mirrorCameraID)
                             }
