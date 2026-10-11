@@ -27,9 +27,11 @@ final class CalendarModel: ObservableObject {
     enum Access { case unknown, granted, denied }
 
     @Published private(set) var access: Access
-    @Published var selectedDay = Calendar.current.startOfDay(for: .now) {
+    @Published var selectedDay: Date {
         didSet { reload(alerts: false) }
     }
+    /// The start of the current day, as of the last check; a day change moves it along.
+    @Published private(set) var today: Date
     @Published private(set) var items: [CalendarItem] = []
     /// Calendars whose events are left out.
     var hiddenCalendarIDs: Set<String> = [] {
@@ -49,6 +51,8 @@ final class CalendarModel: ObservableObject {
     static let alertSpacing: TimeInterval = 8
     private var alertQueue = EventAlertQueue(spacing: CalendarModel.alertSpacing)
 
+    private let cal: Calendar
+    private let now: () -> Date
     private let store = EKEventStore()
     private var observer: NSObjectProtocol?
     private var wakeObservers: [NSObjectProtocol] = []
@@ -58,7 +62,12 @@ final class CalendarModel: ObservableObject {
     private let isDemo = false
     #endif
 
-    init() {
+    init(calendar: Calendar = .current, now: @escaping () -> Date = { .now }) {
+        cal = calendar
+        self.now = now
+        let startOfToday = calendar.startOfDay(for: now())
+        today = startOfToday
+        selectedDay = startOfToday
         switch EKEventStore.authorizationStatus(for: .event) {
         case .fullAccess: access = .granted
         case .denied, .restricted, .writeOnly: access = .denied
@@ -76,13 +85,26 @@ final class CalendarModel: ObservableObject {
         // Timers don't count time asleep, so a pending alert is worked out again on wake and clock changes.
         wakeObservers = [
             NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.scheduleAlert() }
+                MainActor.assumeIsolated { self?.scheduleAlert(); self?.refreshToday() }
             },
             NotificationCenter.default.addObserver(forName: .NSSystemClockDidChange, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.scheduleAlert() }
+                MainActor.assumeIsolated { self?.scheduleAlert(); self?.refreshToday() }
+            },
+            NotificationCenter.default.addObserver(forName: .NSCalendarDayChanged, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.refreshToday() }
             },
         ]
         reload()
+    }
+
+    /// Moves `today` to the current day. A selection that was on the old today follows it, and one that is now in
+    /// the past (the week moved on without it) falls to today; a later day the user picked stays.
+    func refreshToday() {
+        let current = cal.startOfDay(for: now())
+        guard current != today else { return }
+        let followsToday = selectedDay == today
+        today = current
+        if followsToday || selectedDay < current { selectedDay = current } else { reload(alerts: false) }
     }
 
     func requestAccess() {
@@ -125,7 +147,7 @@ final class CalendarModel: ObservableObject {
     /// Incomplete reminders due by the end of the selected day, including undated ones.
     private func reloadReminders() {
         guard reminderAccess == .granted,
-              let end = Calendar.current.date(byAdding: .day, value: 1, to: selectedDay) else {
+              let end = cal.date(byAdding: .day, value: 1, to: selectedDay) else {
             reminders = []
             return
         }
@@ -147,14 +169,14 @@ final class CalendarModel: ObservableObject {
     private func showDemoItems() {
         access = .granted
         let day = selectedDay
-        func at(_ h: Int, _ m: Int) -> Date { Calendar.current.date(bySettingHour: h, minute: m, second: 0, of: day)! }
+        func at(_ h: Int, _ m: Int) -> Date { cal.date(bySettingHour: h, minute: m, second: 0, of: day)! }
         items = [
             CalendarItem(id: "a", title: "Team standup", start: at(10, 0), end: at(10, 15), isAllDay: false, color: .blue,
                          joinURL: URL(string: "https://meet.google.com/abc-defg-hij")),
             CalendarItem(id: "b", title: "Lunch", start: at(12, 30), end: at(13, 30), isAllDay: false, color: .orange),
             CalendarItem(id: "c", title: "5 km run", start: at(19, 0), end: at(19, 40), isAllDay: false, color: .green),
         ]
-        busyDays = Set([0, 2, 5].compactMap { Calendar.current.date(byAdding: .day, value: $0, to: Calendar.current.startOfDay(for: .now)) })
+        busyDays = Set([0, 2, 5].compactMap { cal.date(byAdding: .day, value: $0, to: today) })
         reminderAccess = .granted
         reminders = [
             ReminderItem(id: "r1", title: "Pay the electricity bill", due: at(18, 0), color: .orange),
@@ -164,7 +186,7 @@ final class CalendarModel: ObservableObject {
 
     /// The selected day and the six days after it.
     var week: [Date] {
-        (0..<7).compactMap { Calendar.current.date(byAdding: .day, value: $0, to: Calendar.current.startOfDay(for: .now)) }
+        (0..<7).compactMap { cal.date(byAdding: .day, value: $0, to: today) }
     }
 
     /// The start of each of `days` days from `first` that any of the event spans (start, end) touches.
@@ -244,12 +266,12 @@ final class CalendarModel: ObservableObject {
         guard access == .granted else { items = []; busyDays = []; return }
         let calendars = shownCalendars
         if calendars?.isEmpty == true { items = []; busyDays = []; return }
-        if let first = week.first, let last = week.last, let weekEnd = Calendar.current.date(byAdding: .day, value: 1, to: last) {
+        if let first = week.first, let last = week.last, let weekEnd = cal.date(byAdding: .day, value: 1, to: last) {
             let weekEvents = store.events(matching: store.predicateForEvents(withStart: first, end: weekEnd, calendars: calendars))
-            busyDays = Self.busyDays(spans: weekEvents.map { ($0.startDate, $0.endDate) }, from: first, days: 7, calendar: .current)
+            busyDays = Self.busyDays(spans: weekEvents.map { ($0.startDate, $0.endDate) }, from: first, days: 7, calendar: cal)
         }
         let start = selectedDay
-        guard let end = Calendar.current.date(byAdding: .day, value: 1, to: start) else { return }
+        guard let end = cal.date(byAdding: .day, value: 1, to: start) else { return }
         let predicate = store.predicateForEvents(withStart: start, end: end, calendars: calendars)
         items = store.events(matching: predicate)
             .sorted { ($0.isAllDay ? 0 : 1, $0.startDate) < ($1.isAllDay ? 0 : 1, $1.startDate) }
