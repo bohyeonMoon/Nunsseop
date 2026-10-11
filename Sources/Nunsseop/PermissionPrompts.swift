@@ -56,11 +56,35 @@ enum PermissionWire {
 
 /// What a prompt shows is what the tool would do, so nothing is dropped or joined and nothing invisible is left invisible.
 enum PermissionText {
-    /// Control, formatting (zero-width, direction marks and overrides, tags), line and paragraph separators and every space
-    /// but U+0020 are written out as `⟨U+202E⟩`, and so are the angle brackets that mark one, so an escape can't be faked.
-    /// A line break stays one when `multiline`; otherwise it is escaped too. CR LF counts as one break.
+    /// Scalars that draw nothing, or only blank, yet are not Default_Ignorable_Code_Point (or are, on an older Unicode table).
+    private static let blanks: Set<UInt32> = Set([0x2800, 0x3164, 0xFFA0, 0x115F, 0x1160, 0x17B4, 0x17B5, 0x034F, 0xFFFC]
+        + Array(0xFE00...0xFE0F) + Array(0xE0100...0xE01EF) + Array(0x180B...0x180F))
+    /// Combining marks that may follow one base character; any further ones are written out.
+    static let maxMarks = 2
+
+    /// Text is first put in normalization form C, so a path macOS stored decomposed reads as it was typed. Then control,
+    /// formatting (zero-width, direction marks and overrides, tags), every default-ignorable scalar, blanks that draw
+    /// nothing (braille blank, Hangul fillers), line and paragraph separators, every space but U+0020, private-use and
+    /// unassigned scalars, and combining marks past `maxMarks` on one base are written out as `⟨U+202E⟩`, and so are the
+    /// angle brackets that mark one, so an escape can't be faked. A line break stays one when `multiline`; otherwise it is
+    /// escaped too. CR LF counts as one break.
     static func escape(_ text: String, multiline: Bool) -> String {
         var result = String.UnicodeScalarView()
+        var run = String.UnicodeScalarView()
+        func flush() {
+            guard !run.isEmpty else { return }
+            var marks = 0
+            for scalar in String(run).precomposedStringWithCanonicalMapping.unicodeScalars {
+                if isMark(scalar) {
+                    marks += 1
+                    if marks > maxMarks { appendEscape(scalar, to: &result) } else { result.append(scalar) }
+                } else {
+                    marks = 0
+                    result.append(scalar)
+                }
+            }
+            run = String.UnicodeScalarView()
+        }
         let scalars = Array(text.unicodeScalars)
         var index = 0
         while index < scalars.count {
@@ -68,34 +92,34 @@ enum PermissionText {
             index += 1
             if scalar == "\r", index < scalars.count, scalars[index] == "\n" { continue }
             if scalar == "\n" && multiline {
+                flush()
                 result.append(scalar)
-                continue
-            }
-            if needsEscape(scalar) {
-                result.append(contentsOf: String(format: "⟨U+%04X⟩", scalar.value).unicodeScalars)
+            } else if needsEscape(scalar) {
+                flush()
+                appendEscape(scalar, to: &result)
             } else {
-                result.append(scalar)
+                run.append(scalar)
             }
         }
+        flush()
         return String(result)
+    }
+
+    private static func appendEscape(_ scalar: Unicode.Scalar, to result: inout String.UnicodeScalarView) {
+        result.append(contentsOf: String(format: "⟨U+%04X⟩", scalar.value).unicodeScalars)
+    }
+
+    private static func isMark(_ scalar: Unicode.Scalar) -> Bool {
+        scalar.properties.generalCategory == .nonspacingMark || scalar.properties.generalCategory == .enclosingMark
     }
 
     private static func needsEscape(_ scalar: Unicode.Scalar) -> Bool {
         if scalar == "⟨" || scalar == "⟩" { return true }
+        if scalar.properties.isDefaultIgnorableCodePoint || blanks.contains(scalar.value) { return true }
         switch scalar.properties.generalCategory {
-        case .control, .format, .lineSeparator, .paragraphSeparator: return true
+        case .control, .format, .lineSeparator, .paragraphSeparator, .privateUse, .unassigned: return true
         case .spaceSeparator: return scalar != " "
-        default: return false
-        }
-    }
-
-    /// How many rows `text` takes in `columns` columns, counting wide characters twice, so it is never fewer than
-    /// the view needs.
-    static func rows(_ text: String, columns: Int) -> Int {
-        guard !text.isEmpty else { return 0 }
-        return text.split(separator: "\n", omittingEmptySubsequences: false).reduce(0) { total, line in
-            let cells = line.unicodeScalars.reduce(0) { $0 + ($1.value >= 0x1100 ? 2 : 1) }
-            return total + max(1, (cells + columns - 1) / columns)
+        default: return scalar.properties.isWhitespace && scalar != " "
         }
     }
 
@@ -111,12 +135,53 @@ struct PermissionPrompt: Identifiable, Equatable {
     /// "Run a command", "Edit a file", or a tool's own name as Claude Code sends it.
     let title: String
     let symbol: String
-    /// The command, path, address or input in full, escaped; line breaks are line breaks.
+    /// The command, path, address or input in full, escaped; line breaks are line breaks. For a file it is the path and
+    /// what goes into the file.
     let detail: String
+    /// Facts about the call that change what it does, such as a sandbox that is off; shown above `detail`.
+    let flags: [Flag]
+    /// Everything else the call carries, escaped, shown after `detail` in a quieter colour: a command's description and any
+    /// other field as `key: value`.
+    let secondary: String
     /// The folder the session runs in.
     let folder: String
     /// What "Always allow" would add; nil when it isn't offered.
     let grant: Grant?
+    /// How tall what it shows is, at the narrowest closed card and at the narrowest open panel.
+    let card: PermissionLayout.Measure
+    let panel: PermissionLayout.Measure
+
+    struct Flag: Equatable {
+        let text: String
+        /// Drawn in the warning colour.
+        let warns: Bool
+    }
+
+    init(id: UUID, title: String, symbol: String, detail: String, flags: [Flag] = [], secondary: String = "", folder: String,
+         grant: Grant?) {
+        self.id = id
+        self.title = title
+        self.symbol = symbol
+        self.detail = detail
+        self.flags = flags
+        self.secondary = secondary
+        self.folder = folder
+        self.grant = grant
+        let text = Self.scrollText(flags: flags, detail: detail, secondary: secondary)
+        card = PermissionLayout.measure(scrollText: text, grant: grant, place: .card)
+        panel = PermissionLayout.measure(scrollText: text, grant: grant, place: .panel)
+    }
+
+    /// The scrolling text as drawn and as measured: flags, detail and the rest, a line break between.
+    var scrollText: String { Self.scrollText(flags: flags, detail: detail, secondary: secondary) }
+
+    private static func scrollText(flags: [Flag], detail: String, secondary: String) -> String {
+        (flags.map(\.text) + [detail, secondary].filter { !$0.isEmpty }).joined(separator: "\n")
+    }
+
+    func measure(_ place: PermissionLayout.Place) -> PermissionLayout.Measure {
+        place == .card ? card : panel
+    }
 
     /// The one `addRules` suggestion, and only when everything it would add can be shown as it is.
     struct Grant: Equatable {
@@ -138,10 +203,13 @@ struct PermissionPrompt: Identifiable, Equatable {
         let place: Place
 
         static let maxRules = 3
-        static let maxRows = 3
+        /// Rows the rules may take on the card; a suggestion that needs more is not offered.
+        static let maxRuleRows = 3
+
+        var caption: String { String(localized: "Always allow saves this \(place.phrase)") }
     }
 
-    /// What is too long to show in full is not taken: the terminal asks, and shows all of it.
+    /// What is too long to show in full is not taken: the terminal asks, and shows all of it. Counted in Unicode scalars.
     static let detailLimit = 20_000
     static let titleLimit = 120
 
@@ -159,40 +227,106 @@ struct PermissionPrompt: Identifiable, Equatable {
               json["hook_event_name"] as? String == "PermissionRequest",
               let tool = json["tool_name"] as? String, !tool.isEmpty, !terminalOnly.contains(tool) else { return nil }
         let input = json["tool_input"] as? [String: Any] ?? [:]
-        let (title, symbol, raw) = describe(tool: tool, input: input)
-        let detail = PermissionText.escape(raw, multiline: true)
-        let shownTitle = PermissionText.escape(title, multiline: false)
-        guard detail.count <= detailLimit, shownTitle.count <= titleLimit else { return nil }
+        let described = describe(tool: tool, input: input)
+        let detail = PermissionText.escape(described.detail, multiline: true)
+        let secondary = PermissionText.escape(described.secondary, multiline: true)
+        let shownTitle = PermissionText.escape(described.title, multiline: false)
+        let shown = detail.unicodeScalars.count + secondary.unicodeScalars.count + described.flags.reduce(0) { $0 + $1.text.unicodeScalars.count }
+        guard shown <= detailLimit, shownTitle.unicodeScalars.count <= titleLimit else { return nil }
         let suggestion = addRulesSuggestion(in: json["permission_suggestions"])
         let grant = suggestion.flatMap(grant(from:))
         let folder = (json["cwd"] as? String).map { ($0 as NSString).lastPathComponent } ?? ""
-        let prompt = PermissionPrompt(id: UUID(), title: shownTitle, symbol: symbol, detail: detail,
+        let prompt = PermissionPrompt(id: UUID(), title: shownTitle, symbol: described.symbol, detail: detail, flags: described.flags,
+                                      secondary: secondary,
                                       folder: PermissionText.clipped(PermissionText.escape(folder, multiline: false), limit: 80),
                                       grant: grant)
         return Parsed(prompt: prompt, suggestion: grant == nil ? nil : suggestion)
     }
 
-    /// A known tool says what it does in plain words and shows its one field; any other, or a known one whose field isn't
-    /// the text it should be, shows its own name and its whole input.
-    private static func describe(tool: String, input: [String: Any]) -> (title: String, symbol: String, detail: String) {
-        func field(_ key: String, _ title: String, _ symbol: String) -> (String, String, String)? {
+    private struct Described {
+        var title: String
+        var symbol: String
+        var detail: String
+        var flags: [Flag] = []
+        var secondary = ""
+    }
+
+    /// A known tool says what it does in plain words, shows the field that says what it acts on and the text it would put
+    /// there, and lists every other field it was given; any other tool, or a known one whose field isn't the text it
+    /// should be, shows its own name and its whole input.
+    private static func describe(tool: String, input: [String: Any]) -> Described {
+        func known(_ key: String, _ title: String, _ symbol: String, texts: [String] = [], flagged: Bool = false) -> Described? {
             guard let value = input[key] as? String, !value.isEmpty else { return nil }
-            return (title, symbol, value)
+            var rest = input
+            rest[key] = nil
+            var described = Described(title: title, symbol: symbol, detail: value)
+            for name in texts {
+                guard let text = rest[name] as? String else { continue }
+                described.detail += "\n\n\(name):\n\(text)"
+                rest[name] = nil
+            }
+            if let edits = rest["edits"] as? [Any], !edits.isEmpty, edits.allSatisfy({ $0 is [String: Any] }) {
+                for (index, edit) in edits.enumerated() {
+                    var fields = edit as? [String: Any] ?? [:]
+                    described.detail += "\n\nedit \(index + 1) of \(edits.count):"
+                    for name in ["old_string", "new_string"] {
+                        guard let text = fields[name] as? String else { continue }
+                        described.detail += "\n\(name):\n\(text)"
+                        fields[name] = nil
+                    }
+                    if !fields.isEmpty { described.detail += "\n" + listing(fields).joined(separator: "\n") }
+                }
+                rest["edits"] = nil
+            }
+            var extra: [String] = []
+            if flagged {
+                if isTrue(rest["dangerouslyDisableSandbox"]) {
+                    described.flags.append(Flag(text: String(localized: "Sandbox off"), warns: true))
+                    rest["dangerouslyDisableSandbox"] = nil
+                }
+                if isTrue(rest["run_in_background"]) {
+                    described.flags.append(Flag(text: String(localized: "Runs in the background"), warns: false))
+                    rest["run_in_background"] = nil
+                }
+                if let note = rest["description"] as? String, !note.isEmpty {
+                    extra.append(note)
+                    rest["description"] = nil
+                }
+            }
+            described.secondary = (extra + listing(rest)).joined(separator: "\n")
+            return described
         }
-        let known: (String, String, String)? = switch tool {
-        case "Bash": field("command", String(localized: "Run a command"), "terminal")
-        case "Edit", "MultiEdit": field("file_path", String(localized: "Edit a file"), "pencil")
-        case "Write": field("file_path", String(localized: "Write a file"), "doc.badge.plus")
-        case "NotebookEdit": field("notebook_path", String(localized: "Edit a notebook"), "pencil")
-        case "Read": field("file_path", String(localized: "Read a file"), "doc.text")
-        case "WebFetch": field("url", String(localized: "Fetch a web page"), "globe")
-        case "WebSearch": field("query", String(localized: "Search the web"), "magnifyingglass")
+        let described: Described? = switch tool {
+        case "Bash": known("command", String(localized: "Run a command"), "terminal", flagged: true)
+        case "Edit", "MultiEdit": known("file_path", String(localized: "Edit a file"), "pencil", texts: ["old_string", "new_string"])
+        case "Write": known("file_path", String(localized: "Write a file"), "doc.badge.plus", texts: ["content"])
+        case "NotebookEdit": known("notebook_path", String(localized: "Edit a notebook"), "pencil", texts: ["new_source"])
+        case "Read": known("file_path", String(localized: "Read a file"), "doc.text")
+        case "WebFetch": known("url", String(localized: "Fetch a web page"), "globe")
+        case "WebSearch": known("query", String(localized: "Search the web"), "magnifyingglass")
         default: nil
         }
-        if let known { return known }
+        if let described { return described }
         let json = (try? JSONSerialization.data(withJSONObject: input, options: [.sortedKeys, .withoutEscapingSlashes, .prettyPrinted]))
             .flatMap { String(data: $0, encoding: .utf8) } ?? ""
-        return (tool, "puzzlepiece.extension", input.isEmpty ? "" : json)
+        return Described(title: tool, symbol: "puzzlepiece.extension", detail: input.isEmpty ? "" : json)
+    }
+
+    /// Only a real JSON `true`: the string "true" or the number 1 is something the tool may read differently, so it is listed.
+    private static func isTrue(_ value: Any?) -> Bool {
+        guard let number = value as? NSNumber, CFGetTypeID(number) == CFBooleanGetTypeID() else { return false }
+        return number.boolValue
+    }
+
+    /// Every field as `key: value`, in key order; text as it is, anything else as JSON.
+    private static func listing(_ fields: [String: Any]) -> [String] {
+        fields.keys.sorted().map { key in
+            let value = fields[key] as Any
+            if let text = value as? String { return "\(key): \(text)" }
+            let json = (try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys, .withoutEscapingSlashes, .fragmentsAllowed]))
+                .flatMap { String(data: $0, encoding: .utf8) }
+            return "\(key): \(json ?? "\(value)")"
+        }
     }
 
     /// The first suggestion that adds allow rules; a mode change is never offered.
@@ -204,7 +338,8 @@ struct PermissionPrompt: Identifiable, Equatable {
     }
 
     /// Every rule as Claude Code writes it, or nil when any part of the suggestion can't be shown as it is: a rule that
-    /// needs escaping, one that is missing or odd, a key nobody has seen, too many rules, or a place that isn't known.
+    /// needs escaping, one that is missing or odd, a key nobody has seen, too many rules, rules that take more rows than the
+    /// card has for them, or a place that isn't known.
     static func grant(from suggestion: [String: Any]) -> Grant? {
         guard Set(suggestion.keys).isSubset(of: ["type", "behavior", "rules", "destination"]),
               let place = (suggestion["destination"] as? String).flatMap(Grant.Place.init(rawValue:)),
@@ -221,8 +356,9 @@ struct PermissionPrompt: Identifiable, Equatable {
             guard PermissionText.escape(text, multiline: false) == text else { return nil }
             rules.append(text)
         }
-        guard rules.reduce(0, { $0 + PermissionText.rows($1, columns: PermissionLayout.cardColumns) }) <= Grant.maxRows else { return nil }
-        return Grant(rules: rules, place: place)
+        let grant = Grant(rules: rules, place: place)
+        guard PermissionLayout.offers(grant, place: .card) else { return nil }
+        return grant
     }
 
     #if DEBUG

@@ -189,6 +189,8 @@ final class NotifyServer: @unchecked Sendable {
     private var listener: NWListener?
     private var retry: DispatchWorkItem?
     private var retryDelay = NotifyServer.firstRetryDelay
+    /// Touched only on `queue`.
+    private var boundPort: UInt16?
     /// The connections counted against `maxConnections`; one that becomes a held prompt leaves it.
     private var ordinary = Set<ObjectIdentifier>()
     private static let firstRetryDelay = 1.0
@@ -299,6 +301,9 @@ final class NotifyServer: @unchecked Sendable {
         permissions = PermissionGate(token: token, queue: queue, holdSeconds: permissionHold)
     }
 
+    /// The port the listener is ready on, nil until it is; with port 0 the system picks it.
+    var listeningPort: UInt16? { queue.sync { boundPort } }
+
     func start() {
         queue.sync {
             guard listener == nil, retry == nil else { return }
@@ -313,6 +318,7 @@ final class NotifyServer: @unchecked Sendable {
             retryDelay = Self.firstRetryDelay
             listener?.cancel()
             listener = nil
+            boundPort = nil
             permissions.releaseAll()
         }
     }
@@ -330,9 +336,11 @@ final class NotifyServer: @unchecked Sendable {
             switch state {
             case .ready:
                 retryDelay = Self.firstRetryDelay
+                boundPort = listener.port?.rawValue
             case .failed:
                 listener.cancel()
                 self.listener = nil
+                boundPort = nil
                 let work = DispatchWorkItem { [weak self] in
                     self?.retry = nil
                     self?.listen()

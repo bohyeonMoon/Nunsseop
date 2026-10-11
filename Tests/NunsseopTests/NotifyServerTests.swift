@@ -381,6 +381,24 @@ struct NotifyServerListenTests {
         #expect(answer == "HTTP/1.1 404 Not Found")
     }
 
+    @Test func portZeroListensOnAPortTheSystemPicksAndNamesItOnceReady() async throws {
+        let (first, second) = try withTempHome { _ in (NotifyServer(port: 0), NotifyServer(port: 0)) }
+        #expect(first.listeningPort == nil)
+        first.start()
+        second.start()
+        defer { first.stop(); second.stop() }
+        let deadline = Date.now.addingTimeInterval(30)
+        while (first.listeningPort == nil || second.listeningPort == nil) && Date.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let a = try #require(first.listeningPort), b = try #require(second.listeningPort)
+        #expect(a != 0 && b != 0 && a != b && a != NotifyServer.port && b != NotifyServer.port)
+        // The port it names is the one that is open: no gap in which another process could take it.
+        #expect(ask(a) == "HTTP/1.1 404 Not Found" && ask(b) == "HTTP/1.1 404 Not Found")
+        first.stop()
+        #expect(first.listeningPort == nil)
+    }
+
     @Test func stoppingWhileARetryIsPendingLeavesNothingListening() async throws {
         let holder = try PortHolder()
         let server = try withTempHome { _ in NotifyServer(port: holder.port) }

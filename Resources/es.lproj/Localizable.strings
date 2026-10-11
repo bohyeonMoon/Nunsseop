@@ -380,7 +380,10 @@
 "Allow" = "Permitir";
 "Deny" = "Denegar";
 "Always allow" = "Permitir siempre";
-"Scroll for the rest: %lld lines, %lld characters" = "Desplázate para ver el resto: %lld líneas, %lld caracteres";
+"Scroll for the rest: %lld more lines" = "Desplázate para ver el resto: %lld líneas más";
+"Scroll for the rest: 1 more line" = "Desplázate para ver el resto: 1 línea más";
+"Sandbox off" = "Sandbox desactivado";
+"Runs in the background" = "Se ejecuta en segundo plano";
 "Always allow saves this %@" = "«Permitir siempre» guarda esto %@";
 "in this project, just for you" = "en este proyecto, solo para ti";
 "in this project" = "en este proyecto";

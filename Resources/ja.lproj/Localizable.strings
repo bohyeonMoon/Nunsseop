@@ -380,7 +380,10 @@
 "Allow" = "許可";
 "Deny" = "拒否";
 "Always allow" = "常に許可";
-"Scroll for the rest: %lld lines, %lld characters" = "続きはスクロール: %lld 行、%lld 文字";
+"Scroll for the rest: %lld more lines" = "続きはスクロール: あと %lld 行";
+"Scroll for the rest: 1 more line" = "続きはスクロール: あと 1 行";
+"Sandbox off" = "サンドボックスはオフ";
+"Runs in the background" = "バックグラウンドで実行";
 "Always allow saves this %@" = "「常に許可」は、この規則を%@保存します";
 "in this project, just for you" = "このプロジェクトで、あなただけに";
 "in this project" = "このプロジェクトで";

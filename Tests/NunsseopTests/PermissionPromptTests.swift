@@ -93,7 +93,7 @@ struct PermissionPromptParseTests {
         let cases: [(String, [String: Any], String, String)] = [
             ("Edit", ["file_path": "/a/b.swift"], "Edit a file", "/a/b.swift"),
             ("MultiEdit", ["file_path": "/a/c.swift"], "Edit a file", "/a/c.swift"),
-            ("Write", ["file_path": "/a/new.txt", "content": "secret body"], "Write a file", "/a/new.txt"),
+            ("Write", ["file_path": "/a/new.txt"], "Write a file", "/a/new.txt"),
             ("NotebookEdit", ["notebook_path": "/a/n.ipynb"], "Edit a notebook", "/a/n.ipynb"),
             ("Read", ["file_path": "/etc/hosts"], "Read a file", "/etc/hosts"),
             ("WebFetch", ["url": "https://example.com/x"], "Fetch a web page", "https://example.com/x"),
@@ -101,8 +101,96 @@ struct PermissionPromptParseTests {
         ]
         for (tool, input, title, detail) in cases {
             let parsed = try #require(parse(tool, input), "\(tool)")
-            #expect(parsed.prompt.title == title && parsed.prompt.detail == detail, "\(tool)")
+            #expect(parsed.prompt.title == title && parsed.prompt.detail == detail && parsed.prompt.secondary.isEmpty, "\(tool)")
         }
+    }
+
+    // MARK: Known tools hide nothing
+
+    @Test func aCommandShowsItsDescriptionAndEveryOtherFieldItWasGiven() throws {
+        let prompt = try #require(parse("Bash", ["command": "make", "description": "Build it", "timeout": 120000, "cwd": "/tmp"])).prompt
+        #expect(prompt.detail == "make" && prompt.flags.isEmpty)
+        #expect(prompt.secondary == "Build it\ncwd: /tmp\ntimeout: 120000")
+        #expect(prompt.scrollText == "make\nBuild it\ncwd: /tmp\ntimeout: 120000")
+        let plain = try #require(parse("Bash", ["command": "make"])).prompt
+        #expect(plain.secondary.isEmpty && plain.scrollText == "make")
+    }
+
+    @Test func aCommandWithTheSandboxOffOrInTheBackgroundSaysSoAboveIt() throws {
+        let both = try #require(parse("Bash", ["command": "curl x", "dangerouslyDisableSandbox": true, "run_in_background": true])).prompt
+        #expect(both.flags == [.init(text: "Sandbox off", warns: true), .init(text: "Runs in the background", warns: false)])
+        #expect(both.scrollText == "Sandbox off\nRuns in the background\ncurl x")
+        #expect(both.secondary.isEmpty, "the flags are not listed twice")
+        let sandbox = try #require(parse("Bash", ["command": "x", "dangerouslyDisableSandbox": true])).prompt
+        #expect(sandbox.flags == [.init(text: "Sandbox off", warns: true)])
+        let background = try #require(parse("Bash", ["command": "x", "run_in_background": true])).prompt
+        #expect(background.flags == [.init(text: "Runs in the background", warns: false)])
+        // Anything but a real true is listed as it is, since the tool may read a string or a number as true.
+        for value: Any in [false, "true", 1, "yes", NSNull()] {
+            let prompt = try #require(parse("Bash", ["command": "x", "dangerouslyDisableSandbox": value])).prompt
+            #expect(prompt.flags.isEmpty && prompt.secondary.hasPrefix("dangerouslyDisableSandbox: "), "\(value)")
+        }
+    }
+
+    @Test func aFileEditShowsThePathAndBothSidesOfTheChange() throws {
+        let edit = try #require(parse("Edit", ["file_path": "/a/b.swift", "old_string": "let a = 1", "new_string": "let a = 2\nlet b = 3",
+                                                "replace_all": true])).prompt
+        #expect(edit.title == "Edit a file")
+        #expect(edit.detail == "/a/b.swift\n\nold_string:\nlet a = 1\n\nnew_string:\nlet a = 2\nlet b = 3")
+        #expect(edit.secondary == "replace_all: true")
+        // Deleting text is an edit with nothing new in it, and is shown as one.
+        let deletion = try #require(parse("Edit", ["file_path": "/a", "old_string": "x", "new_string": ""])).prompt
+        #expect(deletion.detail == "/a\n\nold_string:\nx\n\nnew_string:\n")
+    }
+
+    @Test func aMultiEditShowsEveryEdit() throws {
+        let edits: [[String: Any]] = [["old_string": "a", "new_string": "b"], ["old_string": "c", "new_string": "d", "replace_all": true]]
+        let prompt = try #require(parse("MultiEdit", ["file_path": "/a/b.swift", "edits": edits])).prompt
+        #expect(prompt.detail == "/a/b.swift\n\nedit 1 of 2:\nold_string:\na\nnew_string:\nb\n\nedit 2 of 2:\nold_string:\nc\nnew_string:\nd\nreplace_all: true")
+        #expect(prompt.secondary.isEmpty)
+        // Edits that are not a list of objects are listed as they came.
+        let odd = try #require(parse("MultiEdit", ["file_path": "/a", "edits": ["x", 3]])).prompt
+        #expect(odd.detail == "/a" && odd.secondary == #"edits: ["x",3]"#)
+    }
+
+    @Test func aWriteShowsThePathAndWhatGoesInTheFile() throws {
+        let prompt = try #require(parse("Write", ["file_path": "/a/new.txt", "content": "line 1\nline 2"])).prompt
+        #expect(prompt.title == "Write a file")
+        #expect(prompt.detail == "/a/new.txt\n\ncontent:\nline 1\nline 2" && prompt.secondary.isEmpty)
+        let hidden = try #require(parse("Write", ["file_path": "/a", "content": "x\u{202E}y"])).prompt
+        #expect(hidden.detail == "/a\n\ncontent:\nx⟨U+202E⟩y")
+    }
+
+    @Test func aNotebookEditShowsThePathTheNewSourceAndTheCell() throws {
+        let prompt = try #require(parse("NotebookEdit", ["notebook_path": "/a/n.ipynb", "new_source": "print(1)", "cell_id": "c3",
+                                                          "edit_mode": "replace", "cell_type": "code"])).prompt
+        #expect(prompt.detail == "/a/n.ipynb\n\nnew_source:\nprint(1)")
+        #expect(prompt.secondary == "cell_id: c3\ncell_type: code\nedit_mode: replace")
+    }
+
+    @Test func anyUnexpectedFieldOfAKnownToolIsListedEscaped() throws {
+        let cases: [(String, [String: Any], String)] = [
+            ("Bash", ["command": "ls", "extra": "a\u{202E}b"], "extra: a⟨U+202E⟩b"),
+            ("Edit", ["file_path": "/a", "old_string": "x", "new_string": "y", "hidden": ["k": 1]], #"hidden: {"k":1}"#),
+            ("Write", ["file_path": "/a", "content": "x", "mode": "0777"], "mode: 0777"),
+            ("NotebookEdit", ["notebook_path": "/a", "new_source": "x", "n": 2], "n: 2"),
+            ("Read", ["file_path": "/a", "offset": 10, "limit": 5], "limit: 5\noffset: 10"),
+            ("WebFetch", ["url": "https://x.y", "prompt": "Summarize it"], "prompt: Summarize it"),
+            ("WebSearch", ["query": "q", "allowed_domains": ["a.com"]], #"allowed_domains: ["a.com"]"#),
+        ]
+        for (tool, input, secondary) in cases {
+            #expect(try #require(parse(tool, input), "\(tool)").prompt.secondary == secondary, "\(tool)")
+        }
+        // A field's name is escaped like its value.
+        #expect(try #require(parse("Bash", ["command": "ls", "k\u{200B}ey": 1])).prompt.secondary == "k⟨U+200B⟩ey: 1")
+    }
+
+    @Test func whatIsShownAcrossAllItsPartsCountsAgainstTheLimit() {
+        let half = String(repeating: "a", count: PermissionPrompt.detailLimit / 2)
+        #expect(parse("Write", ["file_path": "/a", "content": half]) != nil)
+        #expect(parse("Write", ["file_path": "/a", "content": half + half]) == nil)
+        #expect(parse("Bash", ["command": "ls", "description": String(repeating: "d", count: PermissionPrompt.detailLimit)]) == nil)
+        #expect(parse("Edit", ["file_path": "/a", "old_string": half, "new_string": half]) == nil)
     }
 
     // MARK: Tools without a plain description
@@ -170,6 +258,81 @@ struct PermissionPromptParseTests {
         for plain in ["echo \"한글 😀 é\" 'x' $HOME `id` 100% \\n", "👨‍👩‍👧"] where plain != "👨‍👩‍👧" {
             #expect(PermissionText.escape(plain, multiline: true) == plain)
         }
+    }
+
+    @Test func scalarsThatDrawNothingAreShownEvenWhenNotFormatCharacters() {
+        func hex(_ value: UInt32) -> String { String(format: "⟨U+%04X⟩", value) }
+        var blanks: [UInt32] = [0x2800, 0x3164, 0xFFA0, 0x115F, 0x1160, 0x17B4, 0x17B5, 0x034F, 0x061C, 0x180E, 0x1680, 0x202F, 0x205F,
+                                0xFFFC, 0xFFF9, 0xE000, 0xF8FF, 0x0378, 0xE0001, 0x1D173, 0x2063, 0x2064]
+        blanks += Array(0xFE00...0xFE0F) + Array(0xE0100...0xE01EF) + Array(0x180B...0x180F) + Array(0x2000...0x200A)
+        for value in blanks {
+            let scalar = Character(Unicode.Scalar(value)!)
+            #expect(PermissionText.escape("a\(scalar)b", multiline: true) == "a" + hex(value) + "b", "U+\(String(value, radix: 16, uppercase: true))")
+        }
+        // Every default-ignorable scalar of the table, whatever the list above says.
+        var checked = 0
+        for value in UInt32(0)...0xE01EF {
+            guard let scalar = Unicode.Scalar(value), scalar.properties.isDefaultIgnorableCodePoint else { continue }
+            #expect(PermissionText.escape("a\(scalar)b", multiline: true) == "a" + hex(value) + "b", "U+\(String(value, radix: 16, uppercase: true))")
+            checked += 1
+        }
+        #expect(checked > 300)
+        // An emoji's variation selector is shown too.
+        #expect(PermissionText.escape("❤\u{FE0F}", multiline: true) == "❤⟨U+FE0F⟩")
+    }
+
+    // MARK: Combining marks
+
+    /// Swift compares strings by canonical equivalence, so a composed and a decomposed text are equal; the scalars tell them apart.
+    private func scalars(_ text: String) -> [UInt32] { text.unicodeScalars.map(\.value) }
+
+    @Test func aKoreanPathMacOSStoredDecomposedReadsAsNormalHangul() throws {
+        let decomposed = "/Users/me/\u{1112}\u{1161}\u{11AB}\u{1100}\u{1173}\u{11AF}/\u{110B}\u{1175}\u{1105}\u{1161}\u{11A8}\u{1109}\u{1165}.txt"
+        let composed = "/Users/me/한글/이락서.txt"
+        #expect(scalars(decomposed) != scalars(composed))
+        #expect(scalars(PermissionText.escape(decomposed, multiline: false)) == scalars(composed))
+        let prompt = try #require(parse("Read", ["file_path": decomposed])).prompt
+        #expect(scalars(prompt.detail) == scalars(composed))
+    }
+
+    @Test func accentsOnLatinLettersComposeAndStayReadable() throws {
+        let decomposed = "re\u{301}sume\u{301}-nai\u{308}ve.pdf"
+        #expect(scalars(PermissionText.escape(decomposed, multiline: false)) == scalars("r\u{E9}sum\u{E9}-na\u{EF}ve.pdf"))
+        #expect(scalars(try #require(parse("Read", ["file_path": "/a/" + decomposed])).prompt.detail) == scalars("/a/r\u{E9}sum\u{E9}-na\u{EF}ve.pdf"))
+        // A letter that has no composed form keeps its marks, up to two.
+        #expect(scalars(PermissionText.escape("x\u{301}\u{323}", multiline: false)) == [0x78, 0x323, 0x301])
+    }
+
+    @Test func combiningMarksPastTwoOnOneBaseAreWrittenOut() {
+        let escape = "⟨U+0301⟩"
+        // "s" with the first acute composes to U+015B; the 39 marks left then count from zero: two stay, 37 are written out.
+        let ls = PermissionText.escape("ls" + String(repeating: "\u{301}", count: 40), multiline: false)
+        #expect(Array(scalars(ls).prefix(4)) == [0x6C, 0x15B, 0x301, 0x301])
+        #expect(ls.components(separatedBy: escape).count - 1 == 37)
+        #expect(ls.unicodeScalars.filter { $0.value == 0x301 }.count == 2)
+
+        let x = PermissionText.escape("x" + String(repeating: "\u{323}", count: 40), multiline: false)
+        #expect(x.components(separatedBy: "⟨U+0323⟩").count - 1 == 38 && x.unicodeScalars.filter { $0.value == 0x323 }.count == 2)
+        // Marks after a line break or an escape start a count of their own; a mark before any base counts too.
+        #expect(scalars(PermissionText.escape("x\u{323}\u{323}\u{323}\n\u{323}\u{323}\u{323}", multiline: true))
+                == scalars("x\u{323}\u{323}⟨U+0323⟩\n\u{323}\u{323}⟨U+0323⟩"))
+        #expect(scalars(PermissionText.escape("\u{200B}\u{323}\u{323}\u{323}", multiline: true)) == scalars("⟨U+200B⟩\u{323}\u{323}⟨U+0323⟩"))
+        // Two marks on each of two letters are all kept.
+        #expect(scalars(PermissionText.escape("x\u{20D2}\u{20D3}y\u{20D2}\u{20D3}", multiline: false)) == [0x78, 0x20D2, 0x20D3, 0x79, 0x20D2, 0x20D3])
+    }
+
+    @Test func theLimitCountsScalarsNotCharacters() {
+        // A letter with two marks is one character and three scalars.
+        func command(marks: Int, plain: Int) -> String { "x" + String(repeating: "\u{323}", count: marks) + String(repeating: "b", count: plain) }
+        let exact = command(marks: 2, plain: PermissionPrompt.detailLimit - 3)
+        #expect(exact.unicodeScalars.count == PermissionPrompt.detailLimit && exact.count == PermissionPrompt.detailLimit - 2)
+        #expect(parse("Bash", ["command": exact]) != nil)
+        let over = command(marks: 2, plain: PermissionPrompt.detailLimit - 2)
+        #expect(over.unicodeScalars.count == PermissionPrompt.detailLimit + 1 && over.count < PermissionPrompt.detailLimit)
+        #expect(parse("Bash", ["command": over]) == nil)
+        // The marks past two are written out, eight scalars each, and count as such.
+        let escaped = command(marks: 4, plain: PermissionPrompt.detailLimit - 5)
+        #expect(escaped.unicodeScalars.count == PermissionPrompt.detailLimit && parse("Bash", ["command": escaped]) == nil)
     }
 
     @Test func everyEscapeInACommandReachesTheDetail() throws {
@@ -243,6 +406,8 @@ struct PermissionPromptParseTests {
             ("a newline in a rule", addRules([["toolName": "Bash", "ruleContent": "ls\nrm -rf /"]])),
             ("a direction override", addRules([["toolName": "Bash", "ruleContent": "ls\u{202E}"]])),
             ("a tab", addRules([["toolName": "Bash", "ruleContent": "a\tb"]])),
+            ("four words of 29 that wrap to four rows though 125 characters is three rows of a character count",
+             addRules([["toolName": "Bash", "ruleContent": Array(repeating: String(repeating: "x", count: 29), count: 4).joined(separator: " ")]])),
             ("a rule too long for three rows", addRules([["toolName": "Bash", "ruleContent": String(repeating: "x", count: 200)]])),
             ("a rule that is not an object", addRules([fine, ["noName": 1]])),
             ("a rule that is a string", ["type": "addRules", "behavior": "allow", "destination": "session", "rules": ["Bash"]]),
@@ -453,24 +618,22 @@ struct PermissionBoardTests {
     // MARK: Room
 
     @Test func aLongCommandShowsAFewRowsAndSaysThereIsMore() {
-        func shown(_ detail: String, grant: PermissionPrompt.Grant? = nil) -> (rows: Int, more: Bool) {
+        func shown(_ detail: String, grant: PermissionPrompt.Grant? = nil) -> (rows: Int, hidden: Int) {
             let prompt = prompt(detail, grant: grant)
-            return (PermissionLayout.detailRows(prompt, columns: PermissionLayout.cardColumns),
-                    PermissionLayout.overflows(prompt, columns: PermissionLayout.cardColumns))
+            let visible = PermissionLayout.visibleDetail(prompt, .card)
+            return (PermissionLayout.rows(visible), PermissionLayout.hiddenRows(content: prompt.measure(.card).scroll, visible: visible))
         }
-        #expect(shown("ls").rows == 1 && !shown("ls").more)
-        #expect(shown("a\nb\nc").rows == 3 && !shown("a\nb\nc").more)
+        #expect(shown("ls").rows == 1 && shown("ls").hidden == 0)
+        #expect(shown("a\nb\nc").rows == 3 && shown("a\nb\nc").hidden == 0)
         let six = (1...6).map(String.init).joined(separator: "\n")
-        #expect(shown(six).rows == 6 && !shown(six).more)
+        #expect(shown(six).rows == 6 && shown(six).hidden == 0)
         let seven = (1...7).map(String.init).joined(separator: "\n")
-        #expect(shown(seven).rows == 6 && shown(seven).more)
+        #expect(shown(seven).rows == 6 && shown(seven).hidden == 1)
         // One line that wraps counts for the rows it takes.
-        let wide = String(repeating: "x", count: PermissionLayout.cardColumns * 6 + 1)
-        #expect(shown(wide).rows == 6 && shown(wide).more)
-        // A wide character takes two columns.
-        #expect(PermissionText.rows(String(repeating: "한", count: 25), columns: 48) == 2)
+        let wide = String(repeating: "x", count: 50 * 7)
+        #expect(shown(wide).rows == 6 && shown(wide).hidden > 0)
         let rule = PermissionPrompt.Grant(rules: ["Bash(a:*)", "Bash(b:*)", "Bash(c:*)"], place: .session)
-        #expect(shown(six, grant: rule).rows == 3 && shown(six, grant: rule).more)
+        #expect(shown(six, grant: rule).rows == 3 && shown(six, grant: rule).hidden == 3)
     }
 
     @Test func noPromptTakesMoreRoomThanTheNotchHas() {
@@ -482,7 +645,9 @@ struct PermissionBoardTests {
                        String(repeating: "w", count: 20_000)]
         for grant in grants {
             for detail in details {
-                let prompt = prompt(detail, grant: grant)
+                let prompt = PermissionPrompt(id: UUID(), title: "Run a command", symbol: "terminal", detail: detail,
+                                              flags: [.init(text: "Sandbox off", warns: true), .init(text: "Runs in the background", warns: false)],
+                                              secondary: "description\ntimeout: 5", folder: "proj", grant: grant)
                 // The closed card under the top row of a tall notch, and the open panel under the header, in the window's 280 points.
                 #expect(PermissionCard.bodyHeight(for: prompt, hasNotch: true) + 40 <= 280, "\(grant?.rules.count ?? 0) rules, \(detail.count) characters")
                 #expect(PermissionPanel.height(for: prompt) <= AppSettings.expandedHeightRange.upperBound - 56,

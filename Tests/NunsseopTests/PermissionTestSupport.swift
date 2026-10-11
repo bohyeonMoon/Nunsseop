@@ -41,30 +41,35 @@ final class PromptEvents: @unchecked Sendable {
     func remove(_ id: UUID) { lock.withLock { gone.append(id) } }
 }
 
-/// A server on a port of its own (never 47750, where a running Nunsseop may listen), with a scratch token.
+/// A server on a port the system picks when it listens (never 47750, where a running Nunsseop may listen), with a scratch token.
 @MainActor
 final class PermissionTestServer {
     let home: ScratchHome
     let server: NotifyServer
-    let events = PromptEvents()
+    let events: PromptEvents
     let port: UInt16
 
     init(hold: Double = PermissionGate.holdSeconds) async throws {
-        let holder = try NotifyServerListenTests.PortHolder()
-        port = holder.port
-        holder.release()
-        home = try ScratchHome()
-        let port = port
-        server = NotifyIntegration.$homeOverride.withValue(home.url) { NotifyServer(port: port, permissionHold: hold) }
-        let events = events
+        let home = try ScratchHome()
+        let server = NotifyIntegration.$homeOverride.withValue(home.url) { NotifyServer(port: 0, permissionHold: hold) }
+        let events = PromptEvents()
         server.permissions.onPrompt = { events.add($0) }
         server.permissions.onGone = { events.remove($0) }
         server.start()
-        var ready = false
+        var bound = server.listeningPort
         let deadline = Date.now.addingTimeInterval(30)
-        while !ready && Date.now < deadline {
-            if let client = try? RawClient(port: port) { client.close(); ready = true } else { try await Task.sleep(for: .milliseconds(20)) }
+        while bound == nil && Date.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+            bound = server.listeningPort
         }
+        guard let bound else {
+            server.stop()
+            throw POSIXError(.ETIMEDOUT)
+        }
+        self.home = home
+        self.server = server
+        self.events = events
+        port = bound
     }
 
     deinit { server.stop() }

@@ -380,7 +380,10 @@
 "Allow" = "Autoriser";
 "Deny" = "Refuser";
 "Always allow" = "Toujours autoriser";
-"Scroll for the rest: %lld lines, %lld characters" = "Faites défiler pour voir la suite : %lld lignes, %lld caractères";
+"Scroll for the rest: %lld more lines" = "Faites défiler pour voir la suite : %lld lignes de plus";
+"Scroll for the rest: 1 more line" = "Faites défiler pour voir la suite : 1 ligne de plus";
+"Sandbox off" = "Sandbox désactivé";
+"Runs in the background" = "S'exécute en arrière-plan";
 "Always allow saves this %@" = "« Toujours autoriser » l'enregistre %@";
 "in this project, just for you" = "dans ce projet, rien que pour vous";
 "in this project" = "dans ce projet";

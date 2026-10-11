@@ -246,10 +246,12 @@ struct PermissionServerTests {
 
     // MARK: Limits
 
-    /// A request of exactly `size` bytes, padded in a field the card doesn't show.
+    /// A request of exactly `size` bytes, padded in a field of the event that the card doesn't show.
     private func body(ofSize size: Int) throws -> Data {
         func data(_ padding: Int) -> Data {
-            PermissionTestServer.hookInput(input: ["command": "ls", "pad": String(repeating: "a", count: max(padding, 0))])
+            var json = try! JSONSerialization.jsonObject(with: PermissionTestServer.hookInput(input: ["command": "ls"])) as! [String: Any]
+            json["pad"] = String(repeating: "a", count: max(padding, 0))
+            return try! JSONSerialization.data(withJSONObject: json)
         }
         var padding = size - data(0).count
         // Escapes and multi-byte characters would change the size, so it is adjusted until it is exact.

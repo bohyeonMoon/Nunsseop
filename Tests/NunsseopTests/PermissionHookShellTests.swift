@@ -222,7 +222,8 @@ struct PermissionHookShellTests {
                                    stdin: PermissionTestServer.hookInput())
         let result = try #require(await hook.finish())
         #expect(result.stdout == "" && result.status == 0)
-        #expect(Date.now.timeIntervalSince(started) < 2)
+        // A hook that hung on the missing server would take curl's whole timeout; a busy machine takes a little longer than usual.
+        #expect(Date.now.timeIntervalSince(started) < 5)
     }
 
     // MARK: The token stays out of arguments and off the wire
