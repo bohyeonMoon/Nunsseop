@@ -72,8 +72,10 @@ final class TimerModel: ObservableObject {
         completedPomodoros = 0
     }
 
-    func recordCompletedPomodoro() {
+    /// Counts a work session for the day it was due, which is earlier than today when the Mac slept through midnight.
+    func recordCompletedPomodoro(dueAt due: Date) {
         rollDay()
+        guard cal.startOfDay(for: due) == countedDay else { return }
         completedPomodoros += 1
     }
 
@@ -201,7 +203,7 @@ final class TimerModel: ObservableObject {
             reset()
             onFinished?(String(localized: "Timer finished"))
         case .pomodoro:
-            if phase == .work { recordCompletedPomodoro() }
+            if phase == .work { recordCompletedPomodoro(dueAt: anchor) }
             let finishedWork = phase == .work
             phase = finishedWork ? .rest : .work
             self.anchor = now().addingTimeInterval(fullLength)
