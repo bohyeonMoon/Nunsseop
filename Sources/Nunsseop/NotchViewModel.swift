@@ -248,9 +248,10 @@ final class NotchViewModel: ObservableObject {
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
         // The idle ears show these. AI limits refresh every 20 s, so only a limit becoming known or unknown,
-        // which resizes the notch, reaches the whole view; IdleEars watches the values itself.
+        // which resizes the notch, reaches the whole view; IdleEars watches the values itself. A new day can
+        // widen the date, which IdleEars redraws by itself but the shape's width has to follow.
         hud.$power.map { _ in () }
-            .merge(with: weather.$current.map { _ in () },
+            .merge(with: weather.$current.map { _ in () }, Self.dayChanges,
                    aiUsage.$providers.combineLatest(settings.$idleAIWindow)
                        .map { providers, window in [IdleItem.claude, .codex].map { Self.aiLeft($0, in: providers, window: window) != nil } }
                        .removeDuplicates().map { _ in () })
@@ -456,6 +457,14 @@ final class NotchViewModel: ObservableObject {
         return covers(left - ear, left) && !covers(right, right + width - notch)
     }
 
+    /// Fires when the calendar day changes, on the main queue.
+    nonisolated static var dayChanges: AnyPublisher<Void, Never> {
+        NotificationCenter.default.publisher(for: .NSCalendarDayChanged)
+            .map { _ in () }
+            .receive(on: DispatchQueue.main)
+            .eraseToAnyPublisher()
+    }
+
     /// The room the eyebrow's stroke leaves at each end of its frame, which fitted idle values keep from the wall too.
     nonisolated static let idleFittedMargin: CGFloat = 10
 
@@ -497,7 +506,7 @@ final class NotchViewModel: ObservableObject {
 
     nonisolated static func collapsedShift(fitted: (left: CGFloat, right: CGFloat)?, hidesLeftEar: Bool,
                                            width: CGFloat, notch: CGFloat) -> CGFloat {
-        // A single side never reaches left of the camera, so only two sides make room for the menus.
+        // Only two sides make room for the menus; a single side keeps the eyebrow over the camera regardless.
         if let fitted, !(fitted.left > 0 && fitted.right > 0 && hidesLeftEar) { return (fitted.right - fitted.left) / 2 }
         return hidesLeftEar ? (width - notch) / 2 : 0
     }
