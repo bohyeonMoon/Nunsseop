@@ -167,6 +167,7 @@ enum AgentHook {
 /// `POST http://127.0.0.1:47750/notify` with `Authorization: Bearer <token>` and a JSON body
 /// `{"title": "...", "message": "..."}`. The token lives in Application Support/Nunsseop/notify-token.
 /// `POST /agent` takes Claude Code's and Codex's session events for the agents count, as headers only (see `agentHookCommand`).
+/// `POST /permission` holds a Claude Code permission prompt until it is answered in the notch (see `PermissionGate`).
 final class NotifyServer: @unchecked Sendable {
     static let port: UInt16 = 47750
     /// A notification a local tool sent, with where it came from when the tool said so.
@@ -183,17 +184,19 @@ final class NotifyServer: @unchecked Sendable {
     var onAgent: (@MainActor (AgentEvent) -> Void)?
 
     private let listenPort: UInt16
-    private let queue = DispatchQueue(label: "nunsseop.notify")
+    private let queue: DispatchQueue
     /// Touched only on `queue`.
     private var listener: NWListener?
     private var retry: DispatchWorkItem?
     private var retryDelay = NotifyServer.firstRetryDelay
-    private var openConnections = 0
+    /// The connections counted against `maxConnections`; one that becomes a held prompt leaves it.
+    private var ordinary = Set<ObjectIdentifier>()
     private static let firstRetryDelay = 1.0
     private static let lastRetryDelay = 4.0
     private static let maxConnections = 8
     static let maxRequestBytes = 65_536
     let token: String
+    let permissions: PermissionGate
 
     /// A shell command for Claude Code's Notification hook. Claude Code passes the event as
     /// JSON on stdin; its `message` field is sent as the notification text.
@@ -225,6 +228,49 @@ final class NotifyServer: @unchecked Sendable {
             + ">/dev/null 2>&1 || true"
     }
 
+    /// Claude Code's PermissionRequest hook. It asks the notch about a permission prompt and prints the answer Claude Code
+    /// reads from stdout, or nothing at all, which leaves the terminal's dialog in charge: that is what every failure ends in.
+    ///
+    /// The token is read by redirection into `tr`, which has no argument holding it, and goes no further than shell
+    /// variables, so it is in no process's arguments (`ps` shows those to every user). It is not sent either: the request
+    /// carries an HMAC-SHA256 of a fresh nonce and the body, built from `openssl dgst` calls over the key XOR the HMAC
+    /// pads, which reach it on stdin (see `PermissionWire`). An answer is printed only when its own HMAC, over the same
+    /// nonce and the exact bytes printed, checks out, so a stranger on 127.0.0.1:47750 can't make the hook allow anything.
+    /// curl waits in the background so that a TERM from Claude Code (the terminal answered first) ends it and its connection.
+    static var permissionHookCommand: String { permissionHookCommand(port: port) }
+
+    static func permissionHookCommand(port: UInt16) -> String {
+        #"""
+        t="$HOME/Library/Application Support/Nunsseop/notify-token"
+        in=$(cat)
+        [ -n "$in" ] && [ $(printf %s "$in" | wc -c) -le \#(PermissionGate.maxBodyBytes) ] || exit 0
+        kh=$(tr -d ' \t\r\n' < "$t" 2>/dev/null | od -An -v -tx1 | tr -d ' \n')
+        [ ${#kh} -ge 64 ] || exit 0
+        [ ${#kh} -gt 128 ] && kh=$(tr -d ' \t\r\n' < "$t" | openssl dgst -sha256 -binary | od -An -v -tx1 | tr -d ' \n')
+        while [ ${#kh} -lt 128 ]; do kh=${kh}00; done
+        i=; o=; r=$kh
+        while [ -n "$r" ]; do h=${r%"${r#??}"}; r=${r#??}; v=$((0x$h)); x=$((v ^ 54)); i="$i\\$((x >> 6))$(((x >> 3) & 7))$((x & 7))"; x=$((v ^ 92)); o="$o\\$((x >> 6))$(((x >> 3) & 7))$((x & 7))"; done
+        H() { openssl dgst -sha256 | sed 's/^.*= //'; }
+        M() { { printf "$i"; cat; } | openssl dgst -sha256 -binary | { printf "$o"; cat; } | H; }
+        n=$(dd if=/dev/urandom bs=16 count=1 2>/dev/null | od -An -v -tx1 | tr -d ' \n')
+        [ ${#n} -eq 32 ] || exit 0
+        p=$(printf 'nunsseop-permission-request\n%s\n%s' "$n" "$(printf %s "$in" | H)" | M)
+        f=$(mktemp) || exit 0
+        c=
+        trap 'kill $c 2>/dev/null; rm -f "$f"; exit 0' EXIT TERM HUP INT
+        printf %s "$in" | curl -s -m 590 --connect-timeout 1 -X POST http://127.0.0.1:\#(port)/permission -H 'Expect:' -H "X-Nonce: $n" -H "X-Proof: $p" --data-binary @- -o "$f" 2>/dev/null &
+        c=$!
+        wait $c
+        c=
+        r=$(cat "$f")
+        case $r in *\ *) ;; *) exit 0;; esac
+        m=${r%% *}
+        d=${r#* }
+        [ -n "$d" ] && [ "$m" = "$(printf 'nunsseop-permission-response\n%s\n%s' "$n" "$(printf %s "$d" | H)" | M)" ] && printf %s "$d"
+        exit 0
+        """#
+    }
+
     /// A command for scripts: the text after `--data-binary` becomes the notification.
     static var scriptCommand: String {
         "curl -s -m 2 -X POST http://127.0.0.1:\(port)/notify "
@@ -238,8 +284,10 @@ final class NotifyServer: @unchecked Sendable {
             .appendingPathComponent("Nunsseop/notify-token")
     }
 
-    init(port: UInt16 = NotifyServer.port) {
+    init(port: UInt16 = NotifyServer.port, permissionHold: Double = PermissionGate.holdSeconds) {
         listenPort = port
+        let queue = DispatchQueue(label: "nunsseop.notify")
+        self.queue = queue
         let url = Self.tokenURL
         if let existing = try? String(contentsOf: url, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines),
            existing.count >= 32 {
@@ -250,6 +298,7 @@ final class NotifyServer: @unchecked Sendable {
             try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             FileManager.default.createFile(atPath: url.path, contents: Data(token.utf8), attributes: [.posixPermissions: 0o600])
         }
+        permissions = PermissionGate(token: token, queue: queue, holdSeconds: permissionHold)
     }
 
     func start() {
@@ -266,6 +315,7 @@ final class NotifyServer: @unchecked Sendable {
             retryDelay = Self.firstRetryDelay
             listener?.cancel()
             listener = nil
+            permissions.releaseAll()
         }
     }
 
@@ -300,20 +350,23 @@ final class NotifyServer: @unchecked Sendable {
     }
 
     private func handle(_ connection: NWConnection) {
-        guard openConnections < Self.maxConnections else {
+        guard ordinary.count < Self.maxConnections else {
             connection.cancel()
             return
         }
-        openConnections += 1
+        let id = ObjectIdentifier(connection)
+        ordinary.insert(id)
         connection.stateUpdateHandler = { [weak self] state in
             switch state {
-            case .cancelled, .failed: self?.openConnections -= 1
+            case .cancelled, .failed: self?.ordinary.remove(id)
             default: break
             }
         }
         connection.start(queue: queue)
-        // Drop clients that connect and then stall.
-        queue.asyncAfter(deadline: .now() + 5) { connection.cancel() }
+        // Drop clients that connect and then stall; a held prompt is meant to wait.
+        queue.asyncAfter(deadline: .now() + 5) { [weak self] in
+            if self?.permissions.holds(connection) != true { connection.cancel() }
+        }
         receive(on: connection, buffer: Data())
     }
 
@@ -324,12 +377,23 @@ final class NotifyServer: @unchecked Sendable {
             if let data { buffer.append(data) }
             if let request = Self.parse(buffer) {
                 self.respond(to: request, on: connection)
-            } else if isComplete || error != nil || buffer.count > Self.maxRequestBytes {
+            } else if Self.declaresTooMuch(buffer) {
+                self.reply(connection, status: "413 Payload Too Large")
+            } else if isComplete || error != nil || buffer.count > Self.bufferLimit(buffer) {
                 self.reply(connection, status: "400 Bad Request")
             } else {
                 self.receive(on: connection, buffer: buffer)
             }
         }
+    }
+
+    /// What a request may hold before it is refused: a prompt's body is the hook's whole input, which can be a large file.
+    static func requestLimit(path: String) -> Int {
+        path == "/permission" ? PermissionGate.maxBodyBytes : maxRequestBytes
+    }
+
+    private static func bufferLimit(_ buffer: Data) -> Int {
+        buffer.starts(with: Data("POST /permission ".utf8)) ? PermissionGate.maxBodyBytes + 16_384 : maxRequestBytes
     }
 
     struct Request {
@@ -339,7 +403,7 @@ final class NotifyServer: @unchecked Sendable {
         let body: Data
     }
 
-    static func parse(_ data: Data) -> Request? {
+    private static func head(of data: Data) -> (method: String, path: String, headers: [String: String], bodyStart: Data.Index)? {
         guard let separator = data.range(of: Data("\r\n\r\n".utf8)),
               let head = String(data: data[..<separator.lowerBound], encoding: .utf8) else { return nil }
         let lines = head.components(separatedBy: "\r\n")
@@ -350,10 +414,21 @@ final class NotifyServer: @unchecked Sendable {
             guard let colon = line.firstIndex(of: ":") else { continue }
             headers[line[..<colon].lowercased()] = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
         }
-        guard let length = Int(headers["content-length"] ?? "0"), (0...maxRequestBytes).contains(length) else { return nil }
-        let body = data[separator.upperBound...]
+        return (String(parts[0]), String(parts[1]), headers, separator.upperBound)
+    }
+
+    static func parse(_ data: Data) -> Request? {
+        guard let head = head(of: data), let length = Int(head.headers["content-length"] ?? "0"),
+              (0...requestLimit(path: head.path)).contains(length) else { return nil }
+        let body = data[head.bodyStart...]
         guard body.count >= length else { return nil }
-        return Request(method: String(parts[0]), path: String(parts[1]), headers: headers, body: Data(body.prefix(length)))
+        return Request(method: head.method, path: head.path, headers: head.headers, body: Data(body.prefix(length)))
+    }
+
+    /// Whether the headers already say the body will be more than the path allows, so there is no point waiting for it.
+    static func declaresTooMuch(_ data: Data) -> Bool {
+        guard let head = head(of: data), let length = Int(head.headers["content-length"] ?? "0") else { return false }
+        return length > requestLimit(path: head.path)
     }
 
     /// What a request asks the app to do, once it is answered.
@@ -364,6 +439,10 @@ final class NotifyServer: @unchecked Sendable {
     }
 
     private func respond(to request: Request, on connection: NWConnection) {
+        if request.path == "/permission" {
+            if permissions.accept(request, on: connection) { ordinary.remove(ObjectIdentifier(connection)) }
+            return
+        }
         let (status, effect) = route(request)
         switch effect {
         case .none: break
@@ -424,8 +503,12 @@ final class NotifyServer: @unchecked Sendable {
     }
 
     private func reply(_ connection: NWConnection, status: String) {
-        let response = "HTTP/1.1 \(status)\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-        connection.send(content: Data(response.utf8), completion: .contentProcessed { _ in connection.cancel() })
+        Self.reply(connection, status: status)
+    }
+
+    static func reply(_ connection: NWConnection, status: String, body: Data = Data()) {
+        let head = "HTTP/1.1 \(status)\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n"
+        connection.send(content: Data(head.utf8) + body, completion: .contentProcessed { _ in connection.cancel() })
     }
 }
 

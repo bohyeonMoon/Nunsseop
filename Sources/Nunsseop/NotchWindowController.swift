@@ -197,6 +197,10 @@ final class NotchWindowController {
                 self?.shakeShelf.demo { label, view in self?.snapshotter?.capture(label: label, of: view) }
             }
         }
+        // Debug: --demo-permission shows a prompt for checking its layout; answering it only closes the card.
+        if CommandLine.arguments.contains("--demo-permission") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.model.approvals.add(.demo) }
+        }
         if CommandLine.arguments.contains("--demo-settings") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { SettingsWindowController.shared.show() }
         }
@@ -602,8 +606,8 @@ final class NotchWindowController {
                 openWork?.cancel()
                 openWork = nil
                 hoverOpenBlocked = false
-            } else if openWork == nil && !hoverOpenBlocked && model.hud.action == nil {
-                // While a notice that can be clicked shows, hovering doesn't open the notch, so it can be clicked.
+            } else if openWork == nil && !hoverOpenBlocked && model.hud.action == nil && model.approvals.current == nil {
+                // While a notice that can be clicked or a permission prompt shows, hovering doesn't open the notch, so they can be clicked.
                 let work = DispatchWorkItem { [weak self] in
                     MainActor.assumeIsolated {
                         self?.openWork = nil

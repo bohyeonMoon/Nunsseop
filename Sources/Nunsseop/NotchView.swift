@@ -48,50 +48,56 @@ struct NotchView: View {
                     VStack(spacing: 0) {
                         HeaderBar(model: model, height: notchHeight)
                         Group {
-                            switch model.tab {
-                            case .home:
-                                VStack(spacing: 8) {
-                                    if let call = model.calls.call, let controls = model.callControls.state {
-                                        CallRow(call: call, state: controls) { model.callControls.toggle($0) }
-                                    }
-                                    HStack(spacing: 16) {
-                                        HomeTab(nowPlaying: nowPlaying, lyrics: model.settings.lyricsEnabled ? model.lyrics : nil)
-                                        if model.settings.calendarEnabled {
-                                            // A wide notch gives the calendar room for the whole week in large digits.
-                                            let wide = model.expandedSize.width >= 700
-                                            CalendarPanel(calendar: model.calendar, showsReminders: model.settings.remindersEnabled, wide: wide)
-                                                .frame(width: wide ? 220 : 168)
+                            if let prompt = model.approvals.current {
+                                PermissionPanel(prompt: prompt, count: model.approvals.prompts.count) {
+                                    model.approvals.answer(prompt, $0)
+                                }
+                            } else {
+                                switch model.tab {
+                                case .home:
+                                    VStack(spacing: 8) {
+                                        if let call = model.calls.call, let controls = model.callControls.state {
+                                            CallRow(call: call, state: controls) { model.callControls.toggle($0) }
+                                        }
+                                        HStack(spacing: 16) {
+                                            HomeTab(nowPlaying: nowPlaying, lyrics: model.settings.lyricsEnabled ? model.lyrics : nil)
+                                            if model.settings.calendarEnabled {
+                                                // A wide notch gives the calendar room for the whole week in large digits.
+                                                let wide = model.expandedSize.width >= 700
+                                                CalendarPanel(calendar: model.calendar, showsReminders: model.settings.remindersEnabled, wide: wide)
+                                                    .frame(width: wide ? 220 : 168)
+                                            }
                                         }
                                     }
+                                case .shelf:
+                                    ShelfView(shelf: model.shelf, isDropTargeted: isDropTargeted && !isAirDropTargeted,
+                                              isAirDropTargeted: isAirDropTargeted)
+                                case .timer:
+                                    TimerTab(timer: model.timer)
+                                case .clipboard:
+                                    ClipboardTab(history: model.clipboard)
+                                case .notes:
+                                    NotesTab(notes: model.notes)
+                                case .tools:
+                                    ToolsTab(tools: model.tools, recorder: model.recorder, recordAudio: model.settings.recordAudio,
+                                             appVolume: model.settings.perAppVolume ? model.appVolume : nil)
+                                case .system:
+                                    SystemTab(stats: model.stats, peripherals: model.settings.peripheralBatteries ? model.peripherals : nil)
+                                case .apps:
+                                    AppsTab(launcher: model.launcher)
+                                case .search:
+                                    SearchTab(model: model.search, shortcut: model.settings.searchHotkey ? model.settings.searchHotKey.label : nil)
+                                case .emoji:
+                                    EmojiTab(model: model.emoji)
+                                case .ai:
+                                    AIUsageTab(usage: model.aiUsage)
+                                case .notices:
+                                    NoticesTab(log: model.notices)
+                                case .agents:
+                                    AgentsTab(model: model.agentList)
+                                case .mirror:
+                                    MirrorTab(mirror: model.mirror, deviceID: model.settings.mirrorCameraID)
                                 }
-                            case .shelf:
-                                ShelfView(shelf: model.shelf, isDropTargeted: isDropTargeted && !isAirDropTargeted,
-                                          isAirDropTargeted: isAirDropTargeted)
-                            case .timer:
-                                TimerTab(timer: model.timer)
-                            case .clipboard:
-                                ClipboardTab(history: model.clipboard)
-                            case .notes:
-                                NotesTab(notes: model.notes)
-                            case .tools:
-                                ToolsTab(tools: model.tools, recorder: model.recorder, recordAudio: model.settings.recordAudio,
-                                         appVolume: model.settings.perAppVolume ? model.appVolume : nil)
-                            case .system:
-                                SystemTab(stats: model.stats, peripherals: model.settings.peripheralBatteries ? model.peripherals : nil)
-                            case .apps:
-                                AppsTab(launcher: model.launcher)
-                            case .search:
-                                SearchTab(model: model.search, shortcut: model.settings.searchHotkey ? model.settings.searchHotKey.label : nil)
-                            case .emoji:
-                                EmojiTab(model: model.emoji)
-                            case .ai:
-                                AIUsageTab(usage: model.aiUsage)
-                            case .notices:
-                                NoticesTab(log: model.notices)
-                            case .agents:
-                                AgentsTab(model: model.agentList)
-                            case .mirror:
-                                MirrorTab(mirror: model.mirror, deviceID: model.settings.mirrorCameraID)
                             }
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -101,6 +107,13 @@ struct NotchView: View {
                     .padding(.bottom, 16)
                     // No scale here: scaling the scrolling tab row while it appears leaves it a few points off.
                     .transition(motion.expandedContent)
+                } else if let prompt = model.approvals.current {
+                    PermissionCard(prompt: prompt, count: model.approvals.prompts.count, height: notchHeight,
+                                   earWidth: NotchViewModel.hudEarWidth, leadingInset: earLead, hasNotch: model.geometry.hasNotch) {
+                        model.approvals.answer(prompt, $0)
+                    }
+                    .padding(.horizontal, topRadius + 12)
+                    .transition(motion.hudContent)
                 } else if let event = model.hud.event {
                     HUDContent(event: event, height: notchHeight, earWidth: NotchViewModel.hudEarWidth, leadingInset: earLead,
                                singleLine: model.hudSingleRow)
@@ -186,6 +199,7 @@ struct NotchView: View {
         .animation(model.showsIdleEars ? motion.earsGrow : motion.earsShrink, value: model.showsIdleEars)
         .animation(motion.earsGrow, value: model.inlinePeekWidth)
         .animation(model.hud.event != nil ? motion.earsGrow : motion.earsShrink, value: model.hud.event)
+        .animation(model.approvals.current != nil ? motion.earsGrow : motion.earsShrink, value: model.approvals.current?.id)
         // The shape slides over when the left ear hides or shows, rather than jumping.
         .animation(motion.earsGrow, value: model.collapsedShift)
         .animation(.easeInOut(duration: 0.18), value: model.tab)

@@ -66,6 +66,10 @@ final class AppSettings: ObservableObject {
     /// The AI tab asked once whether to turn that on; asked or answered, it doesn't ask again.
     @Published var claudeLimitsAsked: Bool = AppSettings.load("claudeLimitsAsked", default: false) { didSet { save(claudeLimitsAsked, "claudeLimitsAsked") } }
     @Published var localNotifications: Bool = AppSettings.load("localNotifications", default: true) { didSet { save(localNotifications, "localNotifications") } }
+    /// Answers Claude Code's permission prompts in the notch, through a hook in its settings that this adds and removes.
+    @Published var permissionPrompts: Bool = AppSettings.load("permissionPrompts", default: true) {
+        didSet { save(permissionPrompts, "permissionPrompts"); NotifyIntegration.updateConnected() }
+    }
     @Published var timerTab: Bool = AppSettings.load("timerTab", default: true) { didSet { save(timerTab, "timerTab") } }
     @Published var shelfTab: Bool = AppSettings.load("shelfTab", default: true) { didSet { save(shelfTab, "shelfTab") } }
     @Published var searchTab: Bool = AppSettings.load("searchTab", default: true) { didSet { save(searchTab, "searchTab") } }

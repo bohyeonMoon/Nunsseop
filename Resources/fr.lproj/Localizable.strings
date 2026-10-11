@@ -366,3 +366,18 @@
 "Full access" = "Accès complet";
 "Connect Claude Code and Codex in Settings › Alerts to see their sessions here" = "Connectez Claude Code et Codex dans Réglages › Alertes pour voir leurs sessions ici";
 "The Agents tab lists their sessions with folder, model, context used and permission mode, read from the tools' own session files on this Mac." = "L’onglet Agents liste leurs sessions avec leur dossier, leur modèle, le contexte utilisé et leur mode de permissions, lus dans les fichiers de session des outils sur ce Mac.";
+
+/* Permission prompts */
+"Answer permission prompts in the notch" = "Répondre aux demandes d’autorisation dans l’encoche";
+"Claude Code's permission prompts also show in the notch, where you can allow or deny them. Answer in the terminal and the notch lets go of it; if Nunsseop isn't running, the terminal asks as before. Works with Claude Code connected above. What a prompt asks is kept in memory only." = "Les demandes d’autorisation de Claude Code s’affichent aussi dans l’encoche, où vous pouvez les autoriser ou les refuser. Si vous répondez dans le terminal, l’encoche la lâche ; si Nunsseop ne tourne pas, le terminal demande comme avant. Fonctionne avec Claude Code connecté ci-dessus. Le contenu d’une demande n’est gardé qu’en mémoire.";
+"Run a command" = "Exécuter une commande";
+"Edit a file" = "Modifier un fichier";
+"Write a file" = "Écrire un fichier";
+"Edit a notebook" = "Modifier un notebook";
+"Read a file" = "Lire un fichier";
+"Fetch a web page" = "Récupérer une page web";
+"Search the web" = "Rechercher sur le web";
+"Allow" = "Autoriser";
+"Deny" = "Refuser";
+"Always allow %@" = "Toujours autoriser %@";
+"1 of %lld" = "1 sur %lld";
