@@ -24,10 +24,8 @@ private final class StubbedHook {
         #!/bin/sh
         for a; do printf '%s\\0' "$a"; done > "$D/args"
         echo $$ > "$D/pid"
-        out=
         while [ $# -gt 0 ]; do
           case "$1" in
-            -o) out=$2; shift ;;
             -H) printf '%s\\n' "$2" >> "$D/headers"; shift ;;
           esac
           shift
@@ -36,7 +34,7 @@ private final class StubbedHook {
         : > "$D/read"
         case "$MODE" in
           fail) exit 7 ;;
-          answer) while [ ! -f "$D/response" ]; do sleep 0.02; done; cp "$D/response" "$out" ;;
+          answer) while [ ! -f "$D/response" ]; do sleep 0.02; done; cat "$D/response" ;;
         esac
         exit 0
         """.write(to: curl, atomically: true, encoding: .utf8)
@@ -255,7 +253,7 @@ struct PermissionHookShellTests {
         exit 127
         """.write(to: shim, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: shim.path)
-        for name in ["openssl", "curl", "tr", "od", "dd", "sed", "wc", "mktemp", "cat", "rm", "sleep"] {
+        for name in ["openssl", "curl", "tr", "od", "dd", "sed", "wc", "cat", "sleep"] {
             try FileManager.default.createSymbolicLink(at: shims.appendingPathComponent(name), withDestinationURL: shim)
         }
         let log = shims.appendingPathComponent("argv.log")
@@ -270,15 +268,30 @@ struct PermissionHookShellTests {
 
         let arguments = try Data(contentsOf: log)
         let text = String(decoding: arguments, as: UTF8.self)
-        let programs = Set(text.components(separatedBy: "\0").filter { ["openssl", "curl", "tr", "od", "dd", "sed", "wc", "mktemp", "cat", "rm"].contains($0) })
+        let programs = Set(text.components(separatedBy: "\0").filter { ["openssl", "curl", "tr", "od", "dd", "sed", "wc", "cat"].contains($0) })
         // The log really saw the programs that handle the key and the request, so its silence about the token means something.
-        #expect(programs.isSuperset(of: ["openssl", "curl", "tr", "od", "dd", "sed", "wc", "mktemp", "cat"]), "\(programs)")
+        #expect(programs.isSuperset(of: ["openssl", "curl", "tr", "od", "dd", "sed", "wc", "cat"]), "\(programs)")
         #expect(text.contains("X-Proof: "))
         let hex = Array(token.utf8).map { String(format: "%02x", $0) }.joined()
         let pads = Array(token.utf8).map { String(format: "%02x", $0 ^ 0x36) }.joined()
         for secret in [token, hex, pads, String(token.prefix(16)), String(token.suffix(16))] {
             #expect(!text.contains(secret), "\(secret.prefix(8))…")
         }
+    }
+
+    @Test func curlGivesUpAfterTheServerLetsGoAndBeforeClaudeCodeStopsTheHook() throws {
+        let command = NotifyServer.permissionHookCommand
+        let afterFlag = try #require(command.components(separatedBy: " -m ").dropFirst().first)
+        let seconds = try #require(Double(afterFlag.prefix { $0.isNumber }))
+        #expect(seconds > PermissionGate.holdSeconds, "curl would hang up before the server answers a prompt nobody touched")
+        #expect(seconds < Double(JSONHook.permissionTimeout), "Claude Code would stop the hook first")
+        #expect(command.components(separatedBy: " -m ").count == 2)
+    }
+
+    @Test func theCommandKeepsTheAnswerInAVariableNotInAFile() {
+        let command = NotifyServer.permissionHookCommand
+        #expect(!command.contains("mktemp") && !command.contains("TMPDIR") && !command.contains("/tmp"))
+        #expect(!command.contains(" -o ") && !command.contains(" > "))
     }
 
     @Test func theCommandReadsTheTokenOnlyByRedirectionAndSendsNoBearer() {
@@ -305,7 +318,7 @@ struct PermissionHookShellTests {
         #expect(kill(pid, 0) == 0)
         hook.process.process.terminate()
         let result = await hook.process.finish()
-        #expect(result?.stdout == "" && result?.status == 0)
+        #expect(result?.stdout == "")
         await eventually { kill(pid, 0) != 0 }
         #expect(kill(pid, 0) != 0, "curl was left waiting")
     }

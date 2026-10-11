@@ -236,7 +236,8 @@ final class NotifyServer: @unchecked Sendable {
     /// carries an HMAC-SHA256 of a fresh nonce and the body, built from `openssl dgst` calls over the key XOR the HMAC
     /// pads, which reach it on stdin (see `PermissionWire`). An answer is printed only when its own HMAC, over the same
     /// nonce and the exact bytes printed, checks out, so a stranger on 127.0.0.1:47750 can't make the hook allow anything.
-    /// curl waits in the background so that a TERM from Claude Code (the terminal answered first) ends it and its connection.
+    /// The answer is held in a shell variable, so nothing of the prompt reaches a file. When Claude Code ends the hook (the
+    /// terminal answered first) by TERM or KILL, a watchdog sees the shell gone within a second and ends curl and its connection.
     static var permissionHookCommand: String { permissionHookCommand(port: port) }
 
     static func permissionHookCommand(port: UInt16) -> String {
@@ -255,14 +256,11 @@ final class NotifyServer: @unchecked Sendable {
         n=$(dd if=/dev/urandom bs=16 count=1 2>/dev/null | od -An -v -tx1 | tr -d ' \n')
         [ ${#n} -eq 32 ] || exit 0
         p=$(printf 'nunsseop-permission-request\n%s\n%s' "$n" "$(printf %s "$in" | H)" | M)
-        f=$(mktemp) || exit 0
-        c=
-        trap 'kill $c 2>/dev/null; rm -f "$f"; exit 0' EXIT TERM HUP INT
-        printf %s "$in" | curl -s -m 590 --connect-timeout 1 -X POST http://127.0.0.1:\#(port)/permission -H 'Expect:' -H "X-Nonce: $n" -H "X-Proof: $p" --data-binary @- -o "$f" 2>/dev/null &
+        s=$$
+        r=$({ printf %s "$in" | curl -s -m 590 --connect-timeout 1 -X POST http://127.0.0.1:\#(port)/permission -H 'Expect:' -H "X-Nonce: $n" -H "X-Proof: $p" --data-binary @- 2>/dev/null &
         c=$!
-        wait $c
-        c=
-        r=$(cat "$f")
+        ( while kill -0 $s 2>/dev/null; do kill -0 $c 2>/dev/null || exit 0; sleep 1; done; kill $c ) >/dev/null 2>&1 &
+        wait $c; })
         case $r in *\ *) ;; *) exit 0;; esac
         m=${r%% *}
         d=${r#* }

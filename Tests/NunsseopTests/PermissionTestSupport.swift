@@ -102,7 +102,7 @@ final class PermissionTestServer {
 }
 
 /// A plain loopback client, so a request can be as wrong as a test needs.
-final class RawClient {
+final class RawClient: @unchecked Sendable {
     private var fd: Int32
 
     init(port: UInt16) throws {
@@ -116,7 +116,8 @@ final class RawClient {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
         }
         guard connected == 0 else {
-            Foundation.close(fd)
+            // The failed init still runs deinit, which must not close the descriptor a second time.
+            close()
             throw POSIXError(.ECONNREFUSED)
         }
     }
@@ -142,23 +143,29 @@ final class RawClient {
         }
     }
 
-    /// Everything the server sends until it closes the connection or `seconds` pass without a byte.
-    func read(timeout seconds: Int = 2) -> Data {
-        var timeout = timeval(tv_sec: seconds, tv_usec: 0)
-        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
-        var result = Data()
-        var buffer = [UInt8](repeating: 0, count: 4096)
-        while true {
-            let count = recv(fd, &buffer, buffer.count, 0)
-            if count <= 0 { break }
-            result.append(contentsOf: buffer[..<count])
+    /// Everything the server sends until it closes the connection or `seconds` pass without a byte. The wait is off the
+    /// main actor, so other tests keep running.
+    func read(timeout seconds: Int = 2) async -> Data {
+        let fd = fd
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global().async {
+                var timeout = timeval(tv_sec: seconds, tv_usec: 0)
+                setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+                var result = Data()
+                var buffer = [UInt8](repeating: 0, count: 4096)
+                while true {
+                    let count = recv(fd, &buffer, buffer.count, 0)
+                    if count <= 0 { break }
+                    result.append(contentsOf: buffer[..<count])
+                }
+                continuation.resume(returning: result)
+            }
         }
-        return result
     }
 
     /// The status line of the answer, nil when the server said nothing.
-    func status(timeout seconds: Int = 2) -> String? {
-        let text = String(decoding: read(timeout: seconds), as: UTF8.self)
+    func status(timeout seconds: Int = 2) async -> String? {
+        let text = String(decoding: await read(timeout: seconds), as: UTF8.self)
         return text.isEmpty ? nil : text.components(separatedBy: "\r\n").first
     }
 }
@@ -170,10 +177,20 @@ final class HookProcess: @unchecked Sendable {
     private var collected: Data?
     private let lock = NSLock()
 
+    /// Nothing but /dev/null may be written to, by the shell or anything it starts.
+    private static let writesNothing = "(version 1)(allow default)(deny file-write*)(allow file-write* (literal \"/dev/null\"))"
+
     /// - path: the folders searched for commands.
-    init(command: String, home: URL, stdin: Data, path: String = "/usr/bin:/bin", environment: [String: String] = [:]) throws {
-        process.executableURL = URL(fileURLWithPath: "/bin/sh")
-        process.arguments = ["-c", command]
+    /// - writesNothing: runs under a sandbox that refuses every file write, so a hook that needs one fails.
+    init(command: String, home: URL, stdin: Data, path: String = "/usr/bin:/bin", environment: [String: String] = [:],
+         writesNothing: Bool = false) throws {
+        if writesNothing {
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/sandbox-exec")
+            process.arguments = ["-p", Self.writesNothing, "/bin/sh", "-c", command]
+        } else {
+            process.executableURL = URL(fileURLWithPath: "/bin/sh")
+            process.arguments = ["-c", command]
+        }
         process.environment = ["HOME": home.path, "PATH": path].merging(environment) { $1 }
         let input = Pipe()
         process.standardInput = input

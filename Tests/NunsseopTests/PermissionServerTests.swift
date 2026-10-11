@@ -50,7 +50,7 @@ struct PermissionServerTests {
         client.send(server.request(body: PermissionTestServer.hookInput(suggestions: [PermissionTestServer.addRules]), nonce: nonce))
         await eventually { server.events.prompts.count == 1 }
         server.server.permissions.answer(server.events.prompts[0].id, .always)
-        let answer = parts(client.read(timeout: 5))
+        let answer = parts(await client.read(timeout: 5))
         #expect(answer.status == "HTTP/1.1 200 OK")
         #expect(answer.decision == (try decisionText(.always, suggestion: PermissionTestServer.addRules)))
         #expect(answer.proof == PermissionWire.responseProof(token: server.token, nonce: nonce, decision: Data(answer.decision.utf8)))
@@ -67,7 +67,7 @@ struct PermissionServerTests {
         #expect(prompt.rule == nil)
         server.server.permissions.answer(prompt.id, .always)
         // Nothing allows more than was offered: the connection closes without an answer, and the terminal asks.
-        #expect(client.read(timeout: 5).isEmpty)
+        #expect(await client.read(timeout: 5).isEmpty)
     }
 
     // MARK: Who may ask
@@ -96,7 +96,7 @@ struct PermissionServerTests {
         for (name, request) in attempts {
             let client = try RawClient(port: server.port)
             client.send(request)
-            #expect(client.status() == "HTTP/1.1 401 Unauthorized", Comment(rawValue: name))
+            #expect(await client.status() == "HTTP/1.1 401 Unauthorized", Comment(rawValue: name))
         }
         #expect(server.events.prompts.isEmpty)
     }
@@ -111,13 +111,13 @@ struct PermissionServerTests {
 
         let second = try RawClient(port: server.port)
         second.send(request)
-        #expect(second.status() == "HTTP/1.1 401 Unauthorized")
+        #expect(await second.status() == "HTTP/1.1 401 Unauthorized")
 
         server.server.permissions.answer(server.events.prompts[0].id, .deny)
-        #expect(parts(first.read(timeout: 5)).status == "HTTP/1.1 200 OK")
+        #expect(parts(await first.read(timeout: 5)).status == "HTTP/1.1 200 OK")
         let third = try RawClient(port: server.port)
         third.send(request)
-        #expect(third.status() == "HTTP/1.1 401 Unauthorized")
+        #expect(await third.status() == "HTTP/1.1 401 Unauthorized")
         #expect(server.events.prompts.count == 1)
     }
 
@@ -126,12 +126,12 @@ struct PermissionServerTests {
         let body = PermissionTestServer.hookInput()
         let get = try RawClient(port: server.port)
         get.send(server.request(body: body, method: "GET"))
-        #expect(get.status() == "HTTP/1.1 404 Not Found")
+        #expect(await get.status() == "HTTP/1.1 404 Not Found")
 
         server.server.permissions.isEnabled = { false }
         let client = try RawClient(port: server.port)
         client.send(server.request(body: body))
-        #expect(client.status() == "HTTP/1.1 404 Not Found")
+        #expect(await client.status() == "HTTP/1.1 404 Not Found")
         #expect(server.events.prompts.isEmpty)
     }
 
@@ -140,7 +140,7 @@ struct PermissionServerTests {
         for body in [PermissionTestServer.hookInput(tool: "AskUserQuestion", input: ["questions": []]), Data("not json".utf8)] {
             let client = try RawClient(port: server.port)
             client.send(server.request(body: body))
-            #expect(client.status() == "HTTP/1.1 204 No Content")
+            #expect(await client.status() == "HTTP/1.1 204 No Content")
         }
         let process = try hook(for: server, PermissionTestServer.hookInput(tool: "ExitPlanMode", input: ["plan": "x"]))
         let result = try #require(await process.finish())
@@ -148,9 +148,28 @@ struct PermissionServerTests {
         #expect(server.events.prompts.isEmpty)
     }
 
+    private func files(under url: URL) -> [String] {
+        let paths = FileManager.default.enumerator(atPath: url.path)?.allObjects as? [String] ?? []
+        return paths.filter { !url.appendingPathComponent($0).hasDirectoryPath }.sorted()
+    }
+
+    /// The sandbox refuses every file write, so a hook that kept the prompt or its answer in a file could not get this far.
+    @Test func nothingOfAPromptIsWrittenToDiskWhileItWaitsOrAfterItIsAnswered() async throws {
+        try #require(FileManager.default.isExecutableFile(atPath: "/usr/bin/sandbox-exec"))
+        let server = try await PermissionTestServer()
+        let process = try HookProcess(command: server.hookCommand, home: server.home.url,
+                                      stdin: PermissionTestServer.hookInput(input: ["command": "echo marker-7c1e"]), writesNothing: true)
+        await eventually { server.events.prompts.count == 1 }
+        #expect(server.events.prompts.first?.detail == "echo marker-7c1e")
+        server.server.permissions.answer(server.events.prompts[0].id, .allow)
+        let result = try #require(await process.finish())
+        #expect(result.stdout == (try decisionText(.allow)))
+        #expect(files(under: server.home.url) == ["Library/Application Support/Nunsseop/notify-token"])
+    }
+
     // MARK: When the hook goes away
 
-    @Test func aHookKilledBecauseTheTerminalAnsweredTakesItsCardAwayAtOnce() async throws {
+    @Test func aHookKilledBecauseTheTerminalAnsweredTakesItsCardAwayPromptly() async throws {
         let server = try await PermissionTestServer()
         let process = try hook(for: server, PermissionTestServer.hookInput())
         await eventually { server.events.prompts.count == 1 }
@@ -161,6 +180,18 @@ struct PermissionServerTests {
         #expect(server.events.goneIDs == [id])
         // An answer that comes too late has nowhere to go and does no harm.
         server.server.permissions.answer(id, .allow)
+    }
+
+    /// SIGKILL runs no trap, so only something outside the shell can end the curl it left waiting.
+    @Test func aHookShellKilledOutrightLeavesNoCardBehind() async throws {
+        let server = try await PermissionTestServer()
+        let process = try hook(for: server, PermissionTestServer.hookInput())
+        await eventually { server.events.prompts.count == 1 }
+        let id = try #require(server.events.prompts.first?.id)
+        #expect(server.events.goneIDs.isEmpty)
+        #expect(kill(process.process.processIdentifier, SIGKILL) == 0)
+        await eventually { server.events.goneIDs.contains(id) }
+        #expect(server.events.goneIDs == [id])
     }
 
     @Test func aConnectionThatClosesTakesItsCardAway() async throws {
@@ -191,14 +222,14 @@ struct PermissionServerTests {
         await eventually { server.events.prompts.count == 3 }
         server.server.permissions.cancelAll()
         await eventually { server.events.goneIDs.count == 3 }
-        for client in clients { #expect(client.read(timeout: 5).isEmpty) }
+        for client in clients { #expect(await client.read(timeout: 5).isEmpty) }
 
         let again = try RawClient(port: server.port)
         again.send(server.request(body: PermissionTestServer.hookInput()))
         await eventually { server.events.prompts.count == 4 }
         server.server.stop()
         await eventually { server.events.goneIDs.count == 4 }
-        #expect(again.read(timeout: 5).isEmpty)
+        #expect(await again.read(timeout: 5).isEmpty)
     }
 
     @Test func aWaitingPromptIsNotDroppedAsAStalledClient() async throws {
@@ -210,7 +241,7 @@ struct PermissionServerTests {
         try await Task.sleep(for: .seconds(6.5))
         #expect(server.events.goneIDs.isEmpty)
         server.server.permissions.answer(server.events.prompts[0].id, .allow)
-        #expect(parts(client.read(timeout: 5)).status == "HTTP/1.1 200 OK")
+        #expect(parts(await client.read(timeout: 5)).status == "HTTP/1.1 200 OK")
     }
 
     // MARK: Limits
@@ -238,10 +269,10 @@ struct PermissionServerTests {
 
         let over = try RawClient(port: server.port)
         over.send(server.request(body: try body(ofSize: PermissionGate.maxBodyBytes + 1)))
-        #expect(over.status() == "HTTP/1.1 413 Payload Too Large")
+        #expect(await over.status() == "HTTP/1.1 413 Payload Too Large")
         let huge = try RawClient(port: server.port)
         huge.send(Data("POST /permission HTTP/1.1\r\nContent-Length: 2000000000\r\n\r\n".utf8))
-        #expect(huge.status() == "HTTP/1.1 413 Payload Too Large")
+        #expect(await huge.status() == "HTTP/1.1 413 Payload Too Large")
         #expect(server.events.prompts.count == 1)
     }
 
@@ -249,26 +280,28 @@ struct PermissionServerTests {
         let server = try await PermissionTestServer()
         let client = try RawClient(port: server.port)
         client.send(Data("POST /notify HTTP/1.1\r\nContent-Length: \(NotifyServer.maxRequestBytes + 1)\r\n\r\n".utf8))
-        #expect(client.status() == "HTTP/1.1 413 Payload Too Large")
+        #expect(await client.status() == "HTTP/1.1 413 Payload Too Large")
     }
 
     @Test func onlyAFewPromptsWaitAtOnce() async throws {
         let server = try await PermissionTestServer()
         var clients: [RawClient] = []
-        for _ in 0..<PermissionGate.maxPending {
+        for held in 1...PermissionGate.maxPending {
             let client = try RawClient(port: server.port)
             client.send(server.request(body: PermissionTestServer.hookInput()))
             clients.append(client)
+            // The next one connects only once this one is held, so the count never depends on how fast the server reads.
+            await eventually { server.events.prompts.count == held }
+            #expect(server.events.prompts.count == held)
         }
-        await eventually { server.events.prompts.count == PermissionGate.maxPending }
         let extra = try RawClient(port: server.port)
         extra.send(server.request(body: PermissionTestServer.hookInput()))
-        #expect(extra.status() == "HTTP/1.1 503 Service Unavailable")
+        #expect(await extra.status() == "HTTP/1.1 503 Service Unavailable")
         #expect(server.events.prompts.count == PermissionGate.maxPending)
 
         // A place frees up when one is answered.
         server.server.permissions.answer(server.events.prompts[0].id, .deny)
-        _ = clients[0].read(timeout: 5)
+        _ = await clients[0].read(timeout: 5)
         let next = try RawClient(port: server.port)
         next.send(server.request(body: PermissionTestServer.hookInput()))
         await eventually { server.events.prompts.count == PermissionGate.maxPending + 1 }
@@ -280,16 +313,17 @@ struct PermissionServerTests {
         let server = try await PermissionTestServer()
         var clients: [RawClient] = []
         // More than the eight connections the server allows at once.
-        for _ in 0..<PermissionGate.maxPending {
+        for held in 1...PermissionGate.maxPending {
             let client = try RawClient(port: server.port)
             client.send(server.request(body: PermissionTestServer.hookInput()))
             clients.append(client)
+            await eventually { server.events.prompts.count == held }
+            #expect(server.events.prompts.count == held)
         }
-        await eventually { server.events.prompts.count == PermissionGate.maxPending }
         for _ in 0..<12 {
             let notice = try RawClient(port: server.port)
             notice.send(Data("POST /notify HTTP/1.1\r\nAuthorization: Bearer \(server.token)\r\nContent-Length: 0\r\n\r\n".utf8))
-            #expect(notice.status() == "HTTP/1.1 204 No Content")
+            #expect(await notice.status() == "HTTP/1.1 204 No Content")
         }
         withExtendedLifetime(clients) {}
     }
