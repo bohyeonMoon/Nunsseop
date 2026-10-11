@@ -28,32 +28,16 @@ jobs:
       - name: Test again
         run: swift test
 
-  intel:
-    runs-on: macos-26
-    timeout-minutes: 40
-    steps:
-      - uses: actions/checkout@v4
-      - name: Rosetta
-        run: /usr/sbin/softwareupdate --install-rosetta --agree-to-license || true
-      # The whole toolchain under Rosetta, so the test runner is x86_64 too and can load the x86_64 tests.
-      - name: Test as x86_64
-        run: |
-          arch -x86_64 swift test
-          file .build/x86_64-apple-macosx/debug/NunsseopPackageTests.xctest/Contents/MacOS/NunsseopPackageTests
-
   bundle:
     runs-on: macos-26
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
-      - name: Rosetta
-        run: /usr/sbin/softwareupdate --install-rosetta --agree-to-license || true
-      # The same check a release runs: version, both architectures, signature, resources, and the app starting
-      # and answering, natively and as Intel under Rosetta.
-      - name: DMG starts on Apple silicon and Intel
+      # The same check a release runs: version, Apple silicon, signature, resources, and the app starting and answering.
+      - name: DMG
         run: |
           dmg="$(./scripts/make-dmg.sh)"
-          REQUIRE_INTEL=1 ./scripts/check-dmg.sh "$dmg" "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
+          ./scripts/check-dmg.sh "$dmg" "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
 
   site:
     runs-on: macos-26

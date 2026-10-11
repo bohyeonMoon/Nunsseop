@@ -32,7 +32,7 @@ brew install --cask namekun/tap/nunsseop
 
 Necesita [Homebrew](https://brew.sh). Homebrew quita la marca de cuarentena, así que la app se abre sin problemas. Para actualizar, ejecuta `brew update && brew upgrade --cask nunsseop`; cuando hay una versión nueva, Ajustes › General › Actualizaciones copia ese comando al portapapeles (si la app se instaló desde el dmg antiguo, un comando que la pasa a Homebrew).
 
-Requiere macOS 14 Sonoma o posterior. Funciona en Apple silicon e Intel, y también en pantallas sin notch.
+Requiere macOS 14 Sonoma o posterior. Funciona en Mac con Apple silicon (no en Intel), también en pantallas sin notch.
 
 ## Tu primer minuto
 
