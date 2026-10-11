@@ -35,7 +35,8 @@ struct NotchView: View {
                         .animation(model.browFaded ? .easeIn(duration: 0.3) : motion.brow, value: model.browFaded)
                         .animation(motion.brow, value: model.browLifted)
                         .frame(width: model.geometry.collapsedSize.width, height: notchHeight)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: shift > 0 ? .topLeading : shift < 0 ? .topTrailing : .top)
+                        .padding(.leading, NotchViewModel.browLead(width: size.width, notch: model.geometry.collapsedSize.width, shift: shift))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
 
                 if model.isExpanded {
@@ -111,8 +112,10 @@ struct NotchView: View {
                                 .padding(.leading, earLead)
                             } else if model.showsIdleEars && !model.sneakPeekInline {
                                 IdleEars(model: model, height: notchHeight)
-                                    // A single side's value sits right against the eyebrow; its width leaves just that room.
-                                    .padding(.leading, model.idleOneSide == nil ? earLead : 0)
+                                    .padding(.leading, model.idleFits
+                                             ? NotchViewModel.idleLead(browLead: NotchViewModel.browLead(width: size.width, notch: model.geometry.collapsedSize.width, shift: shift),
+                                                                       shift: shift, notch: model.geometry.collapsedSize.width)
+                                             : earLead)
                             } else {
                                 Color.clear.frame(height: notchHeight)
                             }
@@ -239,15 +242,19 @@ private struct NotchMotion {
 extension NotchView {
     /// Where ShelfView's AirDrop tile sits inside the expanded shape.
     func airDropRect(in size: CGSize) -> CGRect {
+        Self.airDropRect(in: size, collapsedHeight: model.geometry.collapsedSize.height)
+    }
+
+    static func airDropRect(in size: CGSize, collapsedHeight: CGFloat) -> CGRect {
         let inset: CGFloat = 18 + 14
-        let top = max(model.geometry.collapsedSize.height, 24) + 8
+        let top = max(collapsedHeight, 24) + 8
         return CGRect(x: size.width - inset - ShelfView.airDropWidth, y: top,
                       width: ShelfView.airDropWidth, height: size.height - top - 16)
     }
 }
 
 /// Drops land on the shelf, or go straight to AirDrop when released over the AirDrop tile.
-private struct NotchDropDelegate: DropDelegate {
+struct NotchDropDelegate: DropDelegate {
     let model: NotchViewModel
     @Binding var isTargeted: Bool
     @Binding var isAirDropTargeted: Bool
@@ -262,8 +269,12 @@ private struct NotchDropDelegate: DropDelegate {
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
-        isAirDropTargeted = model.isExpanded && model.tab == .shelf && airDropRect.contains(info.location)
+        isAirDropTargeted = Self.targetsAirDrop(at: info.location, in: airDropRect, expanded: model.isExpanded, tab: model.tab)
         return DropProposal(operation: .copy)
+    }
+
+    static func targetsAirDrop(at point: CGPoint, in rect: CGRect, expanded: Bool, tab: NotchTab) -> Bool {
+        expanded && tab == .shelf && rect.contains(point)
     }
 
     func dropExited(info: DropInfo) {
