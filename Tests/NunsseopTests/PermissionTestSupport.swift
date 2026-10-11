@@ -1,3 +1,5 @@
+import AppKit
+import CoreText
 import Foundation
 @testable import Nunsseop
 
@@ -271,4 +273,36 @@ final class HookProcess: @unchecked Sendable {
     func terminate() { process.terminate() }
 
     deinit { if process.isRunning { process.terminate() } }
+}
+
+/// What CoreText draws `text` as in the card's code font: the font and glyph of each one that takes room. A selector may leave a
+/// glyph of no width behind, which is not a drawing.
+func codeDrawing(_ text: String) -> [String] {
+    let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: [.font: PermissionLayout.codeFont]))
+    var drawn: [String] = []
+    for run in CTLineGetGlyphRuns(line) as? [CTRun] ?? [] {
+        let font = (CTRunGetAttributes(run) as NSDictionary)[kCTFontAttributeName] as! CTFont
+        let count = CTRunGetGlyphCount(run)
+        var glyphs = [CGGlyph](repeating: 0, count: count), advances = [CGSize](repeating: .zero, count: count)
+        CTRunGetGlyphs(run, CFRange(location: 0, length: 0), &glyphs)
+        CTRunGetAdvances(run, CFRange(location: 0, length: 0), &advances)
+        for (glyph, advance) in zip(glyphs, advances) where advance.width > 0 { drawn.append("\(CTFontCopyPostScriptName(font)):\(glyph)") }
+    }
+    return drawn
+}
+
+/// Whether a selector or skin tone in `text` follows a picture that CoreText draws the same with and without it, or one that is in
+/// colour already: the ones `escape` writes out.
+func hasUselessControl(_ text: String) -> Bool {
+    let scalars = Array(text.unicodeScalars)
+    for (index, scalar) in scalars.enumerated() where index > 0 {
+        let picture = scalars[index - 1]
+        switch scalar.value {
+        case 0xFE0F where picture.properties.isEmoji && picture.properties.isEmojiPresentation && picture.value > 0xFF: return true
+        case 0xFE0E, 0xFE0F, 0x1F3FB...0x1F3FF:
+            if picture.value > 0xFF, picture.properties.isEmoji, codeDrawing(String(picture)) == codeDrawing(String(picture) + String(scalar)) { return true }
+        default: break
+        }
+    }
+    return false
 }

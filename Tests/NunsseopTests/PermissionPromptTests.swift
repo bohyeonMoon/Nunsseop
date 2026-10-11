@@ -308,7 +308,7 @@ struct PermissionPromptParseTests {
 
     @Test func whatEmojiAreMadeOfDisplaysAndNothingElseOfTheKindDoes() {
         let emoji = ["⚠\u{FE0F}", "❤\u{FE0F}", "👨\u{200D}👩\u{200D}👧", "❤\u{FE0F}\u{200D}🔥", "👩🏽\u{200D}⚕\u{FE0F}", "1\u{FE0F}\u{20E3}",
-                     "✔\u{FE0E}", "🏳\u{FE0F}\u{200D}🌈", "🧑\u{200D}🧑\u{200D}🧒\u{200D}🧒",
+                     "🧑\u{200D}🧑\u{200D}🧒\u{200D}🧒",
                      "echo ⚠\u{FE0F} done"]
         for text in emoji {
             #expect(PermissionText.escape(text, multiline: true) == text, "\(text.unicodeScalars.map(\.value))")
@@ -354,18 +354,19 @@ struct PermissionPromptParseTests {
             #expect(PermissionText.escape("😀\u{200D}" + text, multiline: true) == "😀" + hex(0x200D) + hex(symbol), "U+\(String(symbol, radix: 16))")
         }
         #expect(PermissionText.escape("©\u{200D}®", multiline: true) == "©⟨U+200D⟩®")
-        // Nor beside the ones that read as ASCII, which are written out themselves.
+        // Nor beside the ones that read as ASCII, which are shown in a word that does not, and take neither.
         for symbol: UInt32 in [0x2122, 0x2139, 0x203C] {
             let text = String(Unicode.Scalar(symbol)!)
-            #expect(PermissionText.escape(text + "\u{FE0F}", multiline: true) == hex(symbol) + hex(0xFE0F), "U+\(String(symbol, radix: 16))")
-            #expect(PermissionText.escape("😀\u{200D}" + text, multiline: true) == "😀" + hex(0x200D) + hex(symbol), "U+\(String(symbol, radix: 16))")
+            #expect(PermissionText.escape(text + "\u{FE0F}", multiline: true) == text + hex(0xFE0F), "U+\(String(symbol, radix: 16))")
+            #expect(PermissionText.escape("😀\u{200D}" + text, multiline: true) == "😀" + hex(0x200D) + text, "U+\(String(symbol, radix: 16))")
+            #expect(PermissionText.escape("a" + text, multiline: true) == "a" + hex(symbol), "U+\(String(symbol, radix: 16))")
         }
         // Neither a flag letter, a skin tone nor a digit takes a joiner.
         #expect(PermissionText.escape("😀\u{200D}🇫", multiline: true) == "😀" + hex(0x200D) + hex(0x1F1EB))
         #expect(PermissionText.escape("😀\u{200D}🏽", multiline: true) == "😀" + hex(0x200D) + hex(0x1F3FD))
         #expect(PermissionText.escape("😀\u{200D}1", multiline: true) == "😀" + hex(0x200D) + "1")
         // The pictures that joiners and selectors really serve stay.
-        for text in ["👨\u{200D}👩\u{200D}👧", "❤\u{FE0F}\u{200D}🔥", "🏳\u{FE0F}\u{200D}⚧\u{FE0F}", "🏴\u{200D}☠\u{FE0F}", "👁\u{FE0F}\u{200D}🗨\u{FE0F}",
+        for text in ["👨\u{200D}👩\u{200D}👧", "❤\u{FE0F}\u{200D}🔥", "🏳\u{200D}⚧\u{FE0F}", "🏴\u{200D}☠\u{FE0F}",
                      "🏃\u{200D}♀\u{FE0F}", "🐻\u{200D}❄\u{FE0F}", "👩\u{200D}⚖\u{FE0F}", "1\u{FE0F}\u{20E3}"] {
             #expect(PermissionText.escape(text, multiline: true) == text, "\(text.unicodeScalars.map(\.value))")
         }
@@ -432,13 +433,13 @@ struct PermissionPromptParseTests {
             checked += 1
         }
         #expect(checked > 1_000)
-        // The letters of Latin, Greek, Cyrillic, CJK and Hangul text are not touched by it, besides the ones that read as ASCII and the three
-        // whose circumflex or diaeresis the title draws past its cell.
+        // The letters of Latin, Greek, Cyrillic, CJK and Hangul text are not touched by it, besides the ones that read as ASCII, which are
+        // written out beside the ASCII letters here, and the two ideographs that are drawn as a stroke (the checker doesn't know them).
         let lookalike = try asciiLookalikes()
         for range in [0x41...0x7A, 0xC0...0xFF, 0x3B1...0x3C9, 0x410...0x44F, 0x4E00...0x4FFF, 0xAC00...0xACFF] {
             for value in range {
                 guard let scalar = Unicode.Scalar(UInt32(value)), scalar.properties.isAlphabetic, direction(Int32(value)) == 0,
-                      lookalike(scalar) == nil, ![0xCE, 0xEE, 0xEF].contains(value) else { continue }
+                      lookalike(scalar) == nil, ![0x4E00, 0x4E28].contains(value) else { continue }
                 let text = "a" + String(Character(scalar)) + "b"
                 #expect(PermissionText.escape(text, multiline: true) == text.precomposedStringWithCanonicalMapping, "U+\(String(value, radix: 16, uppercase: true))")
             }
@@ -477,7 +478,13 @@ struct PermissionPromptParseTests {
         // Nor does the card show them: the command is the text with each written out.
         let command = try #require(parse("Bash", ["command": "git push \u{2011}\u{2011}force"])).prompt
         #expect(command.detail == "git push ⟨U+2011⟩⟨U+2011⟩force")
-        // Korean, Japanese and Chinese paths are still offered.
+        // Nor one with a look-alike beside a punctuation mark of another script, or with a word that is all of them.
+        for content in ["ls \u{3161}la", "echo a\u{3002}b", "rm \u{2014}rf", "echo \u{FF52}\u{FF4D}", "ls\u{3000}\u{3161}la", "echo \u{2795}"] {
+            let parsed = try offered(content)
+            #expect(parsed.prompt.grant == nil && parsed.suggestion == nil, "\(content)")
+        }
+        // Korean, Japanese and Chinese paths are still offered, and so are words of a language of their own with scalars that read as ASCII.
+        #expect(try offered("echo ノート ‘안녕’ привет").prompt.grant != nil)
         #expect(try offered("ls /Users/me/한글 日本語 中文").prompt.grant != nil)
         #expect(try offered("cp /home/ひらがな/문서.txt .").prompt.grant != nil)
     }
