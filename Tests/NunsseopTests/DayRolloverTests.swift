@@ -110,15 +110,16 @@ enum DayRolloverTests {
             return timer
         }
 
-        /// Finishes two work sessions and their rests; a third work session is then running until 23:45.
-        private func finishTwoSessionsAndStartAThird(_ timer: TimerModel, _ clock: Clock) {
+        /// Finishes two work sessions and their rests; a third work session is then running until 25 minutes
+        /// after the second rest was handled, which is 23:45 unless that is late.
+        private func finishTwoSessionsAndStartAThird(_ timer: TimerModel, _ clock: Clock, secondRestHandledAt: Date = time(10, 23, 20)) {
             clock.date = time(10, 22, 25)
             timer.tick()
             clock.date = time(10, 22, 30)
             timer.tick()
             clock.date = time(10, 22, 55)
             timer.tick()
-            clock.date = time(10, 23, 20)
+            clock.date = secondRestHandledAt
             timer.tick()
         }
 
@@ -126,12 +127,34 @@ enum DayRolloverTests {
             let clock = Clock(time(10, 22))
             let timer = runningTimer(clock)
             defer { timer.reset() }
-            finishTwoSessionsAndStartAThird(timer, clock)
+            finishTwoSessionsAndStartAThird(timer, clock, secondRestHandledAt: time(10, 23, 50))  // third session due 00:15
             #expect(timer.completedPomodoros == 2)
-            clock.date = time(11, 0, 30)
+            clock.date = time(11, 0, 20)
             timer.tick()
             #expect(timer.phase == .rest)
             #expect(timer.completedPomodoros == 1)
+        }
+
+        @Test func aWorkSessionDueBeforeMidnightButHandledAfterBelongsToThePreviousDay() {
+            let clock = Clock(time(10, 22))
+            let timer = runningTimer(clock)
+            defer { timer.reset() }
+            finishTwoSessionsAndStartAThird(timer, clock)  // third session due 23:45
+            clock.date = time(11, 0, 30)  // the Mac slept through it
+            timer.rollDay()
+            timer.tick()
+            #expect(timer.phase == .rest)
+            #expect(timer.completedPomodoros == 0)
+        }
+
+        @Test func aWorkSessionDueBeforeMidnightAndHandledBeforeItCountsToday() {
+            let clock = Clock(time(10, 22))
+            let timer = runningTimer(clock)
+            defer { timer.reset() }
+            finishTwoSessionsAndStartAThird(timer, clock)  // third session due 23:45
+            clock.date = time(10, 23, 46)
+            timer.tick()
+            #expect(timer.completedPomodoros == 3)
         }
 
         @Test func aWorkSessionFinishingTheSameDayKeepsCounting() {
