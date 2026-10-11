@@ -300,6 +300,8 @@ private struct AlertsPane: View {
                 }
                 Text("Connecting changes the tool's own settings file and keeps the old one with a `.nunsseop-backup` extension. Sessions started afterwards send their notifications here. Claude Code and Codex also report their sessions for the agents count in the closed notch, which works while notifications from local tools are on.")
                     .font(.caption).foregroundStyle(.secondary)
+                Text("The Agents tab lists their sessions with folder, model and context used, read from the tools' own session files on this Mac.")
+                    .font(.caption).foregroundStyle(.secondary)
                 if connected.contains(.codex) {
                     Text("Codex asks you to review Nunsseop's hooks the next time it starts. Trust them (\"Review hooks\" lets you trust only Nunsseop's; \"Trust all and continue\" trusts every tool's new hooks); until then its sessions don't count.")
                         .font(.caption).foregroundStyle(.secondary)

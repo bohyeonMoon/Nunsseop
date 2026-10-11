@@ -355,3 +355,8 @@
 "The command goes to the clipboard. Paste it in Terminal and press Return." = "コマンドがクリップボードにコピーされます。ターミナルに貼り付けて Return キーを押してください。";
 "Get Homebrew" = "Homebrew を入手";
 "Updates come through Homebrew. Install it, then come back here to copy the update command." = "アップデートは Homebrew で行います。Homebrew をインストールしてから、ここでアップデートコマンドをコピーしてください。";
+"Agents" = "エージェント";
+"Needs input" = "入力待ち";
+"Your turn" = "あなたの番";
+"Connect Claude Code and Codex in Settings › Alerts to see their sessions here" = "設定 › 通知で Claude Code と Codex を接続すると、セッションがここに表示されます";
+"The Agents tab lists their sessions with folder, model and context used, read from the tools' own session files on this Mac." = "エージェントタブには、セッションがフォルダ、モデル、使用中のコンテキストとともに表示されます。値はこの Mac にあるツール自身のセッションファイルから読み取ります。";

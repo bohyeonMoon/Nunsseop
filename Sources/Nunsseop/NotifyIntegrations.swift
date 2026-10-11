@@ -21,7 +21,7 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
     /// Where tests point the tools' config folders (and, through `NotifyServer.tokenURL`, Application Support).
     @TaskLocal static var homeOverride: URL?
 
-    private static var home: URL { homeOverride ?? FileManager.default.homeDirectoryForCurrentUser }
+    static var home: URL { homeOverride ?? FileManager.default.homeDirectoryForCurrentUser }
 
     /// The file Nunsseop changes or adds.
     var configURL: URL {

@@ -380,3 +380,8 @@
 "The command goes to the clipboard. Paste it in Terminal and press Return." = "명령이 클립보드에 복사됩니다. 터미널에 붙여 넣고 Return을 누르세요.";
 "Get Homebrew" = "Homebrew 받기";
 "Updates come through Homebrew. Install it, then come back here to copy the update command." = "업데이트는 Homebrew로 받습니다. Homebrew를 설치한 뒤 여기서 업데이트 명령을 복사하세요.";
+"Agents" = "에이전트";
+"Needs input" = "입력 필요";
+"Your turn" = "내 차례";
+"Connect Claude Code and Codex in Settings › Alerts to see their sessions here" = "설정 › 알림에서 Claude Code와 Codex를 연결하면 세션이 여기에 나타납니다";
+"The Agents tab lists their sessions with folder, model and context used, read from the tools' own session files on this Mac." = "에이전트 탭에는 세션이 폴더, 모델, 사용한 컨텍스트와 함께 표시됩니다. 값은 이 Mac에 있는 도구의 세션 파일에서 읽습니다.";

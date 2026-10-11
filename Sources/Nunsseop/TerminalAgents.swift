@@ -241,6 +241,9 @@ enum Herdr {
         let status: String
         var agent: String? = nil
         var title: String? = nil
+        /// The folder the agent's process is in, and the agent's own session id when herdr knows it.
+        var cwd: String? = nil
+        var session: String? = nil
     }
 
     /// An agent in a pane that just finished or is waiting for the user.
@@ -256,6 +259,10 @@ enum Herdr {
     /// Focuses the pane in herdr and brings forward the terminal app herdr's client runs in.
     static func focus(_ notice: Notice) {
         guard let pane = notice.pane, let socket = notice.socket else { return }
+        focus(pane: pane, socket: socket)
+    }
+
+    static func focus(pane: String, socket: URL) {
         let request = String(decoding: Herdr.request("focus", "pane.focus", ["pane_id": pane]).dropLast(), as: UTF8.self)
         DispatchQueue.global(qos: .userInitiated).async {
             TerminalFocus.send([request], toSocket: socket.path)
@@ -285,8 +292,11 @@ enum Herdr {
         guard let rows = (response["result"] as? [String: Any])?["panes"] as? [[String: Any]] else { return nil }
         return rows.compactMap { row in
             (row["pane_id"] as? String).map {
-                Pane(id: $0, status: row["agent_status"] as? String ?? "unknown",
-                     agent: row["display_agent"] as? String ?? row["agent"] as? String, title: row["title"] as? String)
+                let session = row["agent_session"] as? [String: Any]
+                return Pane(id: $0, status: row["agent_status"] as? String ?? "unknown",
+                            agent: row["display_agent"] as? String ?? row["agent"] as? String, title: row["title"] as? String,
+                            cwd: row["foreground_cwd"] as? String ?? row["cwd"] as? String,
+                            session: session?["kind"] as? String == "id" ? session?["value"] as? String : nil)
             }
         }
     }
@@ -389,6 +399,8 @@ final class HerdrWatcher {
     /// When each pane entered its current state, kept across reconnects. It's when Nunsseop first saw that state:
     /// after a relaunch a pane that was already done counts from then, for another `doneWindow`.
     private var since: [String: Herdr.PaneState] = [:]
+    /// The agent, folder and session id each pane had in the last list.
+    private var listed: [String: Herdr.Pane] = [:]
     /// Connections that waited in a row without reaching herdr, and since when it has been out of reach.
     private var misses = 0
     private var unreachableSince: Date?
@@ -433,6 +445,7 @@ final class HerdrWatcher {
     private func forget() {
         _ = states.reconcile([])
         since = [:]
+        listed = [:]
         misses = 0
         unreachableSince = nil
         onStates?([:])
@@ -450,7 +463,9 @@ final class HerdrWatcher {
     private func publish(now: Date = .now) {
         var next: [String: Herdr.PaneState] = [:]
         for (pane, status) in states.byPane {
-            next[pane] = since[pane].flatMap { $0.status == status ? $0 : nil } ?? Herdr.PaneState(status: status, since: now)
+            var state = since[pane].flatMap { $0.status == status ? $0 : nil } ?? Herdr.PaneState(status: status, since: now)
+            (state.agent, state.cwd, state.session) = (listed[pane]?.agent, listed[pane]?.cwd, listed[pane]?.session)
+            next[pane] = state
         }
         since = next
         onStates?(next)
@@ -477,6 +492,7 @@ final class HerdrWatcher {
             // Reached herdr again.
             self.misses = 0
             self.unreachableSince = nil
+            self.listed = Dictionary(panes.map { ($0.id, $0) }, uniquingKeysWith: { $1 })
             for pane in self.states.reconcile(panes) {
                 self.announce(Herdr.Notice(agent: pane.agent ?? "herdr", status: pane.status, title: pane.title, pane: pane.id))
             }
@@ -560,6 +576,7 @@ final class HerdrWatcher {
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     guard let self, self.running else { return }
+                    self.listed = Dictionary(panes.map { ($0.id, $0) }, uniquingKeysWith: { $1 })
                     for pane in self.states.reconcile(panes) {
                         self.announce(Herdr.Notice(agent: pane.agent ?? "herdr", status: pane.status, title: pane.title, pane: pane.id))
                     }
