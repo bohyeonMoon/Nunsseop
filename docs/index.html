@@ -40,6 +40,44 @@
     --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
     color-scheme: light;
   }
+  /* Transitions.dev motion tokens (https://transitions.dev), free transitions used under the Transitions.dev License.
+     Only the tokens this page references are copied. Durations and easings are matched by what the motion does, not by the nearest number. */
+  :root {
+    --duration-stagger: 40ms;  /* per-item stagger offset */
+    --duration-fast: 250ms;  /* dropdown open, tabs sliding, accordion, hover slide */
+    --ease-smooth-out: cubic-bezier(0.22, 1, 0.36, 1);  /* open + close, slide, position change */
+    --blur-small: 2px;  /* text swap, cross-fade */
+    /* Menu dropdown */
+    --dropdown-open-dur: 250ms;
+    --dropdown-close-dur: 150ms;
+    --dropdown-pre-scale: 0.97;
+    --dropdown-closing-scale: 0.99;
+    --dropdown-ease: cubic-bezier(0.22, 1, 0.36, 1);
+    /* Text states swap */
+    --text-swap-dur: 150ms;
+    --text-swap-translate-y: 4px;
+    --text-swap-blur: 2px;
+    /* Error state shake */
+    --shake-distance: 6px;
+    --shake-overshoot: 4px;
+    /* Tabs sliding */
+    --tabs-dur: 250ms;
+    --tabs-ease: cubic-bezier(0.22, 1, 0.36, 1);
+    /* Accordion expand */
+    --acc-expand: 250ms;
+    --acc-collapse: 250ms;
+    --acc-chevron: 250ms;
+    --acc-ease: cubic-bezier(0.22, 1, 0.36, 1);
+    /* Texts reveal */
+    --stagger-dur: 500ms;
+    --stagger-distance: 12px;
+    --stagger-blur: 3px;
+    --stagger-ease: cubic-bezier(0.22, 1, 0.36, 1);
+    /* Skeleton loader and reveal (cross-fade) */
+    --reveal-dur: 400ms;
+    --reveal-blur: 2px;
+    --reveal-ease: ease-in-out;
+  }
   * { box-sizing: border-box; }
   html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; scroll-padding-top: 76px; overflow-x: clip; }
   body {
@@ -74,10 +112,12 @@
   .lang-btn { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--rule); background: transparent; color: var(--ink); font-size: 14px; font-weight: 500; cursor: pointer; transition: background-color .15s; }
   .lang-btn:hover, .lang.open .lang-btn { background: var(--hover); }
   .lang-btn svg { width: 15px; height: 15px; flex: none; }
-  .lang-btn .chev { width: 11px; height: 11px; transition: transform .2s; }
+  .lang-btn .chev { width: 11px; height: 11px; transition: transform var(--acc-chevron) var(--acc-ease); }
   .lang.open .lang-btn .chev { transform: rotate(180deg); }
-  .lang-menu { position: absolute; right: 0; top: calc(100% + 8px); min-width: 176px; margin: 0; padding: 6px; list-style: none; border-radius: 8px; border: 1px solid var(--ink); background: var(--bg); opacity: 0; visibility: hidden; transform: translateY(-4px); transition: opacity .16s, transform .16s, visibility 0s .16s; }
-  .lang.open .lang-menu { opacity: 1; visibility: visible; transform: none; transition: opacity .16s, transform .16s; }
+  /* Transitions.dev — Menu dropdown */
+  .lang-menu { position: absolute; right: 0; top: calc(100% + 8px); min-width: 176px; margin: 0; padding: 6px; list-style: none; border-radius: 8px; border: 1px solid var(--ink); background: var(--bg); opacity: 0; visibility: hidden; pointer-events: none; transform-origin: top right; transform: scale(var(--dropdown-pre-scale)); will-change: transform, opacity; transition: transform var(--dropdown-open-dur) var(--dropdown-ease), opacity var(--dropdown-open-dur) var(--dropdown-ease); }
+  .lang.open .lang-menu { opacity: 1; visibility: visible; pointer-events: auto; transform: scale(1); }
+  .lang-menu.is-closing { opacity: 0; visibility: visible; pointer-events: none; transform: scale(var(--dropdown-closing-scale)); transition: transform var(--dropdown-close-dur) var(--dropdown-ease), opacity var(--dropdown-close-dur) var(--dropdown-ease); }
   .lang-menu button { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 44px; border: 0; background: transparent; color: var(--g4); font-size: 15px; text-align: left; padding: 8px 12px; border-radius: 6px; cursor: pointer; }
   .lang-menu button:hover { background: var(--hover); color: var(--ink); }
   .lang-menu button:focus-visible { background: var(--hover); color: var(--ink); outline: 2px solid var(--ink); outline-offset: -2px; }
@@ -95,8 +135,11 @@
   .eyebrow a b { margin-right: 0; }
   .hero h1 { margin: 0; font-family: var(--head); font-weight: 800; font-size: clamp(44px, 7.5vw, 104px); line-height: 0.95; letter-spacing: -0.035em; overflow-wrap: break-word; max-width: 100%; }
   body[data-lang="ko"] .hero h1, body[data-lang="ja"] .hero h1, body[data-lang="zh"] .hero h1 { line-height: 1.08; letter-spacing: -0.02em; }
-  .nn-word { display: inline-block; animation: nn-rise .8s cubic-bezier(.2, .9, .25, 1) both; }
-  @keyframes nn-rise { from { opacity: 0; transform: translateY(.45em); } }
+  /* Transitions.dev — Texts reveal. The words rise in a few tens of milliseconds apart, then the line below and the buttons follow. */
+  .nn-word { display: inline-block; animation: nn-rise var(--stagger-dur) var(--stagger-ease) both; }
+  .hero .lead { animation: nn-rise var(--stagger-dur) var(--stagger-ease) calc(var(--duration-stagger) * 5) both; }
+  .hero .cta { animation: nn-rise var(--stagger-dur) var(--stagger-ease) calc(var(--duration-stagger) * 7) both; }
+  @keyframes nn-rise { from { opacity: 0; transform: translateY(var(--stagger-distance)); filter: blur(var(--stagger-blur)); } }
   .hero .lead { margin: 0; font-size: 19px; line-height: 1.6; max-width: 36rem; color: var(--g3); }
   .cta { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; max-width: 100%; }
   .btn { display: inline-flex; align-items: center; gap: 8px; min-height: 52px; padding: 0 22px; border-radius: 8px; border: 1.5px solid var(--ink); font-weight: 600; font-size: 16px; text-decoration: none; transition: background-color .2s, color .2s; }
@@ -114,8 +157,12 @@
   .brew code::-webkit-scrollbar { display: none; }
   /* On a phone the command wraps at its slashes instead of hiding its end. */
   @media (max-width: 520px) { .brew { padding-top: 10px; padding-bottom: 10px; } .brew code { white-space: normal; overflow-wrap: anywhere; font-size: 14px; line-height: 1.5; } }
-  .copy { flex: none; min-width: 44px; min-height: 44px; padding: 0 14px; border: 0; border-radius: 6px; background: #2A2A2A; color: var(--paper); font-size: 13px; font-weight: 500; cursor: pointer; transition: background-color .15s; }
+  .copy { flex: none; min-width: 44px; min-height: 44px; padding: 0 14px; border: 0; border-radius: 6px; background: #2A2A2A; color: var(--paper); font-size: 13px; font-weight: 500; cursor: pointer; transition: background-color .15s; position: relative; }
   .copy:hover { background: #3A3A3A; }
+  /* Transitions.dev — Text states swap. The label changes at once; the old one leaves as a ghost and the new one arrives after it. */
+  .copy > span { display: inline-block; }
+  .copy::after { content: none; }
+  .copy[data-prev]::after { content: attr(data-prev); position: absolute; inset: 0; display: flex; align-items: center; padding: 0 14px; white-space: nowrap; pointer-events: none; }
   .copy:focus-visible { outline-color: var(--paper); }
 
   /* The notch opening: a menu-bar strip, the eyebrow pill lifts its brow, the notch opens into the real screenshot. 9 s loop. */
@@ -172,12 +219,12 @@
   body[data-lang="ko"] .section-head h2, body[data-lang="ja"] .section-head h2, body[data-lang="zh"] .section-head h2 { line-height: 1.15; letter-spacing: -0.02em; }
   .section-head p { margin: 0; font-size: 17px; line-height: 1.6; color: var(--g3); }
 
-  /* Tour: rows on the left, one black figure on the right */
+  /* Tour: rows on the left, one black figure on the right. The screens cross-fade (Transitions.dev — Skeleton loader and reveal). */
   /* The heading runs across; below it the list and the screen sit side by side at the same height. */
   .tour { display: grid; grid-template-columns: minmax(260px, 340px) minmax(0, 1fr); grid-template-areas: "head head" "list fig"; column-gap: 48px; align-items: stretch; }
   .tour .section-head { grid-area: head; margin-bottom: 28px; }
   .tour-list { grid-area: list; display: flex; flex-direction: column; border-top: 1px solid var(--rule); }
-  .tour-btn { display: flex; align-items: center; gap: 16px; width: 100%; min-height: 48px; padding: 12px 0; border: 0; border-bottom: 1px solid var(--rule); background: transparent; color: var(--g4); font-size: 16px; text-align: left; cursor: pointer; transition: padding-left .3s cubic-bezier(.2, .9, .25, 1), background-color .3s; }
+  .tour-btn { display: flex; align-items: center; gap: 16px; width: 100%; min-height: 48px; padding: 12px 0; border: 0; border-bottom: 1px solid var(--rule); background: transparent; color: var(--g4); font-size: 16px; text-align: left; cursor: pointer; transition: padding-left var(--duration-fast) var(--ease-smooth-out), background-color var(--duration-fast) var(--ease-smooth-out); }
   .tour-btn .num { font: 400 14px var(--mono); color: var(--g5); width: 24px; flex: none; }
   .tour-btn .lbl { flex: 1; }
   .tour-btn .mark { width: 10px; height: 10px; border-radius: 5px; background: transparent; flex: none; margin-right: 4px; }
@@ -186,8 +233,8 @@
   @media (hover: hover) { .tour-btn:hover { padding-left: 10px; background-color: var(--hover); } }
   .tour-stage { grid-area: fig; display: flex; flex-direction: column; margin: 0; background: var(--ink); color: var(--paper); border-radius: 10px; padding: 28px; }
   .tour-screen { position: relative; aspect-ratio: 1478 / 422; margin-block: auto; }
-  .tour-screen img { position: absolute; left: 50%; top: 0; max-width: none; height: auto; transform: translateX(-50%); opacity: 0; transition: opacity .35s ease; }
-  .tour-screen img.on { opacity: 1; }
+  .tour-screen img { position: absolute; left: 50%; top: 0; max-width: none; height: auto; transform: translateX(-50%); opacity: 0; filter: blur(var(--reveal-blur)); transition: opacity var(--reveal-dur) var(--reveal-ease), filter var(--reveal-dur) var(--reveal-ease); }
+  .tour-screen img.on { opacity: 1; filter: none; }
   .tour-copy { margin-top: 20px; }
   .tour-copy h3 { margin: 0 0 6px; font-size: 18px; font-weight: 600; }
   .tour-copy p { margin: 0; font-size: 15px; line-height: 1.6; color: #C8C8C4; max-width: 640px; }
@@ -239,6 +286,10 @@
   .tabs { display: flex; gap: 28px; border-bottom: 1px solid #3A3A3A; margin-bottom: 20px; }
   .tabs button { min-height: 44px; padding: 8px 0; margin-bottom: -1px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--dim); font-size: 15px; font-weight: 600; cursor: pointer; transition: color .15s; }
   .tabs button:hover { color: var(--paper); }
+  /* Transitions.dev — Tabs sliding. The underline travels between the tabs; without script the selected tab keeps its own border. */
+  .tabs { position: relative; }
+  .tabs-ink { position: absolute; left: 0; bottom: -1px; width: 0; height: 2px; background: var(--paper); pointer-events: none; transition: transform var(--tabs-dur) var(--tabs-ease), width var(--tabs-dur) var(--tabs-ease); }
+  .tabs.has-ink button[aria-selected="true"] { border-bottom-color: transparent; }
   .tabs button[aria-selected="true"] { color: var(--paper); border-bottom-color: var(--paper); }
   .panel { display: none; }
   .panel.active { display: block; }
@@ -266,8 +317,14 @@
   .faq details { border-bottom: 1px solid var(--rule); }
   .faq summary { list-style: none; cursor: pointer; min-height: 48px; padding: 18px 0; font-weight: 600; font-size: 17px; display: flex; justify-content: space-between; gap: 16px; }
   .faq summary::-webkit-details-marker { display: none; }
-  .faq summary::after { content: "+"; font: 400 22px/1 var(--mono); flex: none; transition: transform .2s; }
+  .faq summary::after { content: "+"; font: 400 22px/1 var(--mono); flex: none; transition: transform var(--acc-chevron) var(--acc-ease); }
   .faq details[open] summary::after { transform: rotate(45deg); }
+  /* Transitions.dev — Accordion expand. The answer grows and fades in, and shrinks the same way. Browsers without ::details-content just open it. */
+  @supports selector(::details-content) {
+    .faq details { interpolate-size: allow-keywords; }
+    .faq details::details-content { block-size: 0; overflow: clip; opacity: 0; filter: blur(var(--blur-small)); transition: block-size var(--acc-collapse) var(--acc-ease), opacity var(--acc-collapse) var(--acc-ease), filter var(--acc-collapse) var(--acc-ease), content-visibility var(--acc-collapse) allow-discrete; }
+    .faq details[open]::details-content { block-size: auto; opacity: 1; filter: blur(0); transition: block-size var(--acc-expand) var(--acc-ease), opacity var(--acc-expand) var(--acc-ease), filter var(--acc-expand) var(--acc-ease), content-visibility var(--acc-expand) allow-discrete; }
+  }
   .faq .a { padding: 0 40px 20px 0; font-size: 16px; line-height: 1.65; color: var(--g3); }
   .faq .a code { font-size: 13px; padding: 1px 6px; border-radius: 4px; background: var(--hover); }
 
@@ -278,11 +335,11 @@
   body[data-lang="ko"] .final h2, body[data-lang="ja"] .final h2, body[data-lang="zh"] .final h2 { line-height: 1.15; letter-spacing: -0.02em; }
   footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px 24px; padding: 24px 0 56px; border-top: 1px solid var(--rule); font-size: 14px; color: var(--g5); }
 
-  /* Sections ease in as they scroll into view. Without scroll-driven animation they are simply there. */
-  @keyframes nn-reveal { from { opacity: 0; transform: translateY(28px); } }
-  @supports (animation-timeline: view()) {
-    .reveal { animation: nn-reveal linear both; animation-timeline: view(); animation-range: entry 0% cover 28%; }
-  }
+  /* Transitions.dev — Texts reveal. Blocks below the fold rise a little as they come into view, once. The script adds .reveal-pre
+     only to blocks that start out of view, so without script (or without IntersectionObserver) everything is simply there. */
+  .reveal { transition: opacity var(--stagger-dur) var(--stagger-ease), transform var(--stagger-dur) var(--stagger-ease); }
+  .reveal.reveal-pre { opacity: 0; transform: translateY(var(--stagger-distance)); }
+  @media print { .reveal.reveal-pre { opacity: 1; transform: none; } }
 
   body:not([data-lang="en"]) .en, body:not([data-lang="ko"]) .ko, body:not([data-lang="ja"]) .ja, body:not([data-lang="zh"]) .zh,
   body:not([data-lang="es"]) .es, body:not([data-lang="de"]) .de, body:not([data-lang="fr"]) .fr { display: none !important; }
@@ -294,6 +351,12 @@
     .nn-notch { top: 0; width: var(--nw); height: var(--nh); border-radius: 0 0 28px 28px; }
     .nn-brow { display: none; }
     .nn-shot { opacity: 1; }
+    /* Nothing moves or blurs; the content is just there. */
+    .reveal.reveal-pre { opacity: 1 !important; transform: none !important; }
+    .lang-menu { transform: none !important; }
+    .tour-screen img { filter: none !important; }
+    .faq details::details-content { filter: none !important; transition: none !important; }
+    .tabs-ink { transition: none !important; }
   }
 </style>
 </head>
@@ -825,9 +888,39 @@ open build/Nunsseop.app</pre></div>
   var langBtn = langBox.querySelector('.lang-btn');
   var langOptions = langBox.querySelectorAll('[role="option"]');
   var langListeners = [];
+  // Motion is layered on top of state: labels, menus and tabs change at once, then animate. Nothing moves under Reduce Motion.
+  var reduceMQ = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : { matches: false };
+  var motionOK = function () { return !reduceMQ.matches; };
+  var cssMs = function (name, fallback) {
+    var v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name));
+    return isFinite(v) ? v : fallback;
+  };
+  // Transitions.dev — Text states swap: the old text leaves upward with a blur, the new text arrives from below.
+  var swapFrame = function (dir) {
+    return { opacity: 0, transform: 'translateY(' + dir * cssMs('--text-swap-translate-y', 4) + 'px)', filter: 'blur(' + cssMs('--text-swap-blur', 2) + 'px)' };
+  };
+  var swapRest = { opacity: 1, transform: 'translateY(0)', filter: 'blur(0px)' };
+  var swapTiming = function (extra) {
+    var t = { duration: cssMs('--text-swap-dur', 150), easing: 'ease-in-out' };
+    for (var k in extra) t[k] = extra[k];
+    return t;
+  };
+  var swapIn = function (el, extra) {
+    if (!motionOK() || !el || !el.animate) return;
+    el.animate([swapFrame(1), swapRest], swapTiming(extra));
+  };
+  var menu = langBox.querySelector('.lang-menu'), menuT = 0;
   function openMenu(v) {
+    var was = langBox.classList.contains('open');
     langBox.classList.toggle('open', v);
     langBtn.setAttribute('aria-expanded', String(v));
+    // Transitions.dev — Menu dropdown: .open grows the menu from its corner; .is-closing lets it leave faster and quieter.
+    clearTimeout(menuT);
+    if (v) menu.classList.remove('is-closing');
+    else if (was && motionOK()) {
+      menu.classList.add('is-closing');
+      menuT = setTimeout(function () { menu.classList.remove('is-closing'); }, cssMs('--dropdown-close-dur', 150));
+    }
   }
   function setLang(lang) {
     document.body.setAttribute('data-lang', lang);
@@ -885,12 +978,41 @@ open build/Nunsseop.app</pre></div>
   document.querySelectorAll('[data-copy]').forEach(function (btn) {
     var original = btn.innerHTML;
     var reset;
+    // The label changes at once. The old one leaves as a ghost (::after) and the new one arrives after it.
+    var swapLabel = function (apply) {
+      var old = btn.innerText.trim();
+      apply();
+      if (!motionOK() || !btn.animate) return;
+      btn.getAnimations({ subtree: true }).forEach(function (a) { a.cancel(); });
+      var dur = cssMs('--text-swap-dur', 150);
+      btn.setAttribute('data-prev', old);
+      var out = btn.animate([swapRest, swapFrame(-1)], swapTiming({ fill: 'forwards', pseudoElement: '::after' }));
+      out.onfinish = function () { btn.removeAttribute('data-prev'); };
+      for (var i = 0; i < btn.children.length; i++) swapIn(btn.children[i], { delay: dur, fill: 'backwards' });
+    };
     btn.addEventListener('click', function () {
       var text = btn.getAttribute('data-copy');
-      var show = function (labels) {
-        btn.textContent = labels[document.body.dataset.lang] || labels.en;
+      var show = function (labels, isError) {
+        var label = labels[document.body.dataset.lang] || labels.en;
+        if (btn.innerText.trim() !== label) swapLabel(function () {
+          var span = document.createElement('span');
+          span.textContent = label;
+          btn.textContent = '';
+          btn.appendChild(span);
+        });
+        // Transitions.dev — Error state shake: a quick sideways shake, no colour change.
+        if (isError && motionOK() && btn.animate) {
+          var d = cssMs('--shake-distance', 6), o = cssMs('--shake-overshoot', 4);
+          var e = 'cubic-bezier(0.22, 1, 0.36, 1)';
+          btn.animate([
+            { transform: 'translateX(0)', offset: 0, easing: e },
+            { transform: 'translateX(' + d + 'px)', offset: 0.2857, easing: e },
+            { transform: 'translateX(' + -d + 'px)', offset: 0.5714, easing: e },
+            { transform: 'translateX(' + o + 'px)', offset: 0.7857, easing: e },
+            { transform: 'translateX(0)', offset: 1 }], 280);
+        }
         clearTimeout(reset);
-        reset = setTimeout(function () { btn.innerHTML = original; }, 1400);
+        reset = setTimeout(function () { swapLabel(function () { btn.innerHTML = original; }); }, 1400);
       };
       var done = function () { show(COPIED); };
       var failed = function () {
@@ -900,17 +1022,40 @@ open build/Nunsseop.app</pre></div>
         range.selectNodeContents(shown);
         sel.removeAllRanges();
         sel.addRange(range);
-        show(COPY_FAILED);
+        show(COPY_FAILED, true);
       };
       try { navigator.clipboard.writeText(text).then(done, failed); } catch (e) { failed(); }
     });
   });
 
   var tabs = document.querySelectorAll('.tabs button');
+  // Transitions.dev — Tabs sliding: the underline is measured from the selected tab and travels to the next one.
+  var tabBar = document.querySelector('.tabs'), ink = document.createElement('span');
+  ink.className = 'tabs-ink'; ink.setAttribute('aria-hidden', 'true');
+  tabBar.appendChild(ink);
+  function moveInk(animate) {
+    var on = tabBar.querySelector('[aria-selected="true"]');
+    if (!on || !on.offsetWidth) return;
+    if (!animate || !motionOK()) ink.style.transition = 'none';
+    ink.style.transform = 'translateX(' + on.offsetLeft + 'px)';
+    ink.style.width = on.offsetWidth + 'px';
+    if (!animate || !motionOK()) { ink.offsetWidth; ink.style.transition = ''; }
+    tabBar.classList.add('has-ink');
+  }
+  moveInk(false);
+  langListeners.push(function () { moveInk(false); });
+  if (window.ResizeObserver) tabs.forEach(function (t) { new ResizeObserver(function () { moveInk(false); }).observe(t); });
+  else window.addEventListener('resize', function () { moveInk(false); });
   tabs.forEach(function (t) {
     t.addEventListener('click', function () {
+      var changed = t.getAttribute('aria-selected') !== 'true';
       tabs.forEach(function (o) { o.setAttribute('aria-selected', String(o === t)); });
-      document.querySelectorAll('.panel').forEach(function (p) { p.classList.toggle('active', p.dataset.panel === t.dataset.tab); });
+      document.querySelectorAll('.panel').forEach(function (p) {
+        var on = p.dataset.panel === t.dataset.tab;
+        p.classList.toggle('active', on);
+        if (on && changed) swapIn(p);
+      });
+      moveInk(true);
     });
   });
 
@@ -941,6 +1086,7 @@ open build/Nunsseop.app</pre></div>
     screen.appendChild(img);
   });
   function show(i) {
+    var changed = i !== current;
     current = i;
     var lang = document.body.dataset.lang;
     list.querySelectorAll('.tour-btn').forEach(function (b, j) { b.setAttribute('aria-pressed', String(j === i)); });
@@ -948,6 +1094,8 @@ open build/Nunsseop.app</pre></div>
     var active = list.children[i];
     if (list.scrollWidth > list.clientWidth) list.scrollTo({ left: active.offsetLeft - 20, behavior: reduce ? 'auto' : 'smooth' });
     tTitle.textContent = tourData[i][lang][0]; tText.innerHTML = tourData[i][lang][1];
+    // Transitions.dev — Text states swap: the caption changes at once and its two lines arrive one after the other.
+    if (changed) { swapIn(tTitle); swapIn(tText, { delay: cssMs('--duration-stagger', 40), fill: 'backwards' }); }
   }
   // Advances every 4 s until the visitor picks one; never under Reduce Motion.
   var tourBox = document.getElementById('tourBox');
@@ -1022,6 +1170,33 @@ open build/Nunsseop.app</pre></div>
       if (e.pointerType !== 'touch') return;
       if (!isOpen && within(e.clientX, e.clientY)) arrive(); else leave();
     });
+  }
+
+  // Transitions.dev — Texts reveal: blocks that start below the fold rise in once as they come into view. Blocks already in view are never hidden,
+  // and with no IntersectionObserver or under Reduce Motion nothing is.
+  try {
+    var blocks = [].slice.call(document.querySelectorAll('.reveal'));
+    if (blocks.length && 'IntersectionObserver' in window && motionOK()) {
+      var seen = new IntersectionObserver(function (entries) {
+        var n = 0;
+        entries.forEach(function (e) {
+          var above = !e.isIntersecting && e.boundingClientRect.top < 0;
+          if (!e.isIntersecting && !above) return;
+          // Items that arrive together are offset by one stagger step each, at most four steps.
+          e.target.style.transitionDelay = above ? '' : Math.min(n++, 4) * cssMs('--duration-stagger', 40) + 'ms';
+          e.target.classList.remove('reveal-pre');
+          seen.unobserve(e.target);
+        });
+      }, { rootMargin: '0px 0px -8% 0px' });
+      blocks.forEach(function (el) {
+        if (el.getBoundingClientRect().top <= window.innerHeight) return;
+        el.classList.add('reveal-pre');
+        seen.observe(el);
+      });
+      window.addEventListener('beforeprint', function () { blocks.forEach(function (el) { el.classList.remove('reveal-pre'); }); });
+    }
+  } catch (err) {
+    document.querySelectorAll('.reveal-pre').forEach(function (el) { el.classList.remove('reveal-pre'); });
   }
 
   // Links into a closed FAQ item open it.
