@@ -308,7 +308,7 @@ struct PermissionPromptParseTests {
 
     @Test func whatEmojiAreMadeOfDisplaysAndNothingElseOfTheKindDoes() {
         let emoji = ["⚠\u{FE0F}", "❤\u{FE0F}", "👨\u{200D}👩\u{200D}👧", "❤\u{FE0F}\u{200D}🔥", "👩🏽\u{200D}⚕\u{FE0F}", "1\u{FE0F}\u{20E3}",
-                     "✔\u{FE0E}", "🏳\u{FE0F}\u{200D}🌈", "👩🏽\u{200D}🤝\u{200D}🧑🏻", "🧑\u{200D}🧑\u{200D}🧒\u{200D}🧒",
+                     "✔\u{FE0E}", "🏳\u{FE0F}\u{200D}🌈", "🧑\u{200D}🧑\u{200D}🧒\u{200D}🧒",
                      "echo ⚠\u{FE0F} done"]
         for text in emoji {
             #expect(PermissionText.escape(text, multiline: true) == text, "\(text.unicodeScalars.map(\.value))")
@@ -341,19 +341,25 @@ struct PermissionPromptParseTests {
 
     @Test func joinersAndSelectorsNeverStayBesideATextSymbol() {
         func hex(_ value: UInt32) -> String { String(format: "⟨U+%04X⟩", value) }
-        for symbol in ["©", "®", "™", "↔", "↩", "ℹ", "‼", "〰"] {
+        for symbol in ["©", "®", "↔", "↩", "〰", "▶"] {
             #expect(PermissionText.escape(symbol + "\u{FE0F}", multiline: true) == symbol + hex(0xFE0F), "\(symbol) then selector")
             #expect(PermissionText.escape(symbol + "\u{200D}" + symbol, multiline: true) == symbol + hex(0x200D) + symbol, "\(symbol) joined")
             #expect(PermissionText.escape(symbol + "\u{200D}😀", multiline: true) == symbol + hex(0x200D) + "😀", "\(symbol) before a face")
             #expect(PermissionText.escape("😀\u{200D}" + symbol, multiline: true) == "😀" + hex(0x200D) + symbol, "\(symbol) after a face")
         }
         // Text symbols that no block of the allowlist holds are written out whole, and nothing is left to join to.
-        for symbol: UInt32 in [0x24C2, 0x25B6, 0x2934, 0x3297] {
+        for symbol: UInt32 in [0x24C2, 0x2934, 0x3297] {
             let text = String(Unicode.Scalar(symbol)!)
             #expect(PermissionText.escape(text + "\u{FE0F}", multiline: true) == hex(symbol) + hex(0xFE0F), "U+\(String(symbol, radix: 16))")
             #expect(PermissionText.escape("😀\u{200D}" + text, multiline: true) == "😀" + hex(0x200D) + hex(symbol), "U+\(String(symbol, radix: 16))")
         }
         #expect(PermissionText.escape("©\u{200D}®", multiline: true) == "©⟨U+200D⟩®")
+        // Nor beside the ones that read as ASCII, which are written out themselves.
+        for symbol: UInt32 in [0x2122, 0x2139, 0x203C] {
+            let text = String(Unicode.Scalar(symbol)!)
+            #expect(PermissionText.escape(text + "\u{FE0F}", multiline: true) == hex(symbol) + hex(0xFE0F), "U+\(String(symbol, radix: 16))")
+            #expect(PermissionText.escape("😀\u{200D}" + text, multiline: true) == "😀" + hex(0x200D) + hex(symbol), "U+\(String(symbol, radix: 16))")
+        }
         // Neither a flag letter, a skin tone nor a digit takes a joiner.
         #expect(PermissionText.escape("😀\u{200D}🇫", multiline: true) == "😀" + hex(0x200D) + hex(0x1F1EB))
         #expect(PermissionText.escape("😀\u{200D}🏽", multiline: true) == "😀" + hex(0x200D) + hex(0x1F3FD))
@@ -365,26 +371,30 @@ struct PermissionPromptParseTests {
         }
     }
 
-    @Test func aChainOfJoinersIsCutAfterFourSoItCanAlwaysWrap() {
+    @Test func aChainOfJoinersCoreTextDrawsAsMoreThanOnePictureIsWrittenOutWhole() {
         func hex(_ value: UInt32) -> String { String(format: "⟨U+%04X⟩", value) }
         let woman = "👩", joiner = "\u{200D}"
         func chain(_ people: Int) -> String { Array(repeating: woman, count: people).joined(separator: joiner) }
-        #expect(PermissionText.escape(chain(5), multiline: true) == chain(5))
-        #expect(PermissionText.escape(chain(6), multiline: true) == chain(5) + hex(0x200D) + woman)
-        // A selector in the chain doesn't start the count over, nor does a skin tone.
+        func written(_ people: Int) -> String { Array(repeating: woman, count: people).joined(separator: hex(0x200D)) }
+        // None of these is a sequence of the emoji standard: every joiner goes, not only the ones past four.
+        for people in [2, 3, 5, 6] {
+            #expect(PermissionText.escape(chain(people), multiline: true) == written(people), "\(people)")
+        }
         let heart = "❤\u{FE0F}", tone = "👩🏽"
         #expect(PermissionText.escape([heart, heart, heart, heart, heart, heart].joined(separator: joiner), multiline: true)
-                == [heart, heart, heart, heart, heart].joined(separator: joiner) + hex(0x200D) + heart)
+                == [heart, heart, heart, heart, heart, heart].joined(separator: hex(0x200D)))
         #expect(PermissionText.escape([tone, tone, tone, tone, tone, tone].joined(separator: joiner), multiline: true)
-                == [tone, tone, tone, tone, tone].joined(separator: joiner) + hex(0x200D) + tone)
-        // Sixty of them, each with its joiner after it: groups of five, a joiner written out after each, and nothing is lost.
+                == [tone, tone, tone, tone, tone, tone].joined(separator: hex(0x200D)))
+        // Sixty of them, each with its joiner after it: the joiners are all written out, and nothing is lost.
         let sixty = String(repeating: woman + joiner, count: 60)
         let shown = PermissionText.escape(sixty, multiline: true)
-        let groups = shown.components(separatedBy: hex(0x200D))
-        #expect(groups.count == 13 && groups.dropLast().allSatisfy { $0 == chain(5) } && groups.last == "")
-        #expect(shown.unicodeScalars.filter { $0.value == 0x200D }.count == 48)
-        // A cluster breaks the count when anything else comes between.
-        #expect(PermissionText.escape(chain(5) + " " + chain(5), multiline: true) == chain(5) + " " + chain(5))
+        #expect(shown == String(repeating: woman + hex(0x200D), count: 60))
+        // A real sequence stays, beside the others.
+        let family = "👨\u{200D}👩\u{200D}👧\u{200D}👦"
+        #expect(PermissionText.escape(family + " " + chain(3) + " " + family, multiline: true) == family + " " + written(3) + " " + family)
+        #expect(PermissionText.escape(family + chain(2), multiline: true) == family + written(2))
+        // A real sequence with one more picture joined on is no longer one picture: all its joiners go.
+        #expect(PermissionText.escape(family + joiner + woman, multiline: true) == "👨" + hex(0x200D) + "👩" + hex(0x200D) + "👧" + hex(0x200D) + "👦" + hex(0x200D) + woman)
     }
 
     @Test func lettersAndDigitsThatReadRightToLeftAreWrittenOutSoNoRunOfThemIsReordered() throws {
@@ -422,10 +432,13 @@ struct PermissionPromptParseTests {
             checked += 1
         }
         #expect(checked > 1_000)
-        // The letters of Latin, Greek, Cyrillic, CJK and Hangul text are not touched by it.
+        // The letters of Latin, Greek, Cyrillic, CJK and Hangul text are not touched by it, besides the ones that read as ASCII and the three
+        // whose circumflex or diaeresis the title draws past its cell.
+        let lookalike = try asciiLookalikes()
         for range in [0x41...0x7A, 0xC0...0xFF, 0x3B1...0x3C9, 0x410...0x44F, 0x4E00...0x4FFF, 0xAC00...0xACFF] {
             for value in range {
-                guard let scalar = Unicode.Scalar(UInt32(value)), scalar.properties.isAlphabetic, direction(Int32(value)) == 0 else { continue }
+                guard let scalar = Unicode.Scalar(UInt32(value)), scalar.properties.isAlphabetic, direction(Int32(value)) == 0,
+                      lookalike(scalar) == nil, ![0xCE, 0xEE, 0xEF].contains(value) else { continue }
                 let text = "a" + String(Character(scalar)) + "b"
                 #expect(PermissionText.escape(text, multiline: true) == text.precomposedStringWithCanonicalMapping, "U+\(String(value, radix: 16, uppercase: true))")
             }
@@ -449,6 +462,24 @@ struct PermissionPromptParseTests {
         #expect(try offered("echo r\u{E9}sum\u{E9} \u{D55C}\u{AE00} \u{65E5}\u{672C}").prompt.grant != nil)
         let tool = try #require(parse("Bash", ["command": "ls"], suggestions: [addRules([["toolName": "mcp__אבג", "ruleContent": "x"]])]))
         #expect(tool.prompt.grant == nil && tool.suggestion == nil)
+    }
+
+    @Test func aRuleWithAScalarThatReadsAsASCIIIsNotOfferedAsAlwaysAllow() throws {
+        func offered(_ content: String) throws -> PermissionPrompt.Parsed {
+            try #require(parse("Bash", ["command": "ls"], suggestions: [addRules([["toolName": "Bash", "ruleContent": content]])]))
+        }
+        for content in ["rm \u{2010}rf", "git push \u{2011}\u{2011}force", "g\u{456}t status", "/etc/pa\u{455}\u{455}wd", "ls \u{2212}la", "echo \u{FF41}\u{FF42}"] {
+            let parsed = try offered(content)
+            #expect(parsed.prompt.grant == nil && parsed.suggestion == nil, "\(content)")
+        }
+        let tool = try #require(parse("Bash", ["command": "ls"], suggestions: [addRules([["toolName": "mcp__s\u{435}rver", "ruleContent": "x"]])]))
+        #expect(tool.prompt.grant == nil && tool.suggestion == nil)
+        // Nor does the card show them: the command is the text with each written out.
+        let command = try #require(parse("Bash", ["command": "git push \u{2011}\u{2011}force"])).prompt
+        #expect(command.detail == "git push ⟨U+2011⟩⟨U+2011⟩force")
+        // Korean, Japanese and Chinese paths are still offered.
+        #expect(try offered("ls /Users/me/한글 日本語 中文").prompt.grant != nil)
+        #expect(try offered("cp /home/ひらがな/문서.txt .").prompt.grant != nil)
     }
 
     @Test func lettersThatSitOnTheCharacterBeforeThemAreWrittenOutLikeMarks() {
@@ -511,9 +542,9 @@ struct PermissionPromptParseTests {
     }
 
     @Test func accentsOnLatinLettersComposeAndStayReadable() throws {
-        let decomposed = "re\u{301}sume\u{301}-nai\u{308}ve.pdf"
-        #expect(scalars(PermissionText.escape(decomposed, multiline: false)) == scalars("r\u{E9}sum\u{E9}-na\u{EF}ve.pdf"))
-        #expect(scalars(try #require(parse("Read", ["file_path": "/a/" + decomposed])).prompt.detail) == scalars("/a/r\u{E9}sum\u{E9}-na\u{EF}ve.pdf"))
+        let decomposed = "re\u{301}sume\u{301}-nau\u{308}ve.pdf"
+        #expect(scalars(PermissionText.escape(decomposed, multiline: false)) == scalars("r\u{E9}sum\u{E9}-na\u{FC}ve.pdf"))
+        #expect(scalars(try #require(parse("Read", ["file_path": "/a/" + decomposed])).prompt.detail) == scalars("/a/r\u{E9}sum\u{E9}-na\u{FC}ve.pdf"))
         // A letter that has no composed form keeps one mark, in the order normalization puts them; the other is written out.
         #expect(scalars(PermissionText.escape("x\u{301}\u{323}", multiline: false)) == scalars("x\u{323}⟨U+0301⟩"))
     }
@@ -534,8 +565,8 @@ struct PermissionPromptParseTests {
         // Enclosing marks are marks of another block: written out.
         #expect(scalars(PermissionText.escape("x\u{20D2}\u{20D3}", multiline: false)) == scalars("x⟨U+20D2⟩⟨U+20D3⟩"))
         // One mark on each of two letters is kept.
-        #expect(scalars(PermissionText.escape("x\u{323}c\u{331}", multiline: false)) == [0x78, 0x323, 0x63, 0x331])
-        #expect(scalars(PermissionText.escape("x\u{323}c\u{331}\u{331}", multiline: false)) == scalars("x\u{323}c\u{331}⟨U+0331⟩"))
+        #expect(scalars(PermissionText.escape("x\u{323}c\u{330}", multiline: false)) == [0x78, 0x323, 0x63, 0x330])
+        #expect(scalars(PermissionText.escape("x\u{323}c\u{330}\u{330}", multiline: false)) == scalars("x\u{323}c\u{330}⟨U+0330⟩"))
     }
 
     @Test func theLimitCountsScalarsNotCharacters() {

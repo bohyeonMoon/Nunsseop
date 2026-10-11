@@ -1,6 +1,31 @@
 import Foundation
 @testable import Nunsseop
 
+struct ICUUnavailable: Error {}
+
+/// What ICU's spoof checker makes of a scalar (asked for UTF-16 here, where the card asks for UTF-8) and its compatibility form,
+/// whichever is ASCII and not the scalar: the character it can be mistaken for, nil when there is none.
+func asciiLookalikes() throws -> (Unicode.Scalar) -> String? {
+    typealias Open = @convention(c) (UnsafeMutablePointer<Int32>) -> OpaquePointer?
+    typealias Skeleton = @convention(c) (OpaquePointer?, UInt32, UnsafePointer<UInt16>?, Int32, UnsafeMutablePointer<UInt16>?, Int32,
+                                         UnsafeMutablePointer<Int32>) -> Int32
+    guard let library = dlopen("/usr/lib/libicucore.dylib", RTLD_NOW), let open = dlsym(library, "uspoof_open"),
+          let skeleton = dlsym(library, "uspoof_getSkeleton") else { throw ICUUnavailable() }
+    var status: Int32 = 0
+    guard let checker = unsafeBitCast(open, to: Open.self)(&status), status <= 0 else { throw ICUUnavailable() }
+    let skeletonOf = unsafeBitCast(skeleton, to: Skeleton.self)
+    return { scalar in
+        guard scalar.value >= 0x80 else { return nil }
+        let text = Array(String(scalar).utf16)
+        var out = [UInt16](repeating: 0, count: 64), status: Int32 = 0
+        let length = Int(skeletonOf(checker, 0, text, Int32(text.count), &out, 64, &status))
+        if status > 0 { return "no skeleton (\(status))" }
+        if length > 0, out[0..<length].allSatisfy({ $0 < 0x80 }) { return String(decoding: out[0..<length], as: UTF16.self) }
+        let compatible = String(scalar).decomposedStringWithCompatibilityMapping
+        return !compatible.isEmpty && compatible.unicodeScalars.allSatisfy({ $0.value < 0x80 }) ? compatible : nil
+    }
+}
+
 /// Waits for `condition`, stopping as soon as it holds; the cap only matters on a slow or busy machine.
 /// It runs on the caller's actor, so a condition may read what that actor owns.
 func eventually(isolation: isolated (any Actor)? = #isolation, _ condition: () -> Bool) async {

@@ -1,5 +1,7 @@
+import AppKit
 import CryptoKit
 import Foundation
+import os
 
 /// How a permission prompt in the notch was answered.
 enum PermissionAnswer: Equatable {
@@ -59,38 +61,77 @@ enum PermissionWire {
 /// written out.
 enum PermissionText {
     /// Shown as they are, besides ASCII and the space: Latin-1, Latin Extended-A, -B and Additional, Greek, Cyrillic, general
-    /// punctuation (not the separators, the joiners or the marks of direction), currency, letterlike symbols, arrows, box
-    /// drawing, CJK signs, kana, Hangul compatibility letters, CJK ideographs, Hangul syllables, and full and half width
-    /// forms. Only letters, numbers, punctuation and symbols of them count: no mark, no space, no unassigned scalar.
+    /// punctuation (not the separators, the joiners or the marks of direction), currency, letterlike symbols, arrows, math
+    /// operators, a few keys of Miscellaneous Technical, box drawing, geometric shapes, a few stars, dingbats, CJK signs, kana,
+    /// Hangul compatibility letters, CJK ideographs, Hangul syllables, and full and half width forms. Only letters, numbers,
+    /// punctuation and symbols of them count: no mark, no space, no unassigned scalar. Not those that read as ASCII, see
+    /// `lookalikes`.
     private static let shown: [ClosedRange<UInt32>] = [
         0xA1...0xFF, 0x100...0x24F, 0x1E00...0x1EFF, 0x370...0x3FF, 0x400...0x4FF, 0x2010...0x2027, 0x2030...0x205E,
-        0x20A0...0x20C0, 0x2100...0x214F, 0x2190...0x21FF, 0x2500...0x257F, 0x3001...0x303F, 0x3041...0x309F, 0x30A0...0x30FF,
-        0x3131...0x318E, 0x3400...0x4DBF, 0x4E00...0x9FFF, 0xAC00...0xD7A3, 0xFF01...0xFF5E, 0xFF61...0xFF9D]
+        0x20A0...0x20C0, 0x2100...0x214F, 0x2190...0x21FF, 0x2200...0x22FF, 0x2303...0x2303, 0x2318...0x2318, 0x2325...0x2325,
+        0x23CE...0x23CE, 0x2500...0x257F, 0x25A0...0x25FF, 0x2605...0x2606, 0x2700...0x27BF, 0x3001...0x303F, 0x3041...0x309F,
+        0x30A0...0x30FF, 0x3131...0x318E, 0x3400...0x4DBF, 0x4E00...0x9FFF, 0xAC00...0xD7A3, 0xFF01...0xFF5E, 0xFF61...0xFF9D]
     /// Scalars of those ranges that are written out nonetheless: the soft hyphen, the Hangul filler, the arrow that stands
-    /// for a tab, and what drew outside its row, or nothing, when every shown scalar was laid out in the card's fonts: Latin
-    /// letters whose accents reach past the row, the box-drawing pieces that run past it, and a few more.
+    /// for a tab, and what drew outside its row or its advance, or nothing, or a fallback box, when every shown scalar was laid
+    /// out in the card's fonts: Latin letters whose accents reach past the row or the cell, the box-drawing pieces that run past
+    /// either, the radicals, the signs no font has, and a few more.
     private static let withheld: [ClosedRange<UInt32>] = [
-        0xAD...0xAD, 0x3164...0x3164, 0x21E5...0x21E5,
-        0x1D7...0x1D7, 0x1D9...0x1D9, 0x1DB...0x1DB, 0x1FA...0x1FA, 0x37A...0x37A, 0x47C...0x47C, 0x1E00...0x1E01, 0x1E14...0x1E14,
-        0x1E16...0x1E16, 0x1E2E...0x1E2E, 0x1E4C...0x1E4C, 0x1E4E...0x1E4E, 0x1E50...0x1E50, 0x1E52...0x1E52, 0x1E66...0x1E66,
-        0x1E78...0x1E78, 0x1E7A...0x1E7A, 0x1EA4...0x1EA4, 0x1EA6...0x1EA6, 0x1EA8...0x1EA8, 0x1EAA...0x1EAA, 0x1EAE...0x1EAE,
-        0x1EB0...0x1EB0, 0x1EB2...0x1EB2, 0x1EB4...0x1EB4, 0x1EBE...0x1EBE, 0x1EC0...0x1EC0, 0x1EC2...0x1EC2, 0x1EC4...0x1EC4,
-        0x1ED0...0x1ED0, 0x1ED2...0x1ED2, 0x1ED4...0x1ED4, 0x1ED6...0x1ED6, 0x2017...0x2017, 0x2038...0x2038,
-        0x2502...0x2503, 0x250C...0x2513, 0x251C...0x2533, 0x253C...0x254B, 0x254E...0x254F, 0x2551...0x2557, 0x255E...0x2566,
-        0x256A...0x256E, 0x2577...0x2577, 0x257B...0x257B, 0x257D...0x257D, 0x257F...0x257F]
+        0xAD...0xAD, 0x3164...0x3164, 0x21E5...0x21E5, 0xCE...0xCE, 0xEE...0xEF, 0x125...0x125, 0x128...0x129, 0x12C...0x12D,
+        0x135...0x135, 0x140...0x140, 0x165...0x165, 0x188...0x188, 0x19D...0x19D, 0x1AA...0x1AA, 0x1AF...0x1B0, 0x1CF...0x1D0,
+        0x1D7...0x1D7, 0x1D9...0x1D9, 0x1DB...0x1DB, 0x1F0...0x1F0, 0x1FA...0x1FA, 0x208...0x20B, 0x211...0x211, 0x21F...0x21F,
+        0x37A...0x37A, 0x390...0x390, 0x3CA...0x3CA, 0x3D3...0x3D3, 0x47C...0x47C, 0x1E00...0x1E01, 0x1E14...0x1E14,
+        0x1E16...0x1E16, 0x1E2C...0x1E2F, 0x1E3B...0x1E3B, 0x1E3D...0x1E3D, 0x1E4C...0x1E4C, 0x1E4E...0x1E4E, 0x1E50...0x1E50,
+        0x1E52...0x1E52, 0x1E5F...0x1E5F, 0x1E66...0x1E66, 0x1E78...0x1E78, 0x1E7A...0x1E7A, 0x1E9C...0x1E9C, 0x1EA4...0x1EA4,
+        0x1EA6...0x1EA6, 0x1EA8...0x1EA8, 0x1EAA...0x1EAA, 0x1EAE...0x1EAE, 0x1EB0...0x1EB0, 0x1EB2...0x1EB2, 0x1EB4...0x1EB4,
+        0x1EBE...0x1EBE, 0x1EC0...0x1EC0, 0x1EC2...0x1EC2, 0x1EC4...0x1EC4, 0x1ED0...0x1ED0, 0x1ED2...0x1ED2, 0x1ED4...0x1ED4,
+        0x1ED6...0x1ED6, 0x1EE8...0x1EF1, 0x1EFE...0x1EFE, 0x2017...0x2017, 0x2038...0x2038, 0x20C0...0x20C0, 0x221A...0x221B,
+        0x2500...0x2503, 0x250C...0x254B, 0x254E...0x2570, 0x2574...0x2574, 0x2576...0x2578, 0x257A...0x257F, 0x2700...0x2700,
+        0x275F...0x2760]
     /// The letters of ASCII that rise no higher than the middle of the row and sink no lower than its baseline: the only ones
     /// that may carry a combining mark, because a mark on a taller or deeper one reaches into the next row.
     private static let markBases = Set("acemnorsuvwxz".unicodeScalars.map(\.value))
-    /// The combining marks that fit above or below those letters in every font the card uses. Not among them: the double
+    /// The combining marks that fit above, below or beside those letters in every font the card uses. Not among them: the double
     /// marks of U+035C-0362, which reach over the next letter, the grapheme joiner, which draws nothing, and the marks that
     /// normalization turns into others.
     private static let marks: [ClosedRange<UInt32>] = [
-        0x300...0x315, 0x31A...0x31B, 0x320...0x320, 0x323...0x324, 0x327...0x328, 0x32B...0x32B, 0x32E...0x332, 0x334...0x338,
-        0x33C...0x33F, 0x342...0x342, 0x346...0x346, 0x34A...0x34A, 0x350...0x352, 0x357...0x358, 0x363...0x364, 0x366...0x368,
-        0x36B...0x36C, 0x36E...0x36F]
+        0x300...0x30E, 0x310...0x315, 0x31A...0x31A, 0x320...0x320, 0x323...0x324, 0x327...0x328, 0x32E...0x330, 0x332...0x332,
+        0x337...0x338, 0x33D...0x33E, 0x342...0x342, 0x346...0x346, 0x34A...0x34A, 0x350...0x352, 0x357...0x358, 0x363...0x364,
+        0x366...0x368, 0x36B...0x36C, 0x36E...0x36F]
     /// The pictures: assigned emoji of the Mahjong tiles to Symbols and Pictographs Extended-A, and of Miscellaneous Symbols
     /// and Dingbats. Text symbols such as ©, ™ and ↔ are not among them, and nothing joins to those.
     private static let pictures: [ClosedRange<UInt32>] = [0x2600...0x27BF, 0x1F000...0x1FAFF]
+    /// The scalars of `shown`, `pictures` and `marks` that read as ASCII. ICU's spoof checker maps each to its skeleton, the form
+    /// two strings share when they can be mistaken for each other: a scalar whose skeleton is ASCII, and so not itself, is one
+    /// (the hyphens U+2010 and U+2212, the Greek and Cyrillic letters drawn like Latin ones). The full width forms are too, and so
+    /// is anything whose compatibility form is ASCII, which the skeleton doesn't always say. Worked out once, on first use. Nil
+    /// when the checker can't be loaded: nothing past ASCII is shown then.
+    private static let lookalikes: Set<UInt32>? = {
+        typealias Open = @convention(c) (UnsafeMutablePointer<Int32>) -> OpaquePointer?
+        typealias Close = @convention(c) (OpaquePointer?) -> Void
+        typealias Skeleton = @convention(c) (OpaquePointer?, UInt32, UnsafePointer<UInt8>?, Int32, UnsafeMutablePointer<UInt8>?, Int32,
+                                             UnsafeMutablePointer<Int32>) -> Int32
+        guard let library = dlopen("/usr/lib/libicucore.dylib", RTLD_NOW), let open = dlsym(library, "uspoof_open"),
+              let close = dlsym(library, "uspoof_close"), let skeleton = dlsym(library, "uspoof_getSkeletonUTF8") else { return nil }
+        var status: Int32 = 0
+        guard let checker = unsafeBitCast(open, to: Open.self)(&status), status <= 0 else { return nil }
+        defer { unsafeBitCast(close, to: Close.self)(checker) }
+        let skeletonOf = unsafeBitCast(skeleton, to: Skeleton.self)
+        var found = Set<UInt32>()
+        var out = [UInt8](repeating: 0, count: 64)
+        for value in (shown + pictures + marks).lazy.flatMap({ $0 }) where value >= 0x80 {
+            guard let scalar = Unicode.Scalar(value) else { continue }
+            let text = Array(String(scalar).utf8)
+            status = 0
+            let length = skeletonOf(checker, 0, text, Int32(text.count), &out, Int32(out.count), &status)
+            let compatible = Array(String(scalar).decomposedStringWithCompatibilityMapping.utf8)
+            if status > 0 || (length > 0 && out[0..<Int(length)].allSatisfy { $0 < 0x80 })
+                || (!compatible.isEmpty && compatible.allSatisfy { $0 < 0x80 }) { found.insert(value) }
+        }
+        return found
+    }()
+    /// Whether the zero-width joiners in a sequence of pictures draw it as one picture in the card's font, by sequence. Asked of
+    /// CoreText once each; the cache stops growing at a few thousand.
+    private static let sequences = OSAllocatedUnfairLock(initialState: [String: Bool]())
     /// Joiners one emoji may hold. A cluster is one unit that can't be broken across rows, so a longer chain could not wrap.
     static let maxJoiners = 4
     /// What a tab is shown as; `⇥` itself is written out, so this can't be faked.
@@ -101,8 +142,9 @@ enum PermissionText {
     /// into its unified one). The rest is put in form C, so a path macOS stored decomposed reads as it was typed.
     /// What is shown is ASCII, the space, and the scalars of `shown`; a tab is shown as `tab`, and a line break stays one
     /// when `multiline`. Anything else is written out as `⟨U+202E⟩`, and so are the angle brackets that mark one, so an
-    /// escape can't be faked. What emoji are made of stays: a variation selector right after a picture, and a zero-width
-    /// joiner between two pictures, up to `maxJoiners` in a row; one skin tone right after a picture that takes it;
+    /// escape can't be faked. What emoji are made of stays: the emoji variation selector right after a picture that it changes
+    /// (not one drawn in colour already), the text one, and the zero-width joiners of a sequence of pictures, up to `maxJoiners`
+    /// in a row, that CoreText draws as one picture; one skin tone right after a picture that takes it;
     /// regional indicators two by two; the keycap of a digit, `#` or `*`. A combining mark of `marks` stays when it is the
     /// only one on a letter of `markBases`. CR LF counts as one break.
     static func escape(_ text: String, multiline: Bool) -> String {
@@ -127,8 +169,8 @@ enum PermissionText {
         // What was just shown, and what may follow it.
         var previous: Unicode.Scalar?
         var takesMark = false, takesTone = false, selected = false, keycap = false, pairOpen = false
-        // The joiners in the picture being shown, nil when what was just shown isn't one.
-        var joined: Int?
+        // The joiners in the picture being shown, nil when what was just shown isn't one; and whether its sequence draws as one.
+        var joined: Int?, joins = false
         func reset() {
             previous = nil
             takesMark = false
@@ -154,7 +196,8 @@ enum PermissionText {
                 appendEscape(scalar, to: &result)
                 reset()
             } else if scalar.value == 0xFE0E || scalar.value == 0xFE0F, let before = previous, !selected,
-                      isPicture(before) || (scalar.value == 0xFE0F && next?.value == 0x20E3 && isKeycapBase(before)) {
+                      (isPicture(before) && (scalar.value == 0xFE0E || !before.properties.isEmojiPresentation))
+                        || (scalar.value == 0xFE0F && next?.value == 0x20E3 && isKeycapBase(before)) {
                 result.append(scalar)
                 keycap = !isPicture(before)
                 selected = true
@@ -164,7 +207,7 @@ enum PermissionText {
                 result.append(scalar)
                 reset()
                 previous = scalar
-            } else if scalar.value == 0x200D, let count = joined, count < maxJoiners, let after = next, isPicture(after) {
+            } else if scalar.value == 0x200D, joins, let count = joined, count < maxJoiners, let after = next, isPicture(after) {
                 result.append(scalar)
                 joined = count + 1
                 previous = scalar
@@ -193,6 +236,10 @@ enum PermissionText {
                 reset()
                 previous = scalar
                 joined = afterJoiner ? count : 0
+                if !afterJoiner {
+                    let candidate = chain(tokens, from: index - 1)
+                    joins = candidate.joiners > 0 && drawsAsOne(candidate.text)
+                }
                 takesTone = scalar.properties.isEmojiModifierBase
             } else if isShown(scalar) {
                 result.append(scalar)
@@ -209,7 +256,8 @@ enum PermissionText {
 
     private static func isShown(_ scalar: Unicode.Scalar) -> Bool {
         if (0x20...0x7E).contains(scalar.value) { return true }
-        guard shown.contains(where: { $0.contains(scalar.value) }), !withheld.contains(where: { $0.contains(scalar.value) }) else { return false }
+        guard shown.contains(where: { $0.contains(scalar.value) }), !withheld.contains(where: { $0.contains(scalar.value) }),
+              !isLookalike(scalar) else { return false }
         switch scalar.properties.generalCategory {
         case .uppercaseLetter, .lowercaseLetter, .titlecaseLetter, .modifierLetter, .otherLetter,
              .decimalNumber, .letterNumber, .otherNumber,
@@ -222,6 +270,47 @@ enum PermissionText {
     private static func isPicture(_ scalar: Unicode.Scalar) -> Bool {
         scalar.properties.isEmoji && !scalar.properties.isEmojiModifier && !isRegional(scalar)
             && pictures.contains { $0.contains(scalar.value) } && scalar.properties.generalCategory != .unassigned
+            && !withheld.contains { $0.contains(scalar.value) } && !isLookalike(scalar)
+    }
+
+    private static func isLookalike(_ scalar: Unicode.Scalar) -> Bool {
+        scalar.value >= 0x80 && (lookalikes?.contains(scalar.value) ?? true)
+    }
+
+    /// The pictures from `tokens[start]` that `escape` would join, with their selectors and tones, and how many joiners hold them.
+    private static func chain(_ tokens: [(scalar: Unicode.Scalar, changes: Bool)], from start: Int) -> (text: String, joiners: Int) {
+        var text = String.UnicodeScalarView(), joiners = 0, index = start
+        func kept(_ at: Int, _ test: (Unicode.Scalar) -> Bool) -> Bool { at < tokens.count && !tokens[at].changes && test(tokens[at].scalar) }
+        while true {
+            let picture = tokens[index].scalar
+            text.append(picture)
+            index += 1
+            if kept(index, { $0.value == 0xFE0E || ($0.value == 0xFE0F && !picture.properties.isEmojiPresentation) }) {
+                text.append(tokens[index].scalar)
+                index += 1
+            } else if picture.properties.isEmojiModifierBase, kept(index, { (0x1F3FB...0x1F3FF).contains($0.value) }) {
+                text.append(tokens[index].scalar)
+                index += 1
+            }
+            guard joiners < maxJoiners, kept(index, { $0.value == 0x200D }), kept(index + 1, isPicture) else { break }
+            text.append("\u{200D}")
+            joiners += 1
+            index += 1
+        }
+        return (String(text), joiners)
+    }
+
+    /// Whether the card's font draws `sequence` as one glyph that exists.
+    private static func drawsAsOne(_ sequence: String) -> Bool {
+        if let known = sequences.withLock({ $0[sequence] }) { return known }
+        let line = CTLineCreateWithAttributedString(NSAttributedString(string: sequence, attributes: [.font: PermissionLayout.codeFont]))
+        var glyph: CGGlyph = 0
+        if let runs = CTLineGetGlyphRuns(line) as? [CTRun], runs.count == 1, CTRunGetGlyphCount(runs[0]) == 1 {
+            CTRunGetGlyphs(runs[0], CFRange(location: 0, length: 1), &glyph)
+        }
+        let drawn = glyph != 0
+        sequences.withLock { if $0.count < 4_096 { $0[sequence] = drawn } }
+        return drawn
     }
 
     private static func isRegional(_ scalar: Unicode.Scalar) -> Bool { (0x1F1E6...0x1F1FF).contains(scalar.value) }

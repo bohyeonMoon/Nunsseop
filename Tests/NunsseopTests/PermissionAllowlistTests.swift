@@ -21,6 +21,8 @@ struct PermissionAllowlistTests {
 
     /// Ink may pass the row's edge by a twentieth of a point, a tenth of a pixel on the sharpest display, and still not draw a pixel there.
     private let slack: CGFloat = 0.05
+    /// Sideways it may pass the advance by a third of a point: anti-aliasing and the overshoot of round letters, not a glyph that is wider than its cell.
+    private let sideways: CGFloat = 0.3
 
     private func scalars(_ text: String) -> [UInt32] { text.unicodeScalars.map(\.value) }
     private func name(_ text: String) -> String { text.unicodeScalars.map { "U+" + String($0.value, radix: 16, uppercase: true) }.joined(separator: " ") }
@@ -29,13 +31,33 @@ struct PermissionAllowlistTests {
     private func shown(_ text: String) -> Bool { scalars(PermissionText.escape(text, multiline: false)) == scalars(text) }
     private func stable(_ text: String) -> Bool { scalars(text.precomposedStringWithCanonicalMapping) == scalars(text) }
 
-    /// Why `text` doesn't lay out in a row of `face`, nil when it does: no width, no ink, or ink above or below the row.
+    /// Why CoreText has no glyph of its own for `line`, nil when it has: the run is in the LastResort font, which draws a box with the
+    /// scalar's block in it, or is glyph 0, the one a font keeps for what it can't draw.
+    private func fallback(_ line: CTLine) -> String? {
+        for run in CTLineGetGlyphRuns(line) as? [CTRun] ?? [] {
+            if let font = (CTRunGetAttributes(run) as NSDictionary)[kCTFontAttributeName] {
+                let name = CTFontCopyPostScriptName(font as! CTFont) as String
+                if name.hasPrefix("LastResort") { return "is drawn in \(name)" }
+            }
+            var glyphs = [CGGlyph](repeating: 0, count: CTRunGetGlyphCount(run))
+            CTRunGetGlyphs(run, CFRange(location: 0, length: 0), &glyphs)
+            if glyphs.contains(0) { return "is drawn as glyph 0" }
+        }
+        return nil
+    }
+
+    /// Why `text` doesn't lay out in a row of `face`, nil when it does: no width, a fallback glyph, no ink, ink beside the glyph's
+    /// advance, or ink above or below the row.
     private func problem(_ text: String, in face: Face) -> String? {
         let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: [.font: face.font]))
-        guard CTLineGetTypographicBounds(line, nil, nil, nil) > 0 else { return "no width" }
+        let advance = CTLineGetTypographicBounds(line, nil, nil, nil)
+        guard advance > 0 else { return "no width" }
+        if let why = fallback(line) { return "\(face.name) \(why)" }
         if text == " " { return nil }
         let ink = CTLineGetBoundsWithOptions(line, .useGlyphPathBounds)
         guard !ink.isNull, ink.width > 0, ink.height > 0 else { return "no ink" }
+        if ink.minX < -sideways { return String(format: "%@ starts %.2f left of its origin", face.name, -ink.minX) }
+        if ink.maxX > advance + sideways { return String(format: "%@ ends %.2f right of its advance", face.name, ink.maxX - advance) }
         if ink.maxY > face.above + slack { return String(format: "%@ rises %.2f above the row", face.name, ink.maxY - face.above) }
         if ink.minY < -face.below - slack { return String(format: "%@ sinks %.2f below the row", face.name, -face.below - ink.minY) }
         return nil
@@ -96,41 +118,48 @@ struct PermissionAllowlistTests {
         #expect(hasProperty(0x1F600, extendedPictographic) != 0 && hasProperty(0x61, extendedPictographic) == 0)
         // Left to right, weak or neutral only: R, AN, AL, the embeddings and overrides, isolates, block and segment separators, boundary neutrals.
         let refused: Set<Int32> = [1, 5, 13, 11, 12, 14, 15, 16, 19, 20, 21, 22, 7, 8, 18]
+        let lookalike = try asciiLookalikes()
+        #expect(lookalike("\u{2010}") == "-" && lookalike("\u{FF41}") == "a" && lookalike("\u{4E2D}") == nil && lookalike("a") == nil)
         let raster = Raster()
         var problems: [String] = []
         for scalar in Self.shownScalars {
             let text = String(scalar)
+            if let ascii = lookalike(scalar) { problems.append("\(name(text)) reads as ASCII \(ascii)") }
             if let why = problem(text) { problems.append("\(name(text)) \(why)") }
             // A pixel of anti-aliasing at the row's edge is not paint in the next row: colour emoji reach the very edge.
             else if raster.overflow(text, in: faces[0]) > 1 { problems.append("\(name(text)) paints past the row") }
             if !stable(text) { problems.append("\(name(text)) is changed by normalization") }
             if refused.contains(direction(Int32(scalar.value))) { problems.append("\(name(text)) is not left to right") }
             if scalar.value > 0x7F, scalar.properties.generalCategory == .unassigned { problems.append("\(name(text)) is unassigned") }
-            if scalar.value >= 0x1F000 || (0x2600...0x27BF).contains(scalar.value), hasProperty(Int32(scalar.value), extendedPictographic) == 0 {
+            if scalar.properties.isEmoji, scalar.value > 0xFF, hasProperty(Int32(scalar.value), extendedPictographic) == 0 {
                 problems.append("\(name(text)) is not an extended pictograph")
             }
         }
         #expect(problems.isEmpty, "\(problems.count): \(problems.prefix(12))")
         let all = Set(Self.shownScalars.map(\.value))
-        #expect(all.count > 40_000 && all.count < 45_000, "\(all.count)")
+        #expect(all.count > 41_000 && all.count < 43_500, "\(all.count)")
     }
 
     @Test func theScalarsShownAreTheOnesTheAllowlistNamesAndNoOthers() {
         let all = Set(Self.shownScalars.map(\.value))
         let ranges: [ClosedRange<UInt32>] = [0x20...0x7E, 0xA1...0x24F, 0x1E00...0x1EFF, 0x370...0x4FF, 0x2010...0x2027, 0x2030...0x205E, 0x20A0...0x20C0,
-                                             0x2100...0x214F, 0x2190...0x21FF, 0x2500...0x257F, 0x3001...0x303F, 0x3041...0x30FF, 0x3131...0x318E,
+                                             0x2100...0x214F, 0x2190...0x22FF, 0x2303...0x2303, 0x2318...0x2318, 0x2325...0x2325, 0x23CE...0x23CE,
+                                             0x2500...0x257F, 0x25A0...0x25FF, 0x3001...0x303F, 0x3041...0x30FF, 0x3131...0x318E,
                                              0x3400...0x4DBF, 0x4E00...0x9FFF, 0xAC00...0xD7A3, 0xFF01...0xFF5E, 0xFF61...0xFF9D, 0x2600...0x27BF,
                                              0x1F000...0x1FAFF]
         #expect(all.filter { value in !ranges.contains { $0.contains(value) } }.isEmpty)
-        // What the allowlist names and everything else about it: ASCII, accented letters, Greek, Cyrillic, punctuation, currency, arrows, kana, ideographs, Hangul, emoji.
-        for value: UInt32 in [0x20, 0x21, 0x7E, 0xE9, 0xF1, 0x141, 0x1E9E, 0x3A9, 0x44F, 0x2014, 0x2026, 0x20AC, 0x20A9, 0x2122, 0x2192, 0x2500, 0x3002, 0x3042,
-                              0x30AB, 0x4E2D, 0x6F22, 0x3400, 0xD55C, 0x3131, 0xFF01, 0xFF76, 0x1F600, 0x2764, 0x2705] {
+        // What the allowlist names and everything else about it: ASCII, accented letters, Greek, Cyrillic, punctuation, currency, arrows, math, shapes, kana, ideographs, Hangul, emoji.
+        for value: UInt32 in [0x20, 0x21, 0x7E, 0xE9, 0xF1, 0x141, 0x1E9E, 0x3A9, 0x44F, 0x2014, 0x20AC, 0x20A9, 0x2192, 0x3002, 0x3042, 0x30AB,
+                              0x4E2D, 0x6F22, 0x3400, 0xD55C, 0x3131, 0xFF76, 0x1F600, 0x2764, 0x2705] {
             #expect(all.contains(value), "U+\(String(value, radix: 16, uppercase: true))")
         }
-        // Not shown, whatever their block: spaces, joiners and direction marks, separators, the filler letters, the voicing marks, the tab arrow, unassigned.
+        // Not shown, whatever their block: spaces, joiners and direction marks, separators, the filler letters, the voicing marks, the tab arrow, unassigned, and what
+        // reads as ASCII or draws outside its cell.
         for value: UInt32 in [0xA0, 0xAD, 0x2028, 0x2029, 0x200B, 0x200D, 0x2060, 0x3000, 0x3164, 0xFFA0, 0xFF9E, 0xFF9F, 0x3099, 0x309A, 0x21E5, 0x27E8, 0x27E9, 0x0378,
                               0x1100, 0x1161, 0x11A8, 0x093E, 0x16AF0, 0x16AF4, 0x12031, 0x1DD8, 0x1DD9, 0x212A, 0x212B, 0x2126, 0x037E, 0x0387, 0x1FEF, 0x1FFD,
-                              0xF900, 0xFA0E, 0x2F800, 0x2329, 0x1F1E6, 0x1F3FB, 0xE0041, 0xFE0F, 0x0300, 0x1F000 + 0x3FF] {
+                              0xF900, 0xFA0E, 0x2F800, 0x2329, 0x1F1E6, 0x1F3FB, 0xE0041, 0xFE0F, 0x0300, 0x1F000 + 0x3FF,
+                              0x2010, 0x2011, 0x2212, 0x391, 0x3BF, 0x41E, 0x430, 0x456, 0x455, 0xFF21, 0xFF41, 0xFF0D, 0x2026, 0x2122, 0xAA, 0xB2, 0x20C0, 0x2500, 0x221A,
+                              0x276E, 0x276F, 0x2039, 0x203A, 0x3D3, 0x30CE, 0x4E36, 0x2215, 0x2217, 0x2795] {
             #expect(!all.contains(value), "U+\(String(value, radix: 16, uppercase: true))")
         }
     }
@@ -147,6 +176,62 @@ struct PermissionAllowlistTests {
         #expect(escaped("\u{212B}\u{2126}\u{387}\u{1FFD}\u{F900}\u{2F800}") == hex(0x212B, 0x2126, 0x387, 0x1FFD, 0xF900, 0x2F800))
         // What is written out stays written out beside a mark that would have composed with the letter it stands for.
         #expect(escaped("\u{212A}\u{301}") == hex(0x212A, 0x301))
+    }
+
+    // MARK: Look-alikes
+
+    @Test func aScalarThatReadsAsASCIIIsWrittenOutWhereverItStands() {
+        let cases: [(String, String)] = [
+            ("rm \u{2010}rf", "rm " + hex(0x2010) + "rf"),
+            ("git push \u{2011}\u{2011}force", "git push " + hex(0x2011, 0x2011) + "force"),
+            ("g\u{456}t status", "g" + hex(0x456) + "t status"),
+            ("/etc/pa\u{455}\u{455}wd", "/etc/pa" + hex(0x455, 0x455) + "wd"),
+            ("ls \u{2212}la \u{2012}\u{2013}\u{2014}", "ls " + hex(0x2212) + "la " + hex(0x2012, 0x2013) + "\u{2014}"),
+            ("\u{FF52}\u{FF4D} \u{FF0D}\u{FF52}\u{FF46} \u{FF0F}\u{FF10}", hex(0xFF52, 0xFF4D) + " " + hex(0xFF0D, 0xFF52, 0xFF46) + " " + hex(0xFF0F, 0xFF10)),
+        ]
+        for (text, expected) in cases { #expect(escaped(text) == expected, "\(name(text))") }
+        // Greek and Cyrillic letters drawn like Latin ones, whole alphabets of them, and nothing of the other letters there.
+        let greek: [UInt32] = [0x391, 0x392, 0x395, 0x39F, 0x3A1, 0x3BF]
+        let cyrillic: [UInt32] = [0x410, 0x412, 0x415, 0x41C, 0x41D, 0x41E, 0x420, 0x421, 0x422, 0x425, 0x430, 0x435, 0x43E, 0x441, 0x443, 0x445, 0x455, 0x456, 0x458, 0x4BB, 0x4CF]
+        for value in greek + cyrillic { #expect(escaped(String(Unicode.Scalar(value)!)) == hex(value), "U+\(String(value, radix: 16, uppercase: true))") }
+        for text in ["\u{3A9}", "\u{3C0}", "\u{44F}", "\u{416}", "\u{E9}", "\u{F1}", "\u{DF}", "\u{141}"] { #expect(escaped(text) == text, "\(name(text))") }
+        // The rule reads the scalar, not the script around it: Cyrillic in a Cyrillic word is written out too.
+        #expect(escaped("\u{43F}\u{440}\u{438}\u{432}\u{435}\u{442}") == "\u{43F}" + hex(0x440) + "\u{438}\u{432}" + hex(0x435) + "\u{442}")
+    }
+
+    @Test func koreanJapaneseAndChinesePathsAreShownAsTheyAre() {
+        for text in ["/Users/me/한글/문서.txt", "cp 日本語.txt 中文/文件", "rm ひらがな/カタカナ.md", "ls /home/漢字/한국어", "ｶﾀｶﾅ 한글 ㄱㄴㄷ"] {
+            #expect(escaped(text) == text.precomposedStringWithCanonicalMapping, "\(text)")
+        }
+        // Of the whole of kana, compatibility letters, ideographs and syllables, the only ones that aren't shown are the Hangul filler and four
+        // that the checker reads as ASCII: the katakana ノ and ゠, which are a slash and an equals sign, and the strokes 丶 and 丿.
+        var written: [UInt32] = []
+        for range: ClosedRange<UInt32> in [0x3041...0x30FF, 0x3131...0x318E, 0x3400...0x4DBF, 0x4E00...0x9FFF, 0xAC00...0xD7A3] {
+            for value in range {
+                guard let scalar = Unicode.Scalar(value), scalar.properties.generalCategory != .unassigned,
+                      [.otherLetter, .modifierLetter, .dashPunctuation, .otherPunctuation, .otherSymbol].contains(scalar.properties.generalCategory),
+                      !shown(String(scalar)) else { continue }
+                written.append(value)
+            }
+        }
+        #expect(written == [0x30A0, 0x30CE, 0x3164, 0x4E36, 0x4E3F], "\(written.map { String($0, radix: 16, uppercase: true) })")
+    }
+
+    @Test func theMarksSymbolsAndShapesAskedForAreShownWhereTheyReadAsThemselves() {
+        // Shown: checks, crosses, stars, circles, squares, triangles, a diamond, bullets, the keys of a Mac keyboard.
+        for text in ["\u{2713}", "\u{2717}", "\u{2714}", "\u{2718}", "\u{2605}", "\u{2606}", "\u{25CF}", "\u{25CB}", "\u{25A0}", "\u{25A1}", "\u{25B2}", "\u{25BC}",
+                     "\u{25C6}", "\u{2022}", "\u{B7}", "\u{2318}", "\u{2325}", "\u{21E7}", "\u{2303}", "\u{23CE}", "\u{2260}", "\u{2264}", "\u{2208}"] {
+            #expect(escaped(text) == text, "\(name(text))")
+        }
+        // Written out: the angle quotes and the dingbat chevrons read as < and >, and the minus, the slashes and the stars of math as theirs.
+        for text in ["\u{276F}", "\u{276E}", "\u{203A}", "\u{2039}", "\u{2212}", "\u{2215}", "\u{2216}", "\u{2217}", "\u{22C1}", "\u{2795}", "\u{2796}"] {
+            #expect(escaped(text) == hex(text.unicodeScalars.first!.value), "\(name(text))")
+        }
+        #expect(escaped("npm test \u{2713} done") == "npm test \u{2713} done")
+        // What is no use to a command stays out: the radical that draws too wide, the Som sign no font has, the box lines that overshoot, the sixth dingbat.
+        for text in ["\u{221A}", "\u{20C0}", "\u{2500}", "\u{2514}", "\u{2700}", "\u{275F}"] {
+            #expect(escaped(text) == hex(text.unicodeScalars.first!.value), "\(name(text))")
+        }
     }
 
     // MARK: Combining marks
@@ -167,7 +252,7 @@ struct PermissionAllowlistTests {
                 shownPairs += shown(text) ? 1 : 0
             }
         }
-        #expect(shownPairs > 600, "\(shownPairs)")
+        #expect(shownPairs > 500, "\(shownPairs)")
         // Only one, and not after anything that is not a letter of those: the second is written out.
         #expect(scalars(escaped("x\u{323}\u{330}")) == scalars("x\u{323}") + scalars(hex(0x330)))
         #expect(scalars(escaped("x\u{330}\u{323}")) == scalars("x\u{323}") + scalars(hex(0x330)) || scalars(escaped("x\u{330}\u{323}")) == scalars("x\u{330}") + scalars(hex(0x323)))
@@ -182,6 +267,36 @@ struct PermissionAllowlistTests {
 
     private func regional(_ letters: String) -> String {
         String(String.UnicodeScalarView(letters.unicodeScalars.map { Unicode.Scalar(0x1F1E6 + $0.value - 0x41)! }))
+    }
+
+    /// Sequences of the emoji standard and kin: a person with a tone and a job or a sign, couples, families, creatures and flags. Some of these
+    /// the font draws as one picture and some it doesn't; which is not for the list to say.
+    private static let sequences: [String] = {
+        let joiner = "\u{200D}", selector = "\u{FE0F}"
+        let tones = [""] + (0x1F3FB...0x1F3FF).map { String(Unicode.Scalar($0)!) }
+        var result: [String] = []
+        for person in ["👨", "👩", "🧑"] {
+            for tone in tones {
+                for job in ["⚕", "⚖", "✈"] { result.append(person + tone + joiner + job + selector) }
+                for job in ["🎓", "🏫", "🌾", "🍳", "🔧", "🏭", "💼", "🔬", "💻", "🎤", "🎨", "🚀", "🚒", "🦯", "🦼", "🦽", "🦰", "🦱", "🦳", "🦲", "🤝", "🧑"] {
+                    result.append(person + tone + joiner + job)
+                }
+            }
+        }
+        for person in ["🏃", "🚶", "🙇", "🤸", "🧗", "🧘", "🤦", "💆", "🧖", "🏄", "🚣", "🏊"] {
+            for tone in tones { for sign in ["♀", "♂"] { result.append(person + tone + joiner + sign + selector) } }
+        }
+        for person in ["🏋", "🏌", "⛹", "🕵"] { for sign in ["♀", "♂"] { result.append(person + selector + joiner + sign + selector) } }
+        result += ["👨‍👩‍👦", "👨‍👩‍👧‍👦", "👩‍👩‍👧", "👨‍👨‍👦‍👦", "👩‍👦", "👨‍👧‍👧", "🧑‍🤝‍🧑", "🧑‍🧑‍🧒", "🧑‍🧒‍🧒", "👩‍❤️‍👨", "👨‍❤️‍👨", "👩‍❤️‍💋‍👨",
+                   "🐕‍🦺", "🐻‍❄️", "🏴‍☠️", "🏳️‍🌈", "🏳️‍⚧️", "❤️‍🔥", "❤️‍🩹", "👁️‍🗨️", "😮‍💨", "😵‍💫", "😶‍🌫️", "🧔‍♂️", "👱‍♀️",
+                   "👩🏽‍🤝‍🧑🏻", "🍎\u{200D}🚗", "😀\u{200D}😀", "👨‍👩‍👧‍🍎", "👩‍👩‍👩‍👩‍👩"]
+        return result
+    }()
+
+    /// What CoreText draws `text` as in the card's code font: the glyphs, and whether any of them is the font's fallback.
+    private func glyphs(_ text: String) -> (count: Int, fallback: Bool) {
+        let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: [.font: faces[0].font]))
+        return (CTLineGetGlyphCount(line), fallback(line) != nil)
     }
 
     @Test func everyEmojiSequenceTheCardShowsDrawsInsideItsRow() {
@@ -202,6 +317,7 @@ struct PermissionAllowlistTests {
         let letters = (0..<26).map { Character(Unicode.Scalar(0x41 + $0)!) }
         texts += letters.flatMap { a in letters.map { regional(String(a) + String($0)) } }
         texts += ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "#", "*"].map { $0 + selector + "\u{20E3}" }
+        texts += Self.sequences
         texts += ["👨‍👩‍👧‍👦", "❤️‍🔥", "🏳️‍🌈", "👁️‍🗨️", "👩🏽‍🤝‍🧑🏻", "🧑‍🧑‍🧒‍🧒", "🇰🇷", "🏴‍☠️", "👩🏽‍⚕️", "1️⃣", "🏳️‍⚧️", "🐻‍❄️", "👩‍⚖️", "🏃‍♀️"]
         let raster = Raster()
         var problems: [String] = [], kept = 0
@@ -212,10 +328,75 @@ struct PermissionAllowlistTests {
             if !stable(text) { problems.append("\(name(text)) is changed by normalization") }
         }
         #expect(problems.isEmpty, "\(problems.count): \(problems.prefix(8))")
-        #expect(kept > 13_000, "\(kept)")
+        #expect(kept > 4_500, "\(kept)")
         // The ones from the reviews, drawn as one picture each, are shown whole.
         for text in ["👨‍👩‍👧‍👦", "❤️‍🔥", "🇰🇷", "1️⃣", "🏳️‍🌈", "👩🏽‍⚕️", "😀", "👍🏽"] {
             #expect(escaped(text) == text, "\(name(text))")
+        }
+    }
+
+    @Test func aVariationSelectorStaysOnlyAfterAPictureItChanges() {
+        let pictures = Self.shownScalars.filter {
+            $0.properties.isEmoji && ($0.value >= 0x1F000 || (0x2600...0x27BF).contains($0.value)) && !(0x1F3FB...0x1F3FF).contains($0.value)
+                && !(0x1F1E6...0x1F1FF).contains($0.value)
+        }
+        #expect(pictures.count > 1_000)
+        var colored = 0, kept = 0
+        for picture in pictures {
+            let text = String(picture), value = picture.value
+            // Drawn in colour by default: the selector changes nothing, so it is written out. Drawn as text by default: it turns it into a picture.
+            if picture.properties.isEmojiPresentation {
+                colored += 1
+                #expect(escaped(text + "\u{FE0F}") == text + hex(0xFE0F), "U+\(String(value, radix: 16, uppercase: true))")
+            } else {
+                kept += 1
+                #expect(escaped(text + "\u{FE0F}") == text + "\u{FE0F}", "U+\(String(value, radix: 16, uppercase: true))")
+            }
+        }
+        #expect(colored > 900 && kept > 100, "\(colored) \(kept)")
+        #expect(escaped("\u{1F4C1}\u{FE0F}") == "\u{1F4C1}" + hex(0xFE0F) && escaped("a \u{1F600}\u{FE0F} b") == "a \u{1F600}" + hex(0xFE0F) + " b")
+        #expect(escaped("\u{2764}\u{FE0F}") == "\u{2764}\u{FE0F}" && escaped("\u{26A0}\u{FE0F} done") == "\u{26A0}\u{FE0F} done")
+        // A keycap needs it, and so does a sequence that is drawn with it.
+        #expect(escaped("1\u{FE0F}\u{20E3}") == "1\u{FE0F}\u{20E3}" && escaped("\u{1F3F3}\u{FE0F}\u{200D}\u{1F308}") == "\u{1F3F3}\u{FE0F}\u{200D}\u{1F308}")
+        // The text selector is not the colour one: it stays, as before.
+        #expect(escaped("\u{2764}\u{FE0E}") == "\u{2764}\u{FE0E}")
+    }
+
+    @Test func aJoinerStaysOnlyWhereTheWholeSequenceIsDrawnAsOneGlyph() {
+        let joiner = "\u{200D}"
+        // The pictures made of several, and the ones from the reviews, are shown whole; a joiner between two that never make one is written out.
+        for text in ["\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}", "\u{2764}\u{FE0F}\u{200D}\u{1F525}", "\u{1F3F3}\u{FE0F}\u{200D}\u{1F308}"] {
+            #expect(escaped(text) == text, "\(name(text))")
+        }
+        #expect(escaped("\u{1F34E}\u{200D}\u{1F697}") == "\u{1F34E}" + hex(0x200D) + "\u{1F697}")
+        #expect(escaped("\u{1F4C1}\u{FE0F}\u{200D}\u{1F4C1}") == "\u{1F4C1}" + hex(0xFE0F, 0x200D) + "\u{1F4C1}")
+        // The sequence is judged whole: a family with a fruit joined on is not a picture, so the joiners inside the family go too.
+        #expect(escaped("\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}\u{200D}\u{1F34E}")
+                == "\u{1F468}" + hex(0x200D) + "\u{1F469}" + hex(0x200D) + "\u{1F467}" + hex(0x200D) + "\u{1F34E}")
+        // Each sequence is on its own: the one that draws stays beside the one that doesn't.
+        #expect(escaped("\u{1F468}\u{200D}\u{1F469} \u{1F34E}\u{200D}\u{1F697} \u{1F468}\u{200D}\u{1F469}")
+                == (glyphs("\u{1F468}\u{200D}\u{1F469}").count == 1 ? "\u{1F468}\u{200D}\u{1F469}" : "\u{1F468}" + hex(0x200D) + "\u{1F469}")
+                    + " \u{1F34E}" + hex(0x200D) + "\u{1F697} "
+                    + (glyphs("\u{1F468}\u{200D}\u{1F469}").count == 1 ? "\u{1F468}\u{200D}\u{1F469}" : "\u{1F468}" + hex(0x200D) + "\u{1F469}"))
+        // For every sequence: kept whole exactly when CoreText draws it as one glyph that is not a fallback, and written out joiner by joiner otherwise.
+        var drawn = 0, split = 0
+        for text in Self.sequences {
+            let one = glyphs(text)
+            if one.count == 1 && !one.fallback {
+                drawn += 1
+                #expect(escaped(text) == text, "\(name(text))")
+            } else {
+                split += 1
+                #expect(escaped(text) == text.unicodeScalars.map { $0.value == 0x200D ? hex(0x200D) : String($0) }.joined(), "\(name(text)) \(one)")
+            }
+        }
+        #expect(drawn > 150 && split > 10, "\(drawn) \(split)")
+        // Pairs of any two pictures: the same, whatever the font makes of them.
+        let pictures = Self.shownScalars.filter { $0.properties.isEmoji && $0.properties.isEmojiPresentation && $0.value >= 0x1F300 }
+        for (offset, first) in pictures.enumerated() where offset % 7 == 0 {
+            let second = pictures[(offset * 13 + 5) % pictures.count]
+            let text = String(first) + joiner + String(second), one = glyphs(text)
+            #expect((escaped(text) == text) == (one.count == 1 && !one.fallback), "\(name(text))")
         }
     }
 
@@ -231,11 +412,11 @@ struct PermissionAllowlistTests {
         #expect(escaped("\u{1F44D}\u{1F3FD}\u{1F3FF}") == "\u{1F44D}\u{1F3FD}" + hex(0x1F3FF))
         #expect(escaped("\u{1F600}\u{1F3FD}") == "\u{1F600}" + hex(0x1F3FD))
         #expect(escaped("\u{1F3FD}") == hex(0x1F3FD) && escaped("a\u{1F3FD}") == "a" + hex(0x1F3FD))
-        #expect(escaped("\u{1F44D}\u{FE0F}\u{1F3FD}") == "\u{1F44D}\u{FE0F}" + hex(0x1F3FD))
+        #expect(escaped("\u{261D}\u{FE0F}\u{1F3FD}") == "\u{261D}\u{FE0F}" + hex(0x1F3FD))
         // A keycap is a digit, # or *, the selector and the keycap, in that order.
         #expect(escaped("1\u{20E3}") == "1" + hex(0x20E3) && escaped("\u{20E3}") == hex(0x20E3) && escaped("a\u{FE0F}\u{20E3}") == "a" + hex(0xFE0F, 0x20E3))
         #expect(escaped("1\u{FE0F}\u{20E3}\u{20E3}") == "1\u{FE0F}\u{20E3}" + hex(0x20E3) && escaped("1\u{FE0F}\u{FE0F}\u{20E3}") == "1" + hex(0xFE0F, 0xFE0F, 0x20E3))
-        #expect(escaped("\u{1F600}\u{20E3}") == "\u{1F600}" + hex(0x20E3) && escaped("\u{1F600}\u{FE0F}\u{20E3}") == "\u{1F600}\u{FE0F}" + hex(0x20E3))
+        #expect(escaped("\u{1F600}\u{20E3}") == "\u{1F600}" + hex(0x20E3) && escaped("\u{1F600}\u{FE0F}\u{20E3}") == "\u{1F600}" + hex(0xFE0F, 0x20E3))
         #expect(escaped("1\u{FE0F}x") == "1" + hex(0xFE0F) + "x" && escaped("\u{2764}\u{FE0F}\u{20E3}") == "\u{2764}\u{FE0F}" + hex(0x20E3))
     }
 
@@ -274,7 +455,11 @@ struct PermissionAllowlistTests {
          ("korean-nfd", "ls /Users/me/\u{1112}\u{1161}\u{11AB}\u{1100}\u{1173}\u{11AF}/\u{110B}\u{1175}\u{1105}\u{1161}\u{11A8}\u{1109}\u{1165}.txt"),
          ("latin-nfd", "cat re\u{301}sume\u{301}-nai\u{308}ve.pdf"),
          ("emoji", "family 👨‍👩‍👧‍👦 fire ❤️‍🔥 flag 🇰🇷 key 1️⃣ rainbow 🏳️‍🌈 wave 👋🏽 \u{1F1F0} lone"),
-         ("marks", "x\u{323} n\u{303}\u{323} a\u{301}\u{323} A\u{323}\u{323} g\u{323} d\u{301}")]
+         ("marks", "x\u{323} n\u{303}\u{323} a\u{301}\u{323} A\u{323}\u{323} g\u{323} d\u{301}"),
+         ("lookalikes", "rm \u{2010}rf /\ngit push \u{2011}\u{2011}force\ng\u{456}t status\n/etc/pa\u{455}\u{455}wd \u{391}\u{392}\u{395} \u{FF41}\u{FF42} \u{2212}1 \u{D55C}\u{AE00} \u{65E5}\u{672C}\u{8A9E} \u{4E2D}\u{6587}"),
+         ("emoji-controls", "folder 📁\u{FE0F} apple 🍎\u{200D}🚗 family 👨‍👩‍👧 fire ❤️‍🔥 rainbow 🏳️‍🌈 heart ❤️ key 1️⃣ smile 😀\u{FE0F} ship 🚢\u{200D}🚢"),
+         ("shapes", "\u{2713} \u{2717} \u{2714} \u{2718} \u{2605} \u{2606} \u{25CF} \u{25CB} \u{25A0} \u{25A1} \u{25B2} \u{25BC} \u{25C6} \u{276F} \u{276E} \u{203A} \u{2039} \u{2022} \u{B7} \u{2318} \u{2325} \u{21E7} \u{2303} \u{23CE} \u{2260} \u{2264}"),
+         ("npm-test", "npm test \u{2713} done")]
     }
 
     @MainActor @Test func theReviewSamplesAreDrawnInsideTheirRows() throws {
