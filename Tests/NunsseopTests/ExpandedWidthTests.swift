@@ -39,14 +39,14 @@ struct ExpandedWidthTests {
     }
 
     @Test func theHeaderReservesRoomForEachStatusIcon() {
-        // Settings and Quit are 26 wide with a 6 gap each; the battery adds 66 and the weather 50.
+        // Settings and Quit are 26 wide with a 6 gap each; the battery adds 66 and the weather 55.
         #expect(NotchViewModel.headerStatusWidth(battery: false, weather: false) == 64)
         #expect(NotchViewModel.headerStatusWidth(battery: true, weather: false) == 130)
-        #expect(NotchViewModel.headerStatusWidth(battery: false, weather: true) == 114)
-        #expect(NotchViewModel.headerStatusWidth(battery: true, weather: true) == 180)
+        #expect(NotchViewModel.headerStatusWidth(battery: false, weather: true) == 119)
+        #expect(NotchViewModel.headerStatusWidth(battery: true, weather: true) == 185)
     }
 
-    private let statuses: [CGFloat] = [64, 130, 114, 180]
+    private let statuses: [CGFloat] = [64, 130, 119, 185]
 
     @Test func aNotchedHeaderAtTheFittingWidthSplitsAroundTheCamera() {
         for notch in [44, 200, 384] as [CGFloat] {

@@ -324,7 +324,7 @@ final class NotchViewModel: ObservableObject {
     nonisolated static func headerStatusWidth(battery: Bool, weather: Bool) -> CGFloat {
         var width: CGFloat = 2 * (26 + 6)
         if battery { width += 66 }
-        if weather { width += 50 }
+        if weather { width += 55 }
         return width
     }
 

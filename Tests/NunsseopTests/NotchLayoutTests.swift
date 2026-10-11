@@ -4,7 +4,7 @@ import Testing
 
 struct TabSplitTests {
     @Test func twelveTabsWithAllStatusIcons() {
-        // Settings and Quit 64, battery 66, weather 50.
+        // A status area as wide as Settings, Quit and the battery and weather in an older layout.
         let split = NotchViewModel.tabSplit(count: 12, status: 180)
         // 9 left: 9 × 36 − 6 + 2 = 320; 3 right: 3 × 36 − 6 + 2 + 180 = 284. 8 left ties at 320, and ties keep more on the left.
         #expect(split.left == 9)
