@@ -248,9 +248,10 @@ final class NotchViewModel: ObservableObject {
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
         // The idle ears show these. AI limits refresh every 20 s, so only a limit becoming known or unknown,
-        // which resizes the notch, reaches the whole view; IdleEars watches the values itself.
+        // which resizes the notch, reaches the whole view; IdleEars watches the values itself. A new day can
+        // widen the date, which IdleEars redraws by itself but the shape's width has to follow.
         hud.$power.map { _ in () }
-            .merge(with: weather.$current.map { _ in () },
+            .merge(with: weather.$current.map { _ in () }, Self.dayChanges,
                    aiUsage.$providers.combineLatest(settings.$idleAIWindow)
                        .map { providers, window in [IdleItem.claude, .codex].map { Self.aiLeft($0, in: providers, window: window) != nil } }
                        .removeDuplicates().map { _ in () })
@@ -420,7 +421,7 @@ final class NotchViewModel: ObservableObject {
         if showsLiveActivity {
             size.width += 2 * earWidth
         } else if showsIdleEars && !sneakPeekInline {
-            size.width += idleOneSide == nil ? 2 * Self.idleEarWidth : idleOneSideWidth
+            size.width += idleFittedSides.map { $0.left + $0.right } ?? 2 * Self.idleEarWidth
         }
         if sneakPeekInline {
             size.width = max(size.width, (showsLiveActivity ? 2 * earWidth : 0) + inlinePeekWidth + 2 * 13)
@@ -449,22 +450,44 @@ final class NotchViewModel: ObservableObject {
         #endif
         let screen = geometry.screenFrame
         let menus = appMenus.frames.filter { screen.contains(CGPoint(x: $0.midX, y: $0.midY)) }
-        let left = screen.midX - notch / 2, right = screen.midX + notch / 2, ear = (width - notch) / 2
+        let left = screen.midX - notch / 2, right = screen.midX + notch / 2
+        // Fitted idle values may grow the left side by less than half; growing right only takes all of it.
+        let ear = idleFittedSides?.left ?? (width - notch) / 2
         let covers = { (from: CGFloat, to: CGFloat) in menus.contains { $0.maxX > from && $0.minX < to } }
-        return covers(left - ear, left) && !covers(right, right + 2 * ear)
+        return covers(left - ear, left) && !covers(right, right + width - notch)
     }
 
-    /// The room the eyebrow's stroke leaves at each end of its frame, which a single idle side keeps from the wall too.
-    static let idleOneSideMargin: CGFloat = 10
-
-    /// How far a single idle side grows the shape: its value as IdleEars draws it and 8 between it and the eyebrow's
-    /// stroke. Its margin from the wall is the one the stroke leaves empty at the end facing it, so the two cancel out.
-    private var idleOneSideWidth: CGFloat {
-        let item = idleOneSide == -1 ? settings.idleLeft : settings.idleRight
-        guard let value = idleValue(item) else { return Self.idleEarWidth }
-        return Self.idleEarWidth(for: value)
+    /// Fires when the calendar day changes, on the main queue.
+    nonisolated static var dayChanges: AnyPublisher<Void, Never> {
+        NotificationCenter.default.publisher(for: .NSCalendarDayChanged)
+            .map { _ in () }
+            .receive(on: DispatchQueue.main)
+            .eraseToAnyPublisher()
     }
 
+    /// The room the eyebrow's stroke leaves at each end of its frame, which fitted idle values keep from the wall too.
+    nonisolated static let idleFittedMargin: CGFloat = 10
+
+    /// On a display without a notch, the idle values size the shape to fit them instead of taking a fixed ear each.
+    var idleFits: Bool {
+        !geometry.hasNotch && hud.event == nil && !showsLiveActivity && !showsSneakPeek && showsIdleEars
+    }
+
+    private var idleFittedSides: (left: CGFloat, right: CGFloat)? {
+        guard idleFits else { return nil }
+        return Self.idleFittedSides(left: idleValue(settings.idleLeft), right: idleValue(settings.idleRight))
+    }
+
+    /// How far fitted idle values grow the shape on each side: each by its own value, nothing where there is none.
+    /// The shape then moves sideways so the eyebrow stays over the camera (see `collapsedShift`).
+    nonisolated static func idleFittedSides(left: IdleValue?, right: IdleValue?) -> (left: CGFloat, right: CGFloat)? {
+        guard left != nil || right != nil else { return nil }
+        return (left.map(idleEarWidth(for:)) ?? 0, right.map(idleEarWidth(for:)) ?? 0)
+    }
+
+    /// How far one fitted value needs the shape to grow: the value as IdleEars draws it and 8 between it and the
+    /// eyebrow's stroke. Its margin from the wall is the one the stroke leaves empty at the end facing it, so the two
+    /// cancel out.
     nonisolated static func idleEarWidth(for value: IdleValue) -> CGFloat {
         let font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
         let text = (value.text as NSString).size(withAttributes: [.font: font]).width
@@ -474,17 +497,29 @@ final class NotchViewModel: ObservableObject {
         return ceil(symbol + text) + 8
     }
 
-    /// On a display without a notch, a single idle side grows the shape on that side only: -1 left, 1 right.
-    var idleOneSide: Int? {
-        guard !geometry.hasNotch, hud.event == nil, !showsLiveActivity, !showsSneakPeek, showsIdleEars else { return nil }
-        let left = idleValue(settings.idleLeft) != nil, right = idleValue(settings.idleRight) != nil
-        return left == right ? nil : (left ? -1 : 1)
+    /// How far right the collapsed shape moves: so its left edge stays at the camera's when the left ear is hidden, or
+    /// so the eyebrow stays over the camera when fitted idle values grow the two sides by different amounts.
+    var collapsedShift: CGFloat {
+        Self.collapsedShift(fitted: idleFittedSides, hidesLeftEar: hidesLeftEar,
+                            width: collapsedSize.width, notch: geometry.collapsedSize.width)
     }
 
-    /// How far right the collapsed shape moves so its left edge stays at the camera's.
-    var collapsedShift: CGFloat {
-        if let side = idleOneSide { return CGFloat(side) * idleOneSideWidth / 2 }
-        return hidesLeftEar ? (collapsedSize.width - geometry.collapsedSize.width) / 2 : 0
+    nonisolated static func collapsedShift(fitted: (left: CGFloat, right: CGFloat)?, hidesLeftEar: Bool,
+                                           width: CGFloat, notch: CGFloat) -> CGFloat {
+        // Only two sides make room for the menus; a single side keeps the eyebrow over the camera regardless.
+        if let fitted, !(fitted.left > 0 && fitted.right > 0 && hidesLeftEar) { return (fitted.right - fitted.left) / 2 }
+        return hidesLeftEar ? (width - notch) / 2 : 0
+    }
+
+    /// How far the eyebrow's frame sits from the collapsed shape's left wall, which keeps it over the camera.
+    nonisolated static func browLead(width: CGFloat, notch: CGFloat, shift: CGFloat) -> CGFloat {
+        max(0, (width - notch) / 2 - shift)
+    }
+
+    /// Where fitted idle values start past the shape's left wall, besides their margin: just past the eyebrow when it
+    /// sits at that wall with room after it (the left ear hidden, or a right side only), otherwise at the wall.
+    nonisolated static func idleLead(browLead: CGFloat, shift: CGFloat, notch: CGFloat) -> CGFloat {
+        browLead < 0.5 && shift > 0 ? notch - idleFittedMargin + 8 - idleFittedMargin : 0
     }
 
     /// The collapsed shape on screen.

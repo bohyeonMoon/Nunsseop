@@ -35,7 +35,8 @@ struct NotchView: View {
                         .animation(model.browFaded ? .easeIn(duration: 0.3) : motion.brow, value: model.browFaded)
                         .animation(motion.brow, value: model.browLifted)
                         .frame(width: model.geometry.collapsedSize.width, height: notchHeight)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: shift > 0 ? .topLeading : shift < 0 ? .topTrailing : .top)
+                        .padding(.leading, NotchViewModel.browLead(width: size.width, notch: model.geometry.collapsedSize.width, shift: shift))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
 
                 if model.isExpanded {
@@ -111,8 +112,10 @@ struct NotchView: View {
                                 .padding(.leading, earLead)
                             } else if model.showsIdleEars && !model.sneakPeekInline {
                                 IdleEars(model: model, height: notchHeight)
-                                    // A single side's value sits right against the eyebrow; its width leaves just that room.
-                                    .padding(.leading, model.idleOneSide == nil ? earLead : 0)
+                                    .padding(.leading, model.idleFits
+                                             ? NotchViewModel.idleLead(browLead: NotchViewModel.browLead(width: size.width, notch: model.geometry.collapsedSize.width, shift: shift),
+                                                                       shift: shift, notch: model.geometry.collapsedSize.width)
+                                             : earLead)
                             } else {
                                 Color.clear.frame(height: notchHeight)
                             }
