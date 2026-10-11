@@ -46,14 +46,14 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
-      - name: Universal release app
-        run: ./scripts/bundle.sh release
-      - name: Both architectures and an intact signature
+      - name: Rosetta
+        run: /usr/sbin/softwareupdate --install-rosetta --agree-to-license || true
+      # The same check a release runs: version, both architectures, signature, resources, and the app starting
+      # and answering, natively and as Intel under Rosetta.
+      - name: DMG starts on Apple silicon and Intel
         run: |
-          for binary in Contents/MacOS/Nunsseop Contents/Resources/libNowPlayingHelper.dylib; do
-            lipo "build/Nunsseop.app/$binary" -verify_arch arm64 x86_64
-          done
-          codesign --verify --deep --strict build/Nunsseop.app
+          dmg="$(./scripts/make-dmg.sh)"
+          REQUIRE_INTEL=1 ./scripts/check-dmg.sh "$dmg" "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
 
   site:
     runs-on: macos-26
