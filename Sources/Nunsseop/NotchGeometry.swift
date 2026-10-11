@@ -49,20 +49,23 @@ struct NotchGeometry: Equatable {
 
     init(screen: NSScreen) {
         screenFrame = screen.frame
-        if screen.safeAreaInsets.top > 0,
-           let left = screen.auxiliaryTopLeftArea,
-           let right = screen.auxiliaryTopRightArea {
+        (collapsedSize, hasNotch) = Self.collapsedSize(
+            frame: screen.frame, visibleFrame: screen.visibleFrame, safeTop: screen.safeAreaInsets.top,
+            leftAuxWidth: screen.auxiliaryTopLeftArea?.width, rightAuxWidth: screen.auxiliaryTopRightArea?.width,
+            fakeNotchWidth: Self.fakeNotchWidth)
+    }
+
+    /// The closed shape's size for a display, and whether it has a camera housing.
+    static func collapsedSize(frame: NSRect, visibleFrame: NSRect, safeTop: CGFloat, leftAuxWidth: CGFloat?,
+                              rightAuxWidth: CGFloat?, fakeNotchWidth: CGFloat) -> (size: CGSize, hasNotch: Bool) {
+        if safeTop > 0, let leftAuxWidth, let rightAuxWidth {
             // The shape's top corners flare outward, so widen it to keep the body as wide as the housing.
-            let width = screen.frame.width - left.width - right.width + 12
-            collapsedSize = CGSize(width: width, height: screen.safeAreaInsets.top)
-            hasNotch = true
-        } else if Self.fakeNotchWidth > 0 {
-            collapsedSize = CGSize(width: Self.fakeNotchWidth, height: 32)
-            hasNotch = true
+            return (CGSize(width: frame.width - leftAuxWidth - rightAuxWidth + 12, height: safeTop), true)
+        } else if fakeNotchWidth > 0 {
+            return (CGSize(width: fakeNotchWidth, height: 32), true)
         } else {
-            let menuBarHeight = screen.frame.maxY - screen.visibleFrame.maxY
-            collapsedSize = CGSize(width: Self.browWidth, height: max((menuBarHeight > 0 ? menuBarHeight : 24) - 6, 16))
-            hasNotch = false
+            let menuBarHeight = frame.maxY - visibleFrame.maxY
+            return (CGSize(width: browWidth, height: max((menuBarHeight > 0 ? menuBarHeight : 24) - 6, 16)), false)
         }
     }
 

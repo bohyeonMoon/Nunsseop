@@ -19,14 +19,20 @@ struct HeaderBar: View {
     /// Room for the tab strip: left of the camera on notched displays, otherwise up to the status icons.
     /// `left` is how many tabs sit left of the camera when the tabs are split around it; nil keeps them in one row.
     private var layout: (strip: CGFloat, camera: CGFloat, side: CGFloat, left: Int?) {
-        let content = model.expandedSize.width - 2 * NotchViewModel.headerInset
-        let status = model.headerStatusWidth
+        Self.layout(width: model.expandedSize.width, status: model.headerStatusWidth,
+                    tabCount: model.settings.visibleTabs.count, hasNotch: model.geometry.hasNotch,
+                    notchWidth: model.geometry.collapsedSize.width)
+    }
+
+    nonisolated static func layout(width: CGFloat, status: CGFloat, tabCount: Int, hasNotch: Bool, notchWidth: CGFloat)
+        -> (strip: CGFloat, camera: CGFloat, side: CGFloat, left: Int?) {
+        let content = width - 2 * NotchViewModel.headerInset
         // Without a notch: the gaps after the strip and between the two spacers.
-        guard model.geometry.hasNotch else { return (content - status - 12, 0, content, nil) }
-        let camera = model.geometry.collapsedSize.width + 8
+        guard hasNotch else { return (content - status - 12, 0, content, nil) }
+        let camera = notchWidth + 8
         let side = (content - camera - 12) / 2
         // Split only when both halves fit; otherwise every tab scrolls in one row on the left.
-        let split = NotchViewModel.tabSplit(count: model.settings.visibleTabs.count, status: status)
+        let split = NotchViewModel.tabSplit(count: tabCount, status: status)
         return (side, camera, side, split.side <= side + 0.5 ? split.left : nil)
     }
 
@@ -81,13 +87,7 @@ struct HeaderBar: View {
 
     @ViewBuilder private var status: some View {
         if model.settings.headerWeather, let weather = model.weather.current {
-            HStack(spacing: 4) {
-                Image(systemName: WeatherModel.symbol(for: weather.code)).symbolRenderingMode(.multicolor)
-                Text("\(Int(weather.temperature.rounded()))°").monospacedDigit()
-            }
-            .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(.white.opacity(0.7))
-            .help("\(weather.place) · \(Int(weather.low.rounded()))° / \(Int(weather.high.rounded()))°")
+            WeatherChip(weather: weather)
         }
         if model.settings.batteryInHeader, let power = model.hud.power {
             BatteryBadge(state: power)
@@ -193,6 +193,20 @@ private struct TabStrip: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+}
+
+struct WeatherChip: View {
+    let weather: WeatherModel.Current
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: WeatherModel.symbol(for: weather.code)).symbolRenderingMode(.multicolor)
+            Text("\(Int(weather.temperature.rounded()))°").monospacedDigit()
+        }
+        .font(.system(size: 11, weight: .medium))
+        .foregroundStyle(.white.opacity(0.7))
+        .help("\(weather.place) · \(Int(weather.low.rounded()))° / \(Int(weather.high.rounded()))°")
     }
 }
 

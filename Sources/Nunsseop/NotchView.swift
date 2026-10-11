@@ -242,15 +242,19 @@ private struct NotchMotion {
 extension NotchView {
     /// Where ShelfView's AirDrop tile sits inside the expanded shape.
     func airDropRect(in size: CGSize) -> CGRect {
+        Self.airDropRect(in: size, collapsedHeight: model.geometry.collapsedSize.height)
+    }
+
+    static func airDropRect(in size: CGSize, collapsedHeight: CGFloat) -> CGRect {
         let inset: CGFloat = 18 + 14
-        let top = max(model.geometry.collapsedSize.height, 24) + 8
+        let top = max(collapsedHeight, 24) + 8
         return CGRect(x: size.width - inset - ShelfView.airDropWidth, y: top,
                       width: ShelfView.airDropWidth, height: size.height - top - 16)
     }
 }
 
 /// Drops land on the shelf, or go straight to AirDrop when released over the AirDrop tile.
-private struct NotchDropDelegate: DropDelegate {
+struct NotchDropDelegate: DropDelegate {
     let model: NotchViewModel
     @Binding var isTargeted: Bool
     @Binding var isAirDropTargeted: Bool
@@ -265,8 +269,12 @@ private struct NotchDropDelegate: DropDelegate {
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
-        isAirDropTargeted = model.isExpanded && model.tab == .shelf && airDropRect.contains(info.location)
+        isAirDropTargeted = Self.targetsAirDrop(at: info.location, in: airDropRect, expanded: model.isExpanded, tab: model.tab)
         return DropProposal(operation: .copy)
+    }
+
+    static func targetsAirDrop(at point: CGPoint, in rect: CGRect, expanded: Bool, tab: NotchTab) -> Bool {
+        expanded && tab == .shelf && rect.contains(point)
     }
 
     func dropExited(info: DropInfo) {
