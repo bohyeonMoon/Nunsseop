@@ -178,6 +178,18 @@ struct NotifyServerRoutingTests {
         }
     }
 
+    @Test func aBackgroundSessionsNoticeHasNoApp() throws {
+        try withTempHome { _ in
+            let server = NotifyServer()
+            func app(_ extra: [String: String]) -> String? {
+                noticeOf(server.route(request("/notify", headers: authorized(server, ["x-app": "com.apple.Terminal"].merging(extra) { $1 }), body: "m")))?.app
+            }
+            #expect(app([:]) == "com.apple.Terminal")
+            #expect(app(["x-background": ""]) == "com.apple.Terminal")
+            #expect(app(["x-background": "1"]) == nil)
+        }
+    }
+
     @Test func aNoticeKeepsOnlySafeAppAndTargetValues() throws {
         try withTempHome { _ in
             let server = NotifyServer()

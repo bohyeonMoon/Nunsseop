@@ -142,11 +142,18 @@ struct NoticeHookShellTests {
         let sent = try run()
         #expect(sent.args == [
             "-s", "-m", "2", "-X", "POST", "http://127.0.0.1:\(NotifyServer.port)/notify",
-            "-H", "Authorization: Bearer tok", "-H", "X-Title: Claude Code", "-H", "X-App: com.apple.Terminal", "--data-binary", "@-",
+            "-H", "Authorization: Bearer tok", "-H", "X-Title: Claude Code", "-H", "X-App: com.apple.Terminal",
+            "-H", "X-Background: ", "--data-binary", "@-",
         ])
         #expect(sent.body == "Claude needs your permission\n")
         #expect(sent.stdout.isEmpty)
         #expect(sent.status == 0)
+    }
+
+    @Test func aBackgroundSessionIsFlagged() throws {
+        let sent = try run(["CLAUDE_JOB_DIR": "/tmp/job"])
+        #expect(sent.args.contains("X-Background: 1"))
+        #expect(sent.args.contains("X-App: com.apple.Terminal"))
     }
 
     @Test func aFailingCurlDoesNotFailTheHook() throws {
