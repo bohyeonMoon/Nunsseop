@@ -366,20 +366,20 @@ const pickLang = async (page, lang) => {
     check(pend.moved === 0, `motion: hiding ${pend.moved} blocks for the reveal changes the layout`);
     check(pend.aboveFold === 0, `motion: ${pend.aboveFold} blocks in view at load are hidden`);
     await scrollThrough(mp);
-    await sleep(900);
+    await mp.waitForFunction(() => [...document.querySelectorAll('.reveal')].every(el => getComputedStyle(el).opacity === '1' && getComputedStyle(el).transform === 'none'), null, { timeout: 30000 }).catch(() => {});
     const unshown = await mp.evaluate(() => [...document.querySelectorAll('.reveal')].filter(el => getComputedStyle(el).opacity !== '1' || getComputedStyle(el).transform !== 'none').length);
     check(unshown === 0, `motion: ${unshown} blocks never arrived after scrolling through the page`);
     await mp.evaluate(() => window.scrollTo(0, 0));
 
     // Language menu: opens to full size, then shrinks away and is hidden.
     await mp.click('.lang-btn');
-    await sleep(400);
+    await mp.waitForFunction(() => { const cs = getComputedStyle(document.querySelector('.lang-menu')); return cs.opacity === '1' && (cs.transform === 'none' || cs.transform === 'matrix(1, 0, 0, 1, 0, 0)'); }, null, { timeout: 30000 }).catch(() => {});
     const open = await mp.evaluate(() => { const cs = getComputedStyle(document.querySelector('.lang-menu')); return [cs.opacity, cs.transform, cs.visibility]; });
     check(open[0] === '1' && (open[1] === 'none' || open[1] === 'matrix(1, 0, 0, 1, 0, 0)') && open[2] === 'visible', 'motion: language menu is not fully open: ' + open.join(' '));
     await mp.keyboard.press('Escape');
     check(await mp.locator('.lang-menu.is-closing').count() === 1, 'motion: language menu does not animate shut');
     check(await menuOpen(mp) === false, 'motion: language menu did not close on Escape');
-    await sleep(350);
+    await mp.waitForFunction(() => !document.querySelector('.lang-menu').classList.contains('is-closing'), null, { timeout: 30000 }).catch(() => {});
     const shut = await mp.evaluate(() => [document.querySelector('.lang-menu').classList.contains('is-closing'), getComputedStyle(document.querySelector('.lang-menu')).visibility]);
     check(shut[0] === false && shut[1] === 'hidden', 'motion: language menu is not hidden after closing: ' + shut.join(' '));
     check(await mp.evaluate(() => document.activeElement.classList.contains('lang-btn')), 'motion: focus did not return to the language button');
@@ -390,7 +390,7 @@ const pickLang = async (page, lang) => {
     await cb.click();
     check((await cb.innerText()).trim() === 'Copied', 'motion: copy did not say Copied at once');
     check(await cb.getAttribute('data-prev') === 'Copy', 'motion: copy button has no ghost of the old label');
-    await sleep(500);
+    await cb.evaluate(b => new Promise(done => { const until = Date.now() + 30000; (function poll() { if ((!b.hasAttribute('data-prev') && !b.getAnimations({ subtree: true }).some(a => a.playState === 'running')) || Date.now() > until) done(); else setTimeout(poll, 50); })(); }));
     check(await cb.getAttribute('data-prev') === null, 'motion: copy button keeps its ghost label');
     check(await cb.evaluate(b => b.getAnimations({ subtree: true }).filter(a => a.playState === 'running').length) === 0, 'motion: copy button is still animating');
     await sleep(1300);

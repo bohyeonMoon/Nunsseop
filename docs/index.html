@@ -41,40 +41,40 @@
     color-scheme: light;
   }
   /* Transitions.dev motion tokens (https://transitions.dev), free transitions used under the Transitions.dev License.
-     Only the tokens this page references are copied. Durations and easings are matched by what the motion does, not by the nearest number. */
+     Only the tokens this page references are copied. Durations and easings are matched by what the motion does, then slowed by about 1.6x with a gentler ease-out for a calmer feel. */
   :root {
-    --duration-stagger: 40ms;  /* per-item stagger offset */
-    --duration-fast: 250ms;  /* dropdown open, tabs sliding, accordion, hover slide */
-    --ease-smooth-out: cubic-bezier(0.22, 1, 0.36, 1);  /* open + close, slide, position change */
+    --duration-stagger: 60ms;  /* per-item stagger offset */
+    --duration-fast: 400ms;  /* dropdown open, tabs sliding, accordion, hover slide */
+    --ease-smooth-out: cubic-bezier(0.33, 1, 0.68, 1);  /* open + close, slide, position change */
     --blur-small: 2px;  /* text swap, cross-fade */
     /* Menu dropdown */
-    --dropdown-open-dur: 250ms;
-    --dropdown-close-dur: 150ms;
+    --dropdown-open-dur: 400ms;
+    --dropdown-close-dur: 240ms;
     --dropdown-pre-scale: 0.97;
     --dropdown-closing-scale: 0.99;
-    --dropdown-ease: cubic-bezier(0.22, 1, 0.36, 1);
+    --dropdown-ease: cubic-bezier(0.33, 1, 0.68, 1);
     /* Text states swap */
-    --text-swap-dur: 150ms;
+    --text-swap-dur: 260ms;
     --text-swap-translate-y: 4px;
     --text-swap-blur: 2px;
     /* Error state shake */
     --shake-distance: 6px;
     --shake-overshoot: 4px;
     /* Tabs sliding */
-    --tabs-dur: 250ms;
-    --tabs-ease: cubic-bezier(0.22, 1, 0.36, 1);
+    --tabs-dur: 420ms;
+    --tabs-ease: cubic-bezier(0.33, 1, 0.68, 1);
     /* Accordion expand */
-    --acc-expand: 250ms;
-    --acc-collapse: 250ms;
-    --acc-chevron: 250ms;
-    --acc-ease: cubic-bezier(0.22, 1, 0.36, 1);
+    --acc-expand: 420ms;
+    --acc-collapse: 360ms;
+    --acc-chevron: 380ms;
+    --acc-ease: cubic-bezier(0.33, 1, 0.68, 1);
     /* Texts reveal */
-    --stagger-dur: 500ms;
+    --stagger-dur: 800ms;
     --stagger-distance: 12px;
     --stagger-blur: 3px;
-    --stagger-ease: cubic-bezier(0.22, 1, 0.36, 1);
+    --stagger-ease: cubic-bezier(0.33, 1, 0.68, 1);
     /* Skeleton loader and reveal (cross-fade) */
-    --reveal-dur: 400ms;
+    --reveal-dur: 600ms;
     --reveal-blur: 2px;
     --reveal-ease: ease-in-out;
   }
@@ -901,7 +901,7 @@ open build/Nunsseop.app</pre></div>
   };
   var swapRest = { opacity: 1, transform: 'translateY(0)', filter: 'blur(0px)' };
   var swapTiming = function (extra) {
-    var t = { duration: cssMs('--text-swap-dur', 150), easing: 'ease-in-out' };
+    var t = { duration: cssMs('--text-swap-dur', 260), easing: 'ease-in-out' };
     for (var k in extra) t[k] = extra[k];
     return t;
   };
@@ -919,7 +919,7 @@ open build/Nunsseop.app</pre></div>
     if (v) menu.classList.remove('is-closing');
     else if (was && motionOK()) {
       menu.classList.add('is-closing');
-      menuT = setTimeout(function () { menu.classList.remove('is-closing'); }, cssMs('--dropdown-close-dur', 150));
+      menuT = setTimeout(function () { menu.classList.remove('is-closing'); }, cssMs('--dropdown-close-dur', 240));
     }
   }
   function setLang(lang) {
@@ -984,7 +984,7 @@ open build/Nunsseop.app</pre></div>
       apply();
       if (!motionOK() || !btn.animate) return;
       btn.getAnimations({ subtree: true }).forEach(function (a) { a.cancel(); });
-      var dur = cssMs('--text-swap-dur', 150);
+      var dur = cssMs('--text-swap-dur', 260);
       btn.setAttribute('data-prev', old);
       var out = btn.animate([swapRest, swapFrame(-1)], swapTiming({ fill: 'forwards', pseudoElement: '::after' }));
       out.onfinish = function () { btn.removeAttribute('data-prev'); };
@@ -1095,7 +1095,7 @@ open build/Nunsseop.app</pre></div>
     if (list.scrollWidth > list.clientWidth) list.scrollTo({ left: active.offsetLeft - 20, behavior: reduce ? 'auto' : 'smooth' });
     tTitle.textContent = tourData[i][lang][0]; tText.innerHTML = tourData[i][lang][1];
     // Transitions.dev — Text states swap: the caption changes at once and its two lines arrive one after the other.
-    if (changed) { swapIn(tTitle); swapIn(tText, { delay: cssMs('--duration-stagger', 40), fill: 'backwards' }); }
+    if (changed) { swapIn(tTitle); swapIn(tText, { delay: cssMs('--duration-stagger', 60), fill: 'backwards' }); }
   }
   // Advances every 4 s until the visitor picks one; never under Reduce Motion.
   var tourBox = document.getElementById('tourBox');
@@ -1183,7 +1183,7 @@ open build/Nunsseop.app</pre></div>
           var above = !e.isIntersecting && e.boundingClientRect.top < 0;
           if (!e.isIntersecting && !above) return;
           // Items that arrive together are offset by one stagger step each, at most four steps.
-          e.target.style.transitionDelay = above ? '' : Math.min(n++, 4) * cssMs('--duration-stagger', 40) + 'ms';
+          e.target.style.transitionDelay = above ? '' : Math.min(n++, 4) * cssMs('--duration-stagger', 60) + 'ms';
           e.target.classList.remove('reveal-pre');
           seen.unobserve(e.target);
         });
