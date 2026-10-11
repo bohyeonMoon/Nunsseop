@@ -33,7 +33,7 @@ struct PermissionServerTests {
             await eventually { server.events.prompts.count == before + 1 }
             let prompt = try #require(server.events.prompts.last)
             #expect(prompt.title == "Run a command" && prompt.detail == "npm run build")
-            #expect(prompt.folder == "my project" && prompt.rule == "Bash(npm run *)")
+            #expect(prompt.folder == "my project" && prompt.grant?.rules == ["Bash(npm run *)"])
             server.server.permissions.answer(prompt.id, answer)
             let result = try #require(await process.finish())
             #expect(result.stdout == (try decisionText(answer, suggestion: PermissionTestServer.addRules)), "\(answer)")
@@ -64,10 +64,10 @@ struct PermissionServerTests {
         client.send(server.request(body: PermissionTestServer.hookInput(suggestions: [PermissionTestServer.setMode])))
         await eventually { server.events.prompts.count == 1 }
         let prompt = server.events.prompts[0]
-        #expect(prompt.rule == nil)
+        #expect(prompt.grant == nil)
         server.server.permissions.answer(prompt.id, .always)
         // Nothing allows more than was offered: the connection closes without an answer, and the terminal asks.
-        #expect(await client.read(timeout: 5).isEmpty)
+        #expect(await client.closes(within: 10))
     }
 
     // MARK: Who may ask
@@ -222,14 +222,14 @@ struct PermissionServerTests {
         await eventually { server.events.prompts.count == 3 }
         server.server.permissions.cancelAll()
         await eventually { server.events.goneIDs.count == 3 }
-        for client in clients { #expect(await client.read(timeout: 5).isEmpty) }
+        for client in clients { #expect(await client.closes(within: 10)) }
 
         let again = try RawClient(port: server.port)
         again.send(server.request(body: PermissionTestServer.hookInput()))
         await eventually { server.events.prompts.count == 4 }
         server.server.stop()
         await eventually { server.events.goneIDs.count == 4 }
-        #expect(await again.read(timeout: 5).isEmpty)
+        #expect(await again.closes(within: 10))
     }
 
     @Test func aWaitingPromptIsNotDroppedAsAStalledClient() async throws {
@@ -246,17 +246,15 @@ struct PermissionServerTests {
 
     // MARK: Limits
 
+    /// A request of exactly `size` bytes, padded in a field the card doesn't show.
     private func body(ofSize size: Int) throws -> Data {
-        var padding = size - PermissionTestServer.hookInput(input: ["command": ""]).count
-        var command = String(repeating: "a", count: max(padding, 0))
-        var data = PermissionTestServer.hookInput(input: ["command": command])
-        // Escapes and multi-byte characters would change the size, so it is adjusted until it is exact.
-        while data.count != size {
-            padding += size - data.count
-            command = String(repeating: "a", count: padding)
-            data = PermissionTestServer.hookInput(input: ["command": command])
+        func data(_ padding: Int) -> Data {
+            PermissionTestServer.hookInput(input: ["command": "ls", "pad": String(repeating: "a", count: max(padding, 0))])
         }
-        return data
+        var padding = size - data(0).count
+        // Escapes and multi-byte characters would change the size, so it is adjusted until it is exact.
+        while data(padding).count != size { padding += size - data(padding).count }
+        return data(padding)
     }
 
     @Test func aBodyUpToTheCapIsTakenAndOneByteMoreIsRefusedAtOnce() async throws {
@@ -274,6 +272,24 @@ struct PermissionServerTests {
         huge.send(Data("POST /permission HTTP/1.1\r\nContent-Length: 2000000000\r\n\r\n".utf8))
         #expect(await huge.status() == "HTTP/1.1 413 Payload Too Large")
         #expect(server.events.prompts.count == 1)
+    }
+
+    @Test func aCommandTooLongToShowInFullIsHandedBackToTheTerminalNotCutShort() async throws {
+        let server = try await PermissionTestServer()
+        let client = try RawClient(port: server.port)
+        let command = String(repeating: "a", count: PermissionPrompt.detailLimit + 1)
+        client.send(server.request(body: PermissionTestServer.hookInput(input: ["command": command])))
+        #expect(await client.status() == "HTTP/1.1 204 No Content")
+        #expect(server.events.prompts.isEmpty)
+    }
+
+    @Test func aMultiLineCommandReachesTheCardWithItsLineBreaks() async throws {
+        let server = try await PermissionTestServer()
+        let process = try hook(for: server, PermissionTestServer.hookInput(input: ["command": "echo ok\nrm -rf ~\u{202E}"]))
+        await eventually { server.events.prompts.count == 1 }
+        #expect(server.events.prompts.first?.detail == "echo ok\nrm -rf ~⟨U+202E⟩")
+        server.server.permissions.answer(try #require(server.events.prompts.first).id, .deny)
+        _ = await process.finish()
     }
 
     @Test func noticesStillHaveTheSmallerCap() async throws {

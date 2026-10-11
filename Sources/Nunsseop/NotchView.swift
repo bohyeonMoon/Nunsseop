@@ -47,12 +47,9 @@ struct NotchView: View {
                 if model.isExpanded {
                     VStack(spacing: 0) {
                         HeaderBar(model: model, height: notchHeight)
-                        Group {
-                            if let prompt = model.approvals.current {
-                                PermissionPanel(prompt: prompt, count: model.approvals.prompts.count) {
-                                    model.approvals.answer(prompt, $0)
-                                }
-                            } else {
+                        // The tab stays where it is under a permission prompt, so what was typed in it is still there after.
+                        ZStack(alignment: .top) {
+                            Group {
                                 switch model.tab {
                                 case .home:
                                     VStack(spacing: 8) {
@@ -99,6 +96,15 @@ struct NotchView: View {
                                     MirrorTab(mirror: model.mirror, deviceID: model.settings.mirrorCameraID)
                                 }
                             }
+                            .allowsHitTesting(model.approvals.current == nil)
+                            .disabled(model.approvals.current != nil)
+                            .opacity(model.approvals.current == nil ? 1 : 0)
+                            .accessibilityHidden(model.approvals.current != nil)
+                            if let prompt = model.approvals.current {
+                                PermissionPanel(prompt: prompt, count: model.approvals.prompts.count, gate: model.approvals.gate) {
+                                    model.approvals.answerByClick(prompt, $0)
+                                }
+                            }
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .padding(.top, 8)
@@ -109,8 +115,9 @@ struct NotchView: View {
                     .transition(motion.expandedContent)
                 } else if let prompt = model.approvals.current {
                     PermissionCard(prompt: prompt, count: model.approvals.prompts.count, height: notchHeight,
-                                   earWidth: NotchViewModel.hudEarWidth, leadingInset: earLead, hasNotch: model.geometry.hasNotch) {
-                        model.approvals.answer(prompt, $0)
+                                   earWidth: NotchViewModel.hudEarWidth, leadingInset: earLead, hasNotch: model.geometry.hasNotch,
+                                   gate: model.approvals.gate) {
+                        model.approvals.answerByClick(prompt, $0)
                     }
                     .padding(.horizontal, topRadius + 12)
                     .transition(motion.hudContent)

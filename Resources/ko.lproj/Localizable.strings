@@ -404,5 +404,11 @@
 "Search the web" = "웹 검색";
 "Allow" = "허용";
 "Deny" = "거부";
-"Always allow %@" = "항상 허용 %@";
+"Always allow" = "항상 허용";
+"Scroll for the rest: %lld lines, %lld characters" = "나머지는 스크롤: %lld줄, %lld자";
+"Always allow saves this %@" = "항상 허용은 이 규칙을 %@ 저장합니다";
+"in this project, just for you" = "이 프로젝트에서, 나에게만";
+"in this project" = "이 프로젝트에서";
+"everywhere" = "모든 곳에서";
+"for this session" = "이 세션에서만";
 "1 of %lld" = "%lld개 중 1번째";

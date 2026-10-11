@@ -379,5 +379,11 @@
 "Search the web" = "搜索网络";
 "Allow" = "允许";
 "Deny" = "拒绝";
-"Always allow %@" = "始终允许 %@";
+"Always allow" = "始终允许";
+"Scroll for the rest: %lld lines, %lld characters" = "滚动查看其余部分：%lld 行，%lld 个字符";
+"Always allow saves this %@" = "“始终允许”会保存此规则（%@）";
+"in this project, just for you" = "此项目内，仅你可用";
+"in this project" = "此项目内";
+"everywhere" = "所有位置";
+"for this session" = "仅限本次会话";
 "1 of %lld" = "第 1 个，共 %lld 个";

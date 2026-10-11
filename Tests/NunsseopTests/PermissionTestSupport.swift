@@ -2,7 +2,8 @@ import Foundation
 @testable import Nunsseop
 
 /// Waits for `condition`, stopping as soon as it holds; the cap only matters on a slow or busy machine.
-func eventually(_ condition: () -> Bool) async {
+/// It runs on the caller's actor, so a condition may read what that actor owns.
+func eventually(isolation: isolated (any Actor)? = #isolation, _ condition: () -> Bool) async {
     let deadline = Date.now.addingTimeInterval(30)
     while !condition() && Date.now < deadline {
         try? await Task.sleep(for: .milliseconds(20))
@@ -159,6 +160,22 @@ final class RawClient: @unchecked Sendable {
                     result.append(contentsOf: buffer[..<count])
                 }
                 continuation.resume(returning: result)
+            }
+        }
+    }
+
+    /// Whether the server closes the connection within `seconds`, as opposed to leaving it open and silent. Anything it says
+    /// before that is discarded.
+    func closes(within seconds: Int) async -> Bool {
+        let fd = fd
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global().async {
+                var timeout = timeval(tv_sec: seconds, tv_usec: 0)
+                setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+                var buffer = [UInt8](repeating: 0, count: 4096)
+                var count = recv(fd, &buffer, buffer.count, 0)
+                while count > 0 { count = recv(fd, &buffer, buffer.count, 0) }
+                continuation.resume(returning: count == 0)
             }
         }
     }

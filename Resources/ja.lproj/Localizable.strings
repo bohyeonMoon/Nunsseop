@@ -379,5 +379,11 @@
 "Search the web" = "Web を検索";
 "Allow" = "許可";
 "Deny" = "拒否";
-"Always allow %@" = "常に許可 %@";
+"Always allow" = "常に許可";
+"Scroll for the rest: %lld lines, %lld characters" = "続きはスクロール: %lld 行、%lld 文字";
+"Always allow saves this %@" = "「常に許可」は、この規則を%@保存します";
+"in this project, just for you" = "このプロジェクトで、あなただけに";
+"in this project" = "このプロジェクトで";
+"everywhere" = "すべての場所で";
+"for this session" = "このセッションのみ";
 "1 of %lld" = "%lld 件中 1 件目";

@@ -379,5 +379,11 @@
 "Search the web" = "Rechercher sur le web";
 "Allow" = "Autoriser";
 "Deny" = "Refuser";
-"Always allow %@" = "Toujours autoriser %@";
+"Always allow" = "Toujours autoriser";
+"Scroll for the rest: %lld lines, %lld characters" = "Faites défiler pour voir la suite : %lld lignes, %lld caractères";
+"Always allow saves this %@" = "« Toujours autoriser » l'enregistre %@";
+"in this project, just for you" = "dans ce projet, rien que pour vous";
+"in this project" = "dans ce projet";
+"everywhere" = "partout";
+"for this session" = "pour cette session";
 "1 of %lld" = "1 sur %lld";

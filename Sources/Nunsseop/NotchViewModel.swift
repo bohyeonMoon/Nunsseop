@@ -343,7 +343,9 @@ final class NotchViewModel: ObservableObject {
     var expandedSize: CGSize {
         var width = settings.expandedWidth
         if settings.widenForTabs { width = Self.widened(width, fitting: widthFittingTabs, limit: geometry.maxExpandedWidth) }
-        return CGSize(width: width, height: settings.expandedHeight)
+        // A permission prompt shows its command in full, so it takes all the height the panel has.
+        let height = approvals.current == nil ? settings.expandedHeight : max(settings.expandedHeight, AppSettings.expandedHeightRange.upperBound)
+        return CGSize(width: width, height: height)
     }
 
     /// The saved width, or the width that shows every tab when that is more, but never past the panel.
