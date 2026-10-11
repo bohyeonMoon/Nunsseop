@@ -220,8 +220,9 @@ struct AgentTranscriptLookupTests {
             transcripts.refresh([key], home: home)
             #expect(transcripts.transcript(key)?.tokens == 1_000)
 
-            // Grown: read again.
+            // Grown within the same second: read again.
             try Fixture.write([same, Fixture.claudeAssistant(model: "claude-opus-5-5", input: 3_000, cacheRead: 0, cacheCreation: 0)], to: file)
+            try FileManager.default.setAttributes([.modificationDate: stamp], ofItemAtPath: file.path)
             transcripts.refresh([key], home: home)
             #expect(transcripts.transcript(key)?.tokens == 3_000)
         }
@@ -265,7 +266,9 @@ struct AgentTranscriptLookupTests {
 
     @Test func anUnsafeSessionIdIsNeverLookedUp() throws {
         try withTempHome { home in
-            try Fixture.write([Fixture.claudeUser(cwd: "/secret")], to: home.appendingPathComponent(".claude/secret.jsonl"))
+            // "../secret" from a project folder lands next to the project folders.
+            try FileManager.default.createDirectory(at: home.appendingPathComponent(".claude/projects/-p"), withIntermediateDirectories: true)
+            try Fixture.write([Fixture.claudeUser(cwd: "/secret")], to: home.appendingPathComponent(".claude/projects/secret.jsonl"))
             let key = AgentTranscripts.Key(kind: .claude, session: "../secret")
             var transcripts = AgentTranscripts()
             transcripts.refresh([key], home: home)
