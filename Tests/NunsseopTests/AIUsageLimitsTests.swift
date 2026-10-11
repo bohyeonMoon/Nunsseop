@@ -6,6 +6,7 @@ import Testing
 struct AIUsageLimitsTests {
     private typealias Limits = AIUsageModel.Limits
     private typealias Window = AIUsageModel.Window
+    private typealias ModelWindow = AIUsageModel.ModelWindow
 
     private func temporaryFolder() throws -> URL {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("nunsseop-aiusage-\(UUID().uuidString)")
@@ -167,6 +168,31 @@ struct AIUsageLimitsTests {
         #expect(AIUsageModel.pick([(.codex, empty), (.codex, nil)]).isEmpty)
         let weeklyOnly = Limits(weekly: Window(percent: 7, resetsAt: nil), updatedAt: Date(timeIntervalSince1970: 50))
         #expect(AIUsageModel.pick([(.claude, weeklyOnly)])[.claude] == weeklyOnly)
+    }
+
+    @Test func aNewerReadingKeepsThePlanAndModelsItDoesNotCarry() {
+        let api = Limits(session: Window(percent: 10, resetsAt: nil), weekly: Window(percent: 20, resetsAt: nil),
+                         models: [ModelWindow(name: "Fable", window: Window(percent: 5, resetsAt: nil))],
+                         plan: "Max", updatedAt: Date(timeIntervalSince1970: 100))
+        let statusLine = Limits(session: Window(percent: 12, resetsAt: nil), weekly: Window(percent: 21, resetsAt: nil),
+                                updatedAt: Date(timeIntervalSince1970: 200), source: "Claude Code")
+        for offers in [[api, statusLine], [statusLine, api]] {
+            let picked = AIUsageModel.pick(offers.map { (.claude, $0) })[.claude]
+            #expect(picked?.session?.percent == 12)
+            #expect(picked?.weekly?.percent == 21)
+            #expect(picked?.updatedAt == statusLine.updatedAt)
+            #expect(picked?.source == "Claude Code")
+            #expect(picked?.plan == "Max")
+            #expect(picked?.models.map(\.name) == ["Fable"])
+        }
+        // Its own plan and models win when it has them.
+        var newer = api
+        newer.plan = "Pro"
+        newer.models = [ModelWindow(name: "Opus", window: Window(percent: 1, resetsAt: nil))]
+        newer.updatedAt = Date(timeIntervalSince1970: 300)
+        let picked = AIUsageModel.pick([(.claude, statusLine), (.claude, newer)])[.claude]
+        #expect(picked?.plan == "Pro")
+        #expect(picked?.models.map(\.name) == ["Opus"])
     }
 
     // MARK: SQLite

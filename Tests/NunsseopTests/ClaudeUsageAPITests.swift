@@ -196,6 +196,11 @@ struct ClaudeUsageAPISchedulingTests {
             let refused = ClaudeUsageAPI.reaction(status: status, retryAfter: "9999", parsed: false)
             #expect(refused.wait == 600 && refused.signedOut)
         }
+        // An outage or anything else that may pass isn't a lost sign-in.
+        for status in [400, 404, 500, 502, 503, 504] {
+            let failed = ClaudeUsageAPI.reaction(status: status, retryAfter: "9999", parsed: false)
+            #expect(failed.wait == 600 && !failed.signedOut, "HTTP \(status)")
+        }
     }
 
     @Test func claimAttemptBooksOneInterval() {

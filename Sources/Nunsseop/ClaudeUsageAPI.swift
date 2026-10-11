@@ -10,7 +10,8 @@ enum ClaudeUsageAPI {
     static let url = URL(string: "https://api.anthropic.com/api/oauth/usage")!
     /// How often the limits are asked for: a client that isn't Claude Code gets about one request an hour.
     static let interval: TimeInterval = 3600
-    /// After a refusal (429) at least this long passes before asking again, longer if the server says so.
+    /// After a refusal (429) or any other non-200 status (5xx, 400, 404 ...) at least this long passes before asking
+    /// again, longer if the server says so. Only 401/403 differ: they mean signed out.
     static let backoff: TimeInterval = 600
 
     struct Credentials: Equatable {
@@ -22,7 +23,7 @@ enum ClaudeUsageAPI {
 
     struct State {
         var limits: AIUsageModel.Limits?
-        /// No usable sign-in at the last attempt: none in the Keychain, expired, or refused by the server.
+        /// No usable sign-in at the last attempt: none in the Keychain, expired, or refused by the server (401/403).
         var signedOut = false
         /// A request to Anthropic is on its way.
         var inFlight = false
@@ -205,9 +206,12 @@ enum ClaudeUsageAPI {
             // Capped, so an odd retry-after can't switch this off until relaunch.
             let asked = retryAfter.flatMap(Double.init) ?? 0
             return (min(max(backoff, asked.isFinite ? asked : 0), interval * 4), false)
-        default:
-            // 401/403: a token that stopped working; Claude Code will sign in again, and it's asked later.
+        case 401, 403:
+            // A token that stopped working; Claude Code will sign in again, and it's asked later.
             return (backoff, true)
+        default:
+            // An outage or anything else that may pass: the limits known stay, and it's asked again soon.
+            return (backoff, false)
         }
     }
 

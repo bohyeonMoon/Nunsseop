@@ -31,8 +31,9 @@ enum ClaudeStatusLine {
         return [script, shellQuoted(script)].contains(command.trimmingCharacters(in: .whitespaces))
     }
 
-    static func state(of settings: [String: Any], hasSavedOriginal: Bool, script: String) -> State {
-        isOurs(settings, script: script) ? .connected : hasSavedOriginal ? .changed : .notConnected
+    /// Pointing at the script isn't enough: with the script gone, the status line has nothing to run.
+    static func state(of settings: [String: Any], hasSavedOriginal: Bool, script: String, scriptExists: Bool = true) -> State {
+        isOurs(settings, script: script) ? (scriptExists ? .connected : .notConnected) : hasSavedOriginal ? .changed : .notConnected
     }
 
     /// The settings with `statusLine.command` running the script, other `statusLine` keys kept, and the `statusLine`
@@ -92,22 +93,25 @@ enum ClaudeStatusLine {
     static func state(_ paths: Paths = .live) -> State {
         let settings = (try? NotifyIntegration.loadJSON(at: paths.settings)) ?? [:]
         return state(of: settings, hasSavedOriginal: FileManager.default.fileExists(atPath: paths.original.path),
-                     script: paths.script.path)
+                     script: paths.script.path, scriptExists: FileManager.default.fileExists(atPath: paths.script.path))
     }
 
     static func connect(_ paths: Paths = .live) throws {
         try NotifyIntegration.queue.sync {
             let settings = try NotifyIntegration.loadJSON(at: paths.settings)
-            guard let connected = try connecting(settings, script: paths.script.path) else { return }
             let fileManager = FileManager.default
+            guard let connected = try connecting(settings, script: paths.script.path) else {
+                // The settings already run the script but the file is gone: write it again, keeping the saved original.
+                guard !fileManager.fileExists(atPath: paths.script.path) else { return }
+                try writeScript(original: savedOriginal(paths), paths)
+                return
+            }
             try fileManager.createDirectory(at: paths.folder, withIntermediateDirectories: true)
             let saved = try JSONSerialization.data(withJSONObject: connected.original.map { ["statusLine": $0] } ?? [:],
                                                    options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
             try saved.write(to: paths.original, options: .atomic)
             do {
-                let script = script(original: connected.original, snapshotName: paths.snapshot.lastPathComponent)
-                try Data(script.utf8).write(to: paths.script, options: .atomic)
-                try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: paths.script.path)
+                try writeScript(original: connected.original, paths)
                 try NotifyIntegration.writeJSON(connected.settings, to: paths.settings)
             } catch {
                 removeFiles(paths)
@@ -119,13 +123,23 @@ enum ClaudeStatusLine {
     static func disconnect(_ paths: Paths = .live) throws {
         try NotifyIntegration.queue.sync {
             let settings = try NotifyIntegration.loadJSON(at: paths.settings)
-            let original = (try? Data(contentsOf: paths.original))
-                .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }?["statusLine"] as? [String: Any]
-            if let restored = disconnecting(settings, original: original, script: paths.script.path) {
+            if let restored = disconnecting(settings, original: savedOriginal(paths), script: paths.script.path) {
                 try NotifyIntegration.writeJSON(restored, to: paths.settings)
             }
             removeFiles(paths)
         }
+    }
+
+    private static func savedOriginal(_ paths: Paths) -> [String: Any]? {
+        (try? Data(contentsOf: paths.original))
+            .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }?["statusLine"] as? [String: Any]
+    }
+
+    private static func writeScript(original: [String: Any]?, _ paths: Paths) throws {
+        let script = script(original: original, snapshotName: paths.snapshot.lastPathComponent)
+        try FileManager.default.createDirectory(at: paths.folder, withIntermediateDirectories: true)
+        try Data(script.utf8).write(to: paths.script, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: paths.script.path)
     }
 
     private static func removeFiles(_ paths: Paths) {
