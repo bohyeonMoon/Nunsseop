@@ -22,6 +22,10 @@ private enum Case {
     static let calling = Content(left: .call, right: .call, callIcon: call, clock: up)
     static let callingMuted = Content(left: .call, right: .call, callIcon: call, muted: true, clock: up)
     static let recording = Content(left: .recording, right: .recording, clock: up)
+    /// A recording that began at `start`.
+    static func recordingFrom(_ start: Date) -> Content {
+        Content(left: .recording, right: .recording, clock: .init(seconds: { $0.timeIntervalSince(start) }))
+    }
     static let music = Content(left: .music, right: .bars, playing: true)
     static let musicPrivacyDots = Content(left: .music, right: .privacyDots, playing: true, camera: true, mic: true)
     static let musicAndTimer = Content(left: .music, right: .timer, playing: true,
@@ -234,6 +238,118 @@ struct LiveEarWidthTests {
                                                 showsSneakPeek: true, inlinePeekWidth: 240)
         // Two ears of 40, the line and 13 of padding on each side.
         #expect(size.width == 346)
+    }
+}
+
+@MainActor
+struct LiveEarUpkeepTests {
+    private let now = Date(timeIntervalSinceReferenceDate: 0).addingTimeInterval(1000)
+
+    // MARK: Tiny panels
+
+    @Test func theArtworkNeverHasANegativeSide() {
+        #expect(LiveEars.art(height: 32) == 18)
+        #expect(LiveEars.art(height: 14) == 0)
+        #expect(LiveEars.art(height: 3) == 0)
+        #expect(LiveEars.art(height: -20) == 0)
+        #expect(LiveEars.rightWidth(Case.privacyCamera, art: 0, at: now) == 0)
+        #expect(LiveEars.rightWidth(Case.privacyCamera, art: 1, at: now) == 0)
+        #expect(LiveEars.leftWidth(Case.music, art: LiveEars.art(height: 5)) == 0)
+    }
+
+    // MARK: Sleep and clock changes
+
+    @Test func aChangeThatFellDueWhileAsleepIsWaitedForNoLonger() {
+        let due = now.addingTimeInterval(600)
+        #expect(LiveEars.clockChangeDelay(until: due, now: now) == 600)
+        #expect(LiveEars.clockChangeDelay(until: due, now: due) == 0)
+        // Woken an hour later: the mark has passed, so the notch is measured at once.
+        #expect(LiveEars.clockChangeDelay(until: due, now: now.addingTimeInterval(3600)) == 0)
+    }
+
+    @Test func wakingAndSettingTheClockAreWhatMeasuresTheNotchAgain() {
+        let names = LiveEars.clockJumpNotifications.map(\.name)
+        #expect(names.contains(NSWorkspace.didWakeNotification))
+        #expect(names.contains(.NSSystemClockDidChange))
+        // Waking is posted on the workspace's own center, not the default one.
+        let wake = LiveEars.clockJumpNotifications.first { $0.name == NSWorkspace.didWakeNotification }
+        #expect(wake?.center === NSWorkspace.shared.notificationCenter)
+    }
+
+    @Test func aMarkPassedAsleepIsSeenByMeasuringAgain() {
+        // The hour mark of a clock begun an hour and a minute before waking is past, and the width is the longer format's.
+        let start = now.addingTimeInterval(-3660)
+        #expect(LiveEars.nextClockChange(after: now, startingAt: [start]) == start.addingTimeInterval(36000))
+        let asleep = LiveEars.rightWidth(Case.recordingFrom(start), art: 18, at: now.addingTimeInterval(-120))
+        let awake = LiveEars.rightWidth(Case.recordingFrom(start), art: 18, at: now)
+        #expect(awake > asleep)
+    }
+
+    // MARK: Measuring once
+
+    @Test func widthsAreTheSameWhenMeasuredAgainAndAreKept() {
+        let symbol = LiveEars.symbolWidth("mic.fill", size: 10)
+        let text = LiveEars.textWidth("1:23:45")
+        let kept = LiveEars.cachedWidthCount
+        for _ in 0..<200 {
+            #expect(LiveEars.symbolWidth("mic.fill", size: 10) == symbol)
+            #expect(LiveEars.textWidth("1:23:45") == text)
+        }
+        #expect(LiveEars.cachedWidthCount == kept)
+        // Another size of the same symbol is a different width, not the kept one.
+        #expect(LiveEars.symbolWidth("mic.fill", size: 20) > symbol)
+        // And what is kept is what measuring gives.
+        let measured = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 10, weight: .semibold))?.size.width
+        #expect(symbol == measured)
+        let font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
+        #expect(text == ceil(("1:23:45" as NSString).size(withAttributes: [.font: font]).width))
+    }
+
+    @Test func aSymbolThatDoesNotExistIsWidthlessAndStaysSo() {
+        #expect(LiveEars.symbolWidth("not.a.symbol.at.all", size: 10) == 0)
+        #expect(LiveEars.symbolWidth("not.a.symbol.at.all", size: 10) == 0)
+    }
+
+    // MARK: Which way the ears move
+
+    private func frame(_ width: CGFloat, _ height: CGFloat = 32, _ left: CGFloat, _ right: CGFloat, peek: Bool = false)
+        -> NotchViewModel.EarsFrame {
+        NotchViewModel.EarsFrame(size: CGSize(width: width, height: height), sides: .init(left: left, right: right), peek: peek)
+    }
+
+    @Test func aPeekEndingIsAShrinkEvenThoughTheSidesChangeToo() {
+        // The line goes and the sides stop being equal in one transaction.
+        let peeking = frame(200 + 104, 56, 52, 52, peek: true)
+        let after = frame(200 + 83, 32, 31, 52)
+        #expect(!NotchViewModel.earsGrow(from: peeking, to: after))
+        // A line that only lowers the shape ending is one too.
+        #expect(!NotchViewModel.earsGrow(from: frame(283, 56, 31, 52, peek: true), to: frame(283, 32, 31, 52)))
+    }
+
+    @Test func aPeekStartingOrAClockGainingADigitGrows() {
+        #expect(NotchViewModel.earsGrow(from: frame(283, 32, 31, 52), to: frame(304, 56, 52, 52, peek: true)))
+        #expect(NotchViewModel.earsGrow(from: frame(283, 32, 31, 52), to: frame(283, 56, 31, 52, peek: true)))
+        #expect(NotchViewModel.earsGrow(from: frame(283, 32, 31, 52), to: frame(297, 32, 31, 66)))
+    }
+
+    @Test func anActivityEndingShrinksAndOneStartingGrows() {
+        #expect(!NotchViewModel.earsGrow(from: frame(283, 32, 31, 52), to: frame(200, 32, 0, 0)))
+        #expect(NotchViewModel.earsGrow(from: frame(200, 32, 0, 0), to: frame(283, 32, 31, 52)))
+    }
+
+    @Test func whenTheSizeStaysPutThePeekThenTheSidesDecide() {
+        #expect(NotchViewModel.earsGrow(from: frame(283, 32, 31, 52), to: frame(283, 32, 52, 31)))
+        #expect(!NotchViewModel.earsGrow(from: frame(200, 32, 0, 0), to: frame(200, 32, 0, 0)))
+        #expect(NotchViewModel.earsGrow(from: frame(200, 32, 0, 0), to: frame(200, 32, 0, 0, peek: true)))
+        #expect(!NotchViewModel.earsGrow(from: frame(200, 32, 0, 0, peek: true), to: frame(200, 32, 0, 0)))
+    }
+
+    @Test func theAnimationKeyIgnoresTheSize() {
+        let a = frame(283, 32, 31, 52), b = frame(300, 56, 31, 52)
+        #expect(a != b)
+        #expect(a.key == b.key)
+        #expect(a.key != frame(283, 32, 31, 52, peek: true).key)
     }
 }
 

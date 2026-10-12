@@ -19,8 +19,8 @@ enum LiveEars {
     /// Between the content and the camera area.
     static let gap: CGFloat = 6
 
-    /// The artwork's and call icon's side.
-    static func art(height: CGFloat) -> CGFloat { min(height - 14, 32) }
+    /// The artwork's and call icon's side; nothing on a panel too short to hold one.
+    static func art(height: CGFloat) -> CGFloat { max(0, min(height - 14, 32)) }
 
     static func sides(for content: CollapsedActivity.Content, art: CGFloat, base: CGFloat, at date: Date,
                       symmetric: Bool = false) -> Sides {
@@ -68,7 +68,7 @@ enum LiveEars {
         case .download:
             return content.percent.map { textWidth("\($0)%") } ?? ceil(symbolWidth("ellipsis", size: 11))
         case .bars:
-            return art - 2
+            return max(0, art - 2)
         }
     }
 
@@ -91,16 +91,56 @@ enum LiveEars {
         starts.flatMap { start in [3600.0, 36000.0].map { start.addingTimeInterval($0) } }.filter { $0 > now }.min()
     }
 
+    /// How long to wait for `due`; nothing once it has passed.
+    nonisolated static func clockChangeDelay(until due: Date, now: Date) -> TimeInterval {
+        max(0, due.timeIntervalSince(now))
+    }
+
+    /// What tells the notch that wall-clock time moved without a dispatch timer noticing: the dispatch clock stops while
+    /// the Mac sleeps, and a clock set by hand or by a network time sync jumps.
+    nonisolated static var clockJumpNotifications: [(center: NotificationCenter, name: Notification.Name)] {
+        [(NSWorkspace.shared.notificationCenter, NSWorkspace.didWakeNotification),
+         (NotificationCenter.default, .NSSystemClockDidChange)]
+    }
+
     // MARK: Measuring
 
     private nonisolated static var textFont: NSFont { NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold) }
 
+    /// The notch measures itself on every change and every tick of a countdown, always the same few strings and symbols;
+    /// text layout and symbol rasterising are what that costs, so each width is measured once.
+    private final class WidthCache: @unchecked Sendable {
+        private let lock = NSLock()
+        private var widths: [String: CGFloat] = [:]
+
+        var count: Int { lock.withLock { widths.count } }
+
+        func width(for key: String, measure: () -> CGFloat) -> CGFloat {
+            if let cached = lock.withLock({ widths[key] }) { return cached }
+            let width = measure()
+            lock.withLock {
+                // Percents, clocks and symbols are a few dozen keys; a runaway set is dropped rather than kept.
+                if widths.count >= 512 { widths.removeAll() }
+                widths[key] = width
+            }
+            return width
+        }
+    }
+
+    private nonisolated static let cache = WidthCache()
+    /// How many widths are kept, for tests.
+    nonisolated static var cachedWidthCount: Int { cache.count }
+
     nonisolated static func textWidth(_ text: String) -> CGFloat {
-        ceil((text as NSString).size(withAttributes: [.font: textFont]).width)
+        cache.width(for: "t|\(text)") {
+            ceil((text as NSString).size(withAttributes: [.font: textFont]).width)
+        }
     }
 
     nonisolated static func symbolWidth(_ name: String, size: CGFloat) -> CGFloat {
-        NSImage(systemSymbolName: name, accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: size, weight: .semibold))?.size.width ?? 0
+        cache.width(for: "s|\(size)|\(name)") {
+            NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+                .withSymbolConfiguration(.init(pointSize: size, weight: .semibold))?.size.width ?? 0
+        }
     }
 }

@@ -209,6 +209,14 @@ final class NotchViewModel: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in self?.scheduleClockChange() }
             .store(in: &cancellables)
+        // The timer above doesn't count the time the Mac sleeps, and a clock set by hand jumps; either can pass an
+        // hour mark unseen, so the due time is worked out again and the notch measured again.
+        for (center, name) in LiveEars.clockJumpNotifications {
+            center.publisher(for: name)
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in self?.resyncClockChange() }
+                .store(in: &cancellables)
+        }
         privacy.objectWillChange
             .sink { [weak self] in self?.objectWillChange.send() }
             .store(in: &cancellables)
@@ -660,7 +668,17 @@ final class NotchViewModel: ObservableObject {
             }
         }
         clockChangeWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + max(0, due.timeIntervalSinceNow), execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + LiveEars.clockChangeDelay(until: due, now: .now), execute: work)
+    }
+
+    /// After a sleep or a jump of the clock: drops the pending change, which was timed on a clock that stopped, and
+    /// measures the notch again (a mark passed meanwhile is then seen at once) before timing the next one.
+    private func resyncClockChange() {
+        clockChangeWork?.cancel()
+        clockChangeWork = nil
+        clockChangeDue = nil
+        objectWillChange.send()
+        scheduleClockChange()
     }
 
     private func triggerCallPeek() {
@@ -685,6 +703,32 @@ final class NotchViewModel: ObservableObject {
         return LiveEars.sides(for: content, art: LiveEars.art(height: height),
                               base: Self.earWidth(height: height, compact: settings.compactLiveActivity), at: .now,
                               symmetric: showsSneakPeek)
+    }
+
+    /// What decides how the closed shape's ears move: the shape's size, what each side holds, and whether a peek shows.
+    struct EarsFrame: Equatable {
+        var size: CGSize
+        var sides: LiveEars.Sides
+        var peek: Bool
+
+        /// What the ears animate on. The size isn't part of it; it only says which way they move.
+        struct Key: Equatable {
+            var sides: LiveEars.Sides
+            var peek: Bool
+        }
+        var key: Key { Key(sides: sides, peek: peek) }
+    }
+
+    /// Whether the ears move as growing (a spring with a little overshoot) rather than shrinking, going from one frame
+    /// to the next. Decided by the direction the shape's size takes, so a peek ending (the sides stop being equal and
+    /// the line below goes) is one shrink however many of the values change together. When the size stays put, a peek
+    /// showing or hiding decides, and otherwise the activity's sides do.
+    nonisolated static func earsGrow(from old: EarsFrame, to new: EarsFrame) -> Bool {
+        let grew = new.size.width > old.size.width || new.size.height > old.size.height
+        let shrank = new.size.width < old.size.width || new.size.height < old.size.height
+        if grew || shrank { return grew }
+        if new.peek != old.peek { return new.peek }
+        return new.sides != .zero
     }
 
     /// The ear artwork and the visualizer share: the panel's height plus 6, or 70% of it when compact.
