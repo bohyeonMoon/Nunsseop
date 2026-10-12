@@ -292,14 +292,16 @@ func codeDrawing(_ text: String) -> [String] {
 }
 
 /// Whether a selector or skin tone in `text` follows a picture that CoreText draws the same with and without it, or one that is in
-/// colour already: the ones `escape` writes out.
+/// colour already: the ones `escape` writes out wherever they stand. A colour selector that makes no difference after a picture that is not
+/// in colour is not among them, because a sequence drawn as one keeps it.
 func hasUselessControl(_ text: String) -> Bool {
     let scalars = Array(text.unicodeScalars)
     for (index, scalar) in scalars.enumerated() where index > 0 {
         let picture = scalars[index - 1]
         switch scalar.value {
         case 0xFE0F where picture.properties.isEmoji && picture.properties.isEmojiPresentation && picture.value > 0xFF: return true
-        case 0xFE0E, 0xFE0F, 0x1F3FB...0x1F3FF:
+        case 0xFE0F: break
+        case 0xFE0E, 0x1F3FB...0x1F3FF:
             if picture.value > 0xFF, picture.properties.isEmoji, codeDrawing(String(picture)) == codeDrawing(String(picture) + String(scalar)) { return true }
         default: break
         }

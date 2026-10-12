@@ -65,24 +65,24 @@ enum PermissionText {
     /// operators, a few keys of Miscellaneous Technical, box drawing, geometric shapes, a few stars, dingbats, CJK signs, kana,
     /// Hangul compatibility letters, CJK ideographs, Hangul syllables, and full and half width forms. Only letters, numbers,
     /// punctuation and symbols of them count: no mark, no space, no unassigned scalar. Those that read as ASCII only where
-    /// `lookalikes` lets them.
+    /// the run they stand in lets them.
     private static let shown: [ClosedRange<UInt32>] = [
         0xA1...0xFF, 0x100...0x24F, 0x1E00...0x1EFF, 0x370...0x3FF, 0x400...0x4FF, 0x2010...0x2027, 0x2030...0x205E,
         0x20A0...0x20C0, 0x2100...0x214F, 0x2190...0x21FF, 0x2200...0x22FF, 0x2303...0x2303, 0x2318...0x2318, 0x2325...0x2325,
         0x23CE...0x23CE, 0x2500...0x257F, 0x25A0...0x25FF, 0x2605...0x2606, 0x2700...0x27BF, 0x3001...0x303F, 0x3041...0x309F,
         0x30A0...0x30FF, 0x3131...0x318E, 0x3400...0x4DBF, 0x4E00...0x9FFF, 0xAC00...0xD7A3, 0xFF01...0xFF5E, 0xFF61...0xFF9D]
     /// Scalars of those ranges that are written out nonetheless: the soft hyphen, the Hangul filler, the arrow that stands
-    /// for a tab, and what drew outside its row, or more than a point past either side of its cell, or nothing, or a fallback
-    /// box, when every scalar was laid out in the card's fonts: Latin and Greek letters whose accents reach past the row or
-    /// more than a point past the cell, the box-drawing pieces that run past the row, the radicals and slashes that run wide,
-    /// the signs no font has, and a few more.
+    /// for a tab, and what drew outside its row, or more than a point past either side of its cell by its outline or by the
+    /// pixels it paints, or nothing, or a fallback box, when every scalar was laid out in the card's fonts: Latin and Greek
+    /// letters whose accents or hooks reach past the row or more than a point past the cell, the box-drawing pieces that run
+    /// past the row, the radicals and slashes that run wide, the signs no font has, and a few more.
     private static let withheld: [ClosedRange<UInt32>] = [
-        0xAD...0xAD, 0x193...0x193, 0x1D7...0x1D7, 0x1D9...0x1D9, 0x1DB...0x1DB, 0x1FA...0x1FA, 0x208...0x209, 0x37A...0x37A,
+        0xAD...0xAD, 0x187...0x187, 0x193...0x193, 0x1D7...0x1D7, 0x1D9...0x1D9, 0x1DB...0x1DB, 0x1FA...0x1FA, 0x208...0x209, 0x37A...0x37A,
         0x390...0x390, 0x3D3...0x3D3, 0x47C...0x47C, 0x1E00...0x1E01, 0x1E14...0x1E14, 0x1E16...0x1E16, 0x1E2E...0x1E2E,
         0x1E4C...0x1E4C, 0x1E4E...0x1E4E, 0x1E50...0x1E50, 0x1E52...0x1E52, 0x1E66...0x1E66, 0x1E78...0x1E78, 0x1E7A...0x1E7A,
-        0x1E9D...0x1E9D, 0x1EA4...0x1EA4, 0x1EA6...0x1EA6, 0x1EA8...0x1EA8, 0x1EAA...0x1EAA, 0x1EAE...0x1EAE, 0x1EB0...0x1EB0,
+        0x1E9C...0x1E9D, 0x1EA4...0x1EA4, 0x1EA6...0x1EA6, 0x1EA8...0x1EA8, 0x1EAA...0x1EAA, 0x1EAE...0x1EAE, 0x1EB0...0x1EB0,
         0x1EB2...0x1EB2, 0x1EB4...0x1EB4, 0x1EBE...0x1EBE, 0x1EC0...0x1EC0, 0x1EC2...0x1EC2, 0x1EC4...0x1EC4, 0x1ED0...0x1ED0,
-        0x1ED2...0x1ED2, 0x1ED4...0x1ED4, 0x1ED6...0x1ED6, 0x2017...0x2017, 0x2038...0x2038, 0x2044...0x2044, 0x20C0...0x20C0,
+        0x1ED2...0x1ED2, 0x1ED4...0x1ED4, 0x1ED6...0x1ED6, 0x1EFE...0x1EFE, 0x2017...0x2017, 0x2038...0x2038, 0x2044...0x2044, 0x20C0...0x20C0,
         0x21E5...0x21E5, 0x2215...0x2215, 0x221A...0x221B, 0x2502...0x2503, 0x250C...0x2513, 0x251C...0x2533, 0x253C...0x254B,
         0x254E...0x254F, 0x2551...0x2557, 0x255E...0x2566, 0x256A...0x256E, 0x2577...0x2577, 0x257B...0x257B, 0x257D...0x257D,
         0x257F...0x257F, 0x2700...0x2700, 0x275F...0x2760, 0x3164...0x3164]
@@ -93,8 +93,8 @@ enum PermissionText {
     /// marks of U+035C-0362, which reach over the next letter, the grapheme joiner, which draws nothing, and the marks that
     /// normalization turns into others.
     private static let marks: [ClosedRange<UInt32>] = [
-        0x300...0x30E, 0x310...0x315, 0x31A...0x31A, 0x320...0x320, 0x323...0x324, 0x327...0x328, 0x32E...0x330, 0x332...0x332,
-        0x337...0x338, 0x33D...0x33E, 0x342...0x342, 0x346...0x346, 0x34A...0x34A, 0x350...0x352, 0x357...0x358, 0x363...0x364,
+        0x300...0x315, 0x31A...0x31B, 0x320...0x320, 0x323...0x324, 0x327...0x328, 0x32E...0x332, 0x334...0x334,
+        0x337...0x338, 0x33C...0x33E, 0x342...0x342, 0x346...0x346, 0x34A...0x34A, 0x350...0x352, 0x357...0x358, 0x363...0x364,
         0x366...0x368, 0x36B...0x36C, 0x36E...0x36F]
     /// The pictures: assigned emoji of the Mahjong tiles to Symbols and Pictographs Extended-A, and of Miscellaneous Symbols
     /// and Dingbats. Text symbols such as ©, ™ and ↔ are not among them, and nothing joins to those.
@@ -102,10 +102,9 @@ enum PermissionText {
     /// The scalars of `shown`, `pictures` and `marks` that read as ASCII. ICU's spoof checker maps each to its skeleton, the form
     /// two strings share when they can be mistaken for each other: a scalar whose skeleton is ASCII, and so not itself, is one
     /// (the hyphens U+2010 and U+2212, the Greek and Cyrillic letters drawn like Latin ones). The full width forms are too, and so
-    /// is anything whose compatibility form is ASCII, which the skeleton doesn't always say. They are judged by the word they
-    /// stand in, as a browser judges a host name, and written out when the word has an ASCII letter or digit or when every
-    /// scalar of it is ASCII or one of these, so that the word can be read as ASCII. In a word of a language of its own they
-    /// are shown. Worked out once, on first use. Nil when the checker can't be loaded: nothing past ASCII is shown then.
+    /// is anything whose compatibility form is ASCII, which the skeleton doesn't always say. They are judged by the run they
+    /// stand in, as a browser judges a host name, and written out when the run can be read as ASCII. Worked out once, on first
+    /// use. Nil when the checker can't be loaded: nothing past ASCII is shown then.
     private static let lookalikes: Set<UInt32>? = {
         typealias Open = @convention(c) (UnsafeMutablePointer<Int32>) -> OpaquePointer?
         typealias Close = @convention(c) (OpaquePointer?) -> Void
@@ -132,8 +131,7 @@ enum PermissionText {
     }()
     /// Scalars the checker misses that draw like ASCII punctuation: the Korean and CJK strokes and the prolonged sound mark
     /// like a hyphen or a slash, the dashes and the middle dot, the ideographic full stops that IDNA maps to a period, and the
-    /// angle brackets that look like the ones round an escape. Written out beside an ASCII letter or digit only: by
-    /// themselves they are punctuation and strokes of their own scripts, and a word of them doesn't read as ASCII.
+    /// angle brackets that look like the ones round an escape. They count with `lookalikes` wherever a run is judged.
     private static let drawnLikeASCII: Set<UInt32> = [
         0x3161, 0x3163, 0x4E28, 0x4E00, 0x30FC, 0xFF70, 0x3021, 0x2758, 0x2014, 0x2015, 0xB7, 0x3002, 0xFF61, 0x3008, 0x3009]
     /// Whether the zero-width joiners in a sequence of pictures draw it as one picture in the card's font, by sequence. Asked of
@@ -149,13 +147,17 @@ enum PermissionText {
     /// into its unified one). The rest is put in form C, so a path macOS stored decomposed reads as it was typed.
     /// What is shown is ASCII, the space, and the scalars of `shown`; a tab is shown as `tab`, and a line break stays one
     /// when `multiline`. Anything else is written out as `⟨U+202E⟩`, and so are the angle brackets that mark one, so an
-    /// escape can't be faked. A scalar that reads as ASCII is written out when the word it stands in, the run of the input
-    /// between ASCII spaces, tabs, CRs and LFs, has an ASCII letter or digit or holds nothing but ASCII and such scalars; one of
-    /// `drawnLikeASCII` when the word has an ASCII letter or digit. Pictures that read as ASCII follow the same rule. What emoji
-    /// are made of stays: the emoji variation selector right after a picture that it changes (not one drawn in colour already),
-    /// the text one, and one skin tone right after a picture that takes it, each only when CoreText draws the picture
-    /// differently with it; the zero-width joiners of a sequence of pictures, up to `maxJoiners` in a row, that CoreText draws
-    /// as one picture; regional indicators two by two; the keycap of a digit, `#` or `*`. A combining mark of `marks` stays
+    /// escape can't be faked. A scalar that reads as ASCII, of `lookalikes` or `drawnLikeASCII`, is judged by its run: the
+    /// longest stretch of the input made only of ASCII letters and digits, ASCII punctuation, and such scalars. A scalar that
+    /// is none of those ends it, and so does a space, a tab, a CR, an LF, a scalar that is written out, and a picture. Every
+    /// look-alike of a run is written out when the run has an ASCII letter or digit, or when an ASCII punctuation mark or a
+    /// look-alike that is punctuation or a symbol has a look-alike right before it and another right after, as in a host name
+    /// or a path made of them. Otherwise they are shown, as in a word of a language of its own. The runs are the input's, not
+    /// the escaped text's, which holds the letters and digits of every escape. What emoji are made of stays: the emoji
+    /// variation selector right after a picture that it changes (not one drawn in colour already), the text one, and one skin
+    /// tone right after a picture that takes it, each only when CoreText draws the picture differently with it; the zero-width
+    /// joiners of a sequence of pictures, up to `maxJoiners` in a row, that CoreText draws as one picture, and the colour
+    /// selectors in it; regional indicators two by two; the keycap of a digit, `#` or `*`. A combining mark of `marks` stays
     /// when it is the only one on a letter of `markBases`. CR LF counts as one break.
     static func escape(_ text: String, multiline: Bool) -> String {
         var tokens: [Token] = []
@@ -207,7 +209,7 @@ enum PermissionText {
                 appendEscape(scalar, to: &result)
                 reset()
             } else if scalar.value == 0xFE0E || scalar.value == 0xFE0F, let before = previous, !selected,
-                      (isPicture(before) && keeps(scalar, after: before))
+                      (isPicture(before) && (keeps(scalar, after: before) || (scalar.value == 0xFE0F && joins && joined != nil && !before.properties.isEmojiPresentation)))
                         || (scalar.value == 0xFE0F && next?.value == 0x20E3 && isKeycapBase(before)) {
                 result.append(scalar)
                 keycap = !isPicture(before)
@@ -287,6 +289,11 @@ enum PermissionText {
         scalar.value >= 0x80 && (lookalikes?.contains(scalar.value) ?? true)
     }
 
+    /// Whether any scalar of `text` reads as ASCII, whatever it stands beside: of `lookalikes` or `drawnLikeASCII`.
+    static func hasLookalike(_ text: String) -> Bool {
+        text.unicodeScalars.contains { isLookalike($0) || drawnLikeASCII.contains($0.value) }
+    }
+
     /// A scalar of the input, in form C unless its own form C is another, and whether it is written out for reading as ASCII.
     private struct Token {
         let scalar: Unicode.Scalar
@@ -294,26 +301,39 @@ enum PermissionText {
         var hidden = false
     }
 
-    /// Marks the look-alikes that are written out, word by word. A word ends only at an ASCII space, tab, CR or LF. A look-alike
-    /// of the checker goes when its word has an ASCII letter or digit or when everything in it is ASCII or a look-alike of the
-    /// checker; one of `drawnLikeASCII` goes only for the letter or digit. The words are the input's, not the escaped text's,
-    /// which holds the letters and digits of every escape.
+    /// Marks the look-alikes that are written out, run by run; the rule is in `escape`. Without the checker every scalar past
+    /// ASCII is one.
     private static func hideLookalikes(_ tokens: inout [Token]) {
-        func ends(_ scalar: Unicode.Scalar) -> Bool { scalar == " " || scalar == "\t" || scalar == "\r" || scalar == "\n" }
+        func isAlphanumeric(_ scalar: Unicode.Scalar) -> Bool {
+            (0x30...0x39).contains(scalar.value) || (0x41...0x5A).contains(scalar.value) || (0x61...0x7A).contains(scalar.value)
+        }
+        func like(_ scalar: Unicode.Scalar) -> Bool { isLookalike(scalar) || drawnLikeASCII.contains(scalar.value) }
+        func inRun(_ token: Token) -> Bool { !token.changes && ((0x21...0x7E).contains(token.scalar.value) || like(token.scalar)) }
+        func isPunctuationOrSymbol(_ scalar: Unicode.Scalar) -> Bool {
+            switch scalar.properties.generalCategory {
+            case .connectorPunctuation, .dashPunctuation, .openPunctuation, .closePunctuation, .initialPunctuation, .finalPunctuation,
+                 .otherPunctuation, .mathSymbol, .currencySymbol, .modifierSymbol, .otherSymbol: return true
+            default: return false
+            }
+        }
+        guard lookalikes != nil else {
+            for at in tokens.indices where tokens[at].scalar.value >= 0x80 { tokens[at].hidden = true }
+            return
+        }
         var start = 0
         while start < tokens.count {
-            guard !ends(tokens[start].scalar) else { start += 1; continue }
-            var end = start, alphanumeric = false, readsAsASCII = true
-            while end < tokens.count, !ends(tokens[end].scalar) {
-                let scalar = tokens[end].scalar
-                if (0x30...0x39).contains(scalar.value) || (0x41...0x5A).contains(scalar.value) || (0x61...0x7A).contains(scalar.value) { alphanumeric = true }
-                if scalar.value >= 0x80 && !isLookalike(scalar) { readsAsASCII = false }
-                end += 1
+            guard inRun(tokens[start]) else { start += 1; continue }
+            var end = start
+            while end < tokens.count, inRun(tokens[end]) { end += 1 }
+            var hide = tokens[start..<end].contains { isAlphanumeric($0.scalar) }
+            if !hide {
+                // A punctuation mark or symbol between two look-alikes: the run is a dotted, slashed or joined name made of them.
+                for at in start..<end where at > start && at + 1 < end {
+                    let scalar = tokens[at].scalar
+                    if (scalar.value < 0x80 || isPunctuationOrSymbol(scalar)) && like(tokens[at - 1].scalar) && like(tokens[at + 1].scalar) { hide = true; break }
+                }
             }
-            for at in start..<end {
-                let scalar = tokens[at].scalar
-                tokens[at].hidden = (isLookalike(scalar) && (alphanumeric || readsAsASCII)) || (alphanumeric && drawnLikeASCII.contains(scalar.value))
-            }
+            if hide { for at in start..<end where like(tokens[at].scalar) { tokens[at].hidden = true } }
             start = end
         }
     }
@@ -331,6 +351,7 @@ enum PermissionText {
     }
 
     /// The pictures from `tokens[start]` that `escape` would join, with their selectors and tones, and how many joiners hold them.
+    /// A colour selector is counted after any picture that isn't in colour already: it stays only if the whole is drawn as one.
     private static func chain(_ tokens: [Token], from start: Int) -> (text: String, joiners: Int) {
         var text = String.UnicodeScalarView(), joiners = 0, index = start
         func kept(_ at: Int, _ test: (Unicode.Scalar) -> Bool) -> Bool {
@@ -340,7 +361,7 @@ enum PermissionText {
             let picture = tokens[index].scalar
             text.append(picture)
             index += 1
-            if kept(index, { ($0.value == 0xFE0E || $0.value == 0xFE0F) && keeps($0, after: picture) }) {
+            if kept(index, { ($0.value == 0xFE0E || $0.value == 0xFE0F) && (keeps($0, after: picture) || ($0.value == 0xFE0F && !picture.properties.isEmojiPresentation)) }) {
                 text.append(tokens[index].scalar)
                 index += 1
             } else if kept(index, { (0x1F3FB...0x1F3FF).contains($0.value) && keeps($0, after: picture) }) {
@@ -649,8 +670,8 @@ struct PermissionPrompt: Identifiable, Equatable {
     }
 
     /// Every rule as Claude Code writes it, or nil when any part of the suggestion can't be shown as it is: a rule that
-    /// needs escaping, one that is missing or odd, a key nobody has seen, too many rules, rules that take more rows than the
-    /// card has for them, or a place that isn't known.
+    /// needs escaping or holds a scalar that reads as ASCII, wherever it stands, one that is missing or odd, a key nobody has
+    /// seen, too many rules, rules that take more rows than the card has for them, or a place that isn't known.
     static func grant(from suggestion: [String: Any]) -> Grant? {
         guard Set(suggestion.keys).isSubset(of: ["type", "behavior", "rules", "destination"]),
               let place = (suggestion["destination"] as? String).flatMap(Grant.Place.init(rawValue:)),
@@ -664,7 +685,7 @@ struct PermissionPrompt: Identifiable, Equatable {
                 guard let content = content as? String, !content.isEmpty else { return nil }
                 text += "(\(content))"
             }
-            guard PermissionText.escape(text, multiline: false) == text else { return nil }
+            guard PermissionText.escape(text, multiline: false) == text, !PermissionText.hasLookalike(text) else { return nil }
             rules.append(text)
         }
         let grant = Grant(rules: rules, place: place)

@@ -478,15 +478,30 @@ struct PermissionPromptParseTests {
         // Nor does the card show them: the command is the text with each written out.
         let command = try #require(parse("Bash", ["command": "git push \u{2011}\u{2011}force"])).prompt
         #expect(command.detail == "git push ⟨U+2011⟩⟨U+2011⟩force")
-        // Nor one with a look-alike beside a punctuation mark of another script, or with a word that is all of them.
+        // Nor one with a look-alike beside a punctuation mark of another script, or with a run that is all of them.
         for content in ["ls \u{3161}la", "echo a\u{3002}b", "rm \u{2014}rf", "echo \u{FF52}\u{FF4D}", "ls\u{3000}\u{3161}la", "echo \u{2795}"] {
             let parsed = try offered(content)
             #expect(parsed.prompt.grant == nil && parsed.suggestion == nil, "\(content)")
         }
-        // Korean, Japanese and Chinese paths are still offered, and so are words of a language of their own with scalars that read as ASCII.
-        #expect(try offered("echo ノート ‘안녕’ привет").prompt.grant != nil)
-        #expect(try offered("ls /Users/me/한글 日本語 中文").prompt.grant != nil)
-        #expect(try offered("cp /home/ひらがな/문서.txt .").prompt.grant != nil)
+        // Nor one that the card would show as it is, which the run rule lets pass: a host name made of look-alikes, one by itself, a word of its own language.
+        for content in ["curl \u{430}\u{440}\u{440}\u{4CF}\u{435}\u{3002}\u{441}\u{43E}:*", "curl \u{430}\u{440}\u{440}\u{4CF}\u{435}.\u{441}\u{43E}\u{43C}:*", "echo ノート:*",
+                        "echo \u{FF52}\u{FF4D}:*", "echo \u{2122}:*", "echo \u{2026}:*", "echo привет:*", "echo \u{3A9}\u{3BF}:*", "echo \u{4E00}:*"] {
+            let parsed = try offered(content)
+            #expect(parsed.prompt.grant == nil && parsed.suggestion == nil, "\(content)")
+        }
+        // Words of a language of their own and ASCII are offered, and so is every scalar that reads as no ASCII one.
+        for content in ["npm test:*", "echo 안녕:*", "ls /Users/me/한글 日本語 中文:*", "cp /home/ひらがな/문서.txt .:*", "echo r\u{E9}sum\u{E9}:*", "echo \u{43C}\u{442}:*"] {
+            #expect(try offered(content).prompt.grant != nil, "\(content)")
+        }
+        // The same through grant(from:) itself, one rule among others and in the name of a tool.
+        func suggestion(_ rules: [[String: Any]]) -> [String: Any] { ["type": "addRules", "behavior": "allow", "destination": "localSettings", "rules": rules] }
+        let fine: [String: Any] = ["toolName": "Bash", "ruleContent": "npm test:*"]
+        #expect(PermissionPrompt.grant(from: suggestion([fine])) != nil)
+        #expect(PermissionPrompt.grant(from: suggestion([fine, ["toolName": "Bash", "ruleContent": "curl \u{430}\u{440}\u{440}\u{4CF}\u{435}\u{3002}\u{441}\u{43E}:*"]])) == nil)
+        #expect(PermissionPrompt.grant(from: suggestion([["toolName": "Bash", "ruleContent": "echo ノート:*"], fine])) == nil)
+        #expect(PermissionPrompt.grant(from: suggestion([["toolName": "mcp__ノート", "ruleContent": "x"]])) == nil)
+        #expect(PermissionPrompt.grant(from: suggestion([["toolName": "mcp__\u{FF52}"]])) == nil)
+        #expect(PermissionPrompt.grant(from: suggestion([["toolName": "mcp__한글", "ruleContent": "x"]])) != nil)
     }
 
     @Test func lettersThatSitOnTheCharacterBeforeThemAreWrittenOutLikeMarks() {
