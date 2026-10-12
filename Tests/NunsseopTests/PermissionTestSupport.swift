@@ -28,6 +28,30 @@ func asciiLookalikes() throws -> (Unicode.Scalar) -> String? {
     }
 }
 
+/// Whether a scalar can be read as a printable ASCII character: ICU's skeleton of it, or its NFKC or NFKD form, holds one (not the space),
+/// or it is one of the strokes, dashes and full stops that the checker misses and that the card takes for ASCII (`-` `|` `.`).
+func asciiMappable() throws -> (Unicode.Scalar) -> Bool {
+    typealias Open = @convention(c) (UnsafeMutablePointer<Int32>) -> OpaquePointer?
+    typealias Skeleton = @convention(c) (OpaquePointer?, UInt32, UnsafePointer<UInt16>?, Int32, UnsafeMutablePointer<UInt16>?, Int32,
+                                         UnsafeMutablePointer<Int32>) -> Int32
+    guard let library = dlopen("/usr/lib/libicucore.dylib", RTLD_NOW), let open = dlsym(library, "uspoof_open"),
+          let skeleton = dlsym(library, "uspoof_getSkeleton") else { throw ICUUnavailable() }
+    var status: Int32 = 0
+    guard let checker = unsafeBitCast(open, to: Open.self)(&status), status <= 0 else { throw ICUUnavailable() }
+    let skeletonOf = unsafeBitCast(skeleton, to: Skeleton.self)
+    let missed: Set<UInt32> = [0x3161, 0x4E00, 0x30FC, 0xFF70, 0x2014, 0x2015, 0x3163, 0x4E28, 0x3021, 0x2758, 0x3002, 0xFF61]
+    func printable(_ text: String) -> Bool { text.unicodeScalars.contains { (0x21...0x7E).contains($0.value) } }
+    return { scalar in
+        guard scalar.value >= 0x80 else { return false }
+        if missed.contains(scalar.value) { return true }
+        let text = Array(String(scalar).utf16)
+        var out = [UInt16](repeating: 0, count: 64), status: Int32 = 0
+        let length = Int(skeletonOf(checker, 0, text, Int32(text.count), &out, 64, &status))
+        if status <= 0, printable(String(decoding: out[0..<length], as: UTF16.self)) { return true }
+        return printable(String(scalar).decomposedStringWithCompatibilityMapping) || printable(String(scalar).precomposedStringWithCompatibilityMapping)
+    }
+}
+
 /// ICU's script of a scalar (`uscript_getScript`), by its name: "Latin", "Greek", "Cyrillic", "Common", "Inherited", and "Other" for the rest.
 func scriptNames() throws -> (Unicode.Scalar) -> String {
     typealias Script = @convention(c) (Int32, UnsafeMutablePointer<Int32>) -> Int32

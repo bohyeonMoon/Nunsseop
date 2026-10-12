@@ -116,6 +116,9 @@ enum PermissionText {
         /// The quotes and backticks a shell would not take for its own: the scalars whose skeleton is made of `'`, `"` and `` ` ``
         /// alone and the listed ones (U+2018-201F, U+2032-2037, `＂ ＇`).
         let quotes: Set<UInt32>
+        /// The scalars that can be read as a printable ASCII character: ICU's skeleton of it, or its NFKC or NFKD form, holds one
+        /// (not the space), or `drawnLike` has it.
+        let mappable: Set<UInt32>
     }
 
     /// Scalars whose skeleton or compatibility form is an ASCII letter or digit and that are ordinary text nonetheless: the
@@ -152,7 +155,7 @@ enum PermissionText {
         let targets = Set("-/\\.:@~|;&$<>=*?#".unicodeScalars.map(\.value))
         func isASCII(_ bytes: [UInt8]) -> Bool { !bytes.isEmpty && bytes.allSatisfy { $0 < 0x80 } }
         func isASCIIAlnum(_ byte: UInt8) -> Bool { (0x30...0x39).contains(byte) || (0x41...0x5A).contains(byte) || (0x61...0x7A).contains(byte) }
-        var foreign = Set<UInt32>(), letters = Set<UInt32>(), stands = [UInt32: UInt8](), quotes = Set<UInt32>()
+        var foreign = Set<UInt32>(), letters = Set<UInt32>(), stands = [UInt32: UInt8](), quotes = Set<UInt32>(), mappable = Set<UInt32>()
         var out = [UInt8](repeating: 0, count: 64)
         for value in (shown + pictures + marks).lazy.flatMap({ $0 }) where value >= 0x80 {
             guard let scalar = Unicode.Scalar(value) else { continue }
@@ -161,6 +164,8 @@ enum PermissionText {
             let length = skeletonOf(checker, 0, text, Int32(text.count), &out, Int32(out.count), &status)
             let form = status > 0 ? [] : Array(out[0..<Int(length)])
             let compatible = Array(String(scalar).decomposedStringWithCompatibilityMapping.utf8)
+            let composed = Array(String(scalar).precomposedStringWithCompatibilityMapping.utf8)
+            if drawnLike[value] != nil || [form, compatible, composed].contains(where: { $0.contains { (0x21...0x7E).contains($0) } }) { mappable.insert(value) }
             switch scalar.properties.generalCategory {
             case .uppercaseLetter, .lowercaseLetter, .titlecaseLetter, .modifierLetter, .otherLetter,
                  .decimalNumber, .letterNumber, .otherNumber:
@@ -193,7 +198,7 @@ enum PermissionText {
                 break
             }
         }
-        return Confusables(foreign: foreign, letters: letters, stands: stands, quotes: quotes)
+        return Confusables(foreign: foreign, letters: letters, stands: stands, quotes: quotes, mappable: mappable)
     }()
 
     /// Whether the zero-width joiners in a sequence of pictures draw it as one picture in the card's font, by sequence. Asked of
@@ -371,10 +376,15 @@ enum PermissionText {
         0x3041...0x30FF, 0x3131...0x318E, 0x3400...0x4DBF, 0x4E00...0x9FFF, 0xAC00...0xD7A3, 0xFF66...0xFF9D]
     /// What the card shows without a word of warning, besides ASCII: the signs and letters of Korean, Japanese and Chinese text, the
     /// full width digits and punctuation (not the letters), the punctuation and arrows of general text, the symbols of Latin-1 that are
-    /// no letters, currency, and a few operators of maths. Quote look-alikes are among these but for a command (`hasQuoteLookalike`).
+    /// no letters, currency, a few operators of maths, and the shapes, stars, ticks and degree signs of notes. Except for the letters of
+    /// `cjkLetters` and emoji that can't pass for ASCII, they say nothing only where `hasUnusualCharacters` finds nothing amiss beside
+    /// them. Quote look-alikes are among these but for a command (`hasQuoteLookalike`).
     private static let exempt: [ClosedRange<UInt32>] = cjkLetters + [
         0x3001...0x303F, 0xFF01...0xFF20, 0xFF3B...0xFF40, 0xFF5B...0xFF65, 0x2010...0x205E, 0x2190...0x21FF, 0x20A0...0x20C0,
-        0xA1...0xA9, 0xAB...0xB4, 0xB6...0xB9, 0xBB...0xBF, 0xD7...0xD7, 0xF7...0xF7, 0x2248...0x2248, 0x2260...0x2260, 0x2264...0x2265]
+        0xA1...0xA9, 0xAB...0xB4, 0xB6...0xB9, 0xBB...0xBF, 0xD7...0xD7, 0xF7...0xF7, 0x2248...0x2248, 0x2260...0x2260, 0x2264...0x2265,
+        0x25A0...0x25FF, 0x2605...0x2606, 0x2713...0x2718, 0x279C...0x279C, 0x2103...0x2103, 0x2109...0x2109]
+    /// The percent and per mille signs and the degree signs, which with the currency symbols are signs of a number.
+    private static let unitSigns: Set<UInt32> = [0xFF05, 0x2030, 0x2031, 0xB0, 0x2103, 0x2109]
     /// The controls that go with an emoji and that `escape` keeps only inside one: selectors, the joiner, tones, regional
     /// indicators and the keycap.
     private static let emojiControls: [ClosedRange<UInt32>] = [0xFE0E...0xFE0F, 0x200D...0x200D, 0x20E3...0x20E3, 0x1F3FB...0x1F3FF, 0x1F1E6...0x1F1FF]
@@ -388,14 +398,50 @@ enum PermissionText {
         return result
     }
 
-    /// Whether the card says "Unusual characters" about `shown`: it holds a scalar past ASCII that is not exempt. The writing of
-    /// Korean, Japanese and Chinese text, emoji, and the punctuation, arrows, currency and symbols of ordinary prose are exempt;
-    /// letters of every other kind (accented, hooked or stroked Latin, Cyrillic, Greek, full width), maths, box drawing, shapes
-    /// and dingbats are not, because they can pass for ASCII in a name and are not all written out.
+    /// Whether the card says "Unusual characters" about `shown`: it holds a scalar past ASCII that is not exempt, or one that is, and
+    /// that is no letter of CJK text or emoji, where it stands wrong. The writing of Korean, Japanese and Chinese text and emoji
+    /// are exempt; letters of every other kind (accented, hooked or stroked Latin, Cyrillic, Greek, full width), maths, box drawing
+    /// and dingbats are not, because they can pass for ASCII in a name and are not all written out. The punctuation, symbols,
+    /// currency, full width digits and punctuation, arrows and shapes of the exempt set (and an emoji that is ASCII-mappable, a
+    /// plus, a minus) pass for ASCII where they touch it, so one of them says so when
+    /// - a direct neighbour is an ASCII letter, or
+    /// - it is ASCII-mappable (`Confusables.mappable`) and a direct neighbour is a printable ASCII character that is no space,
+    /// unless a direct neighbour is a letter of CJK text (that is no dash-like one, and not the Han zero), or it is a dash or tilde
+    /// between two ASCII digits, or it is a currency, percent or unit sign next to a digit and touching digits, spaces, `.` and `,` only.
+    /// A neighbour is the scalar right before or after it that is shown: an escape and the arrow of a tab are none, a space and a line
+    /// break are, but raise nothing.
     static func hasUnusualCharacters(_ shown: String) -> Bool {
-        shownPastASCII(shown).contains { scalar in
-            !exempt.contains { $0.contains(scalar.value) } && !emojiControls.contains { $0.contains(scalar.value) } && !isPicture(scalar)
+        // The scalars shown, in order; nil for a written-out scalar or the arrow of a tab.
+        var items: [Unicode.Scalar?] = [], inEscape = false
+        for scalar in shown.unicodeScalars {
+            if scalar.value == 0x27E8 { inEscape = true; items.append(nil) } else if scalar.value == 0x27E9 { inEscape = false } else if inEscape { continue } else if scalar.value == 0x21E5 { items.append(nil) } else { items.append(scalar) }
         }
+        func isBreakOrSpace(_ value: UInt32) -> Bool { value == 0x20 || value == 0x0A || value == 0x0D }
+        func isDigit(_ scalar: Unicode.Scalar?) -> Bool { scalar.map { (0x30...0x39).contains($0.value) } == true }
+        // A letter of CJK text that reads as itself: no stroke, prolonged sound mark or the like that stands for a dash or a bar, and not the Han zero.
+        func isCJKText(_ scalar: Unicode.Scalar?) -> Bool {
+            guard let value = scalar?.value, value != 0x3007, cjkLetters.contains(where: { $0.contains(value) }) else { return false }
+            return confusables?.stands[value] == nil
+        }
+        for (at, item) in items.enumerated() {
+            guard let scalar = item, scalar.value >= 0x80, !emojiControls.contains(where: { $0.contains(scalar.value) }) else { continue }
+            let picture = isPicture(scalar), mappable = confusables?.mappable.contains(scalar.value) == true
+            if !picture, !exempt.contains(where: { $0.contains(scalar.value) }) { return true }
+            if cjkLetters.contains(where: { $0.contains(scalar.value) }) || (picture && !mappable) { continue }
+            // The edges of the text, a space and a break are neighbours that raise nothing.
+            let sides: [Unicode.Scalar?] = [at > 0 ? items[at - 1] : " ", at + 1 < items.count ? items[at + 1] : " "]
+            let beside = sides.compactMap { $0 }
+            let byLetter = beside.contains { isASCIILetter($0) }
+            let byMark = mappable && beside.contains { (0x21...0x7E).contains($0.value) }
+            guard byLetter || byMark else { continue }
+            if sides.contains(where: isCJKText) { continue }
+            let dash = scalar.properties.generalCategory == .dashPunctuation || scalar.value == 0xFF5E
+            if dash, isDigit(sides[0]), isDigit(sides[1]) { continue }
+            let sign = scalar.properties.generalCategory == .currencySymbol || unitSigns.contains(scalar.value)
+            if sign, sides.contains(where: isDigit), sides.allSatisfy({ $0.map { isDigit($0) || isBreakOrSpace($0.value) || $0.value == 0x2E || $0.value == 0x2C } == true }) { continue }
+            return true
+        }
+        return false
     }
 
     /// Whether `shown` holds a quote that a shell does not take for its own: a typographic quote or prime, a full width one, or any
@@ -705,7 +751,7 @@ struct PermissionPrompt: Identifiable, Equatable {
         // Anything shown past ASCII that is not exempt is said, since it can pass for ASCII and is not all written out. What is
         // judged is what the call acts on: the tool's name when it is the title, the detail and the listing, but not the folder, the
         // Bash tool's description (Claude's own words, nothing runs it) or the titles of the card. A quote that a shell does not take
-        // for its own counts in a field that holds a command.
+        // for its own counts in the Bash command and in every string of a tool nobody has heard of.
         var flags = described.flags
         if (described.namesTool ? [shownTitle, detail, rest] : [detail, rest]).contains(where: PermissionText.hasUnusualCharacters)
             || described.commands.contains(where: { PermissionText.hasQuoteLookalike(PermissionText.escape($0, multiline: true)) }) {
@@ -730,7 +776,7 @@ struct PermissionPrompt: Identifiable, Equatable {
         var secondary = ""
         /// The title is the tool's own name, as Claude Code sends it.
         var namesTool = false
-        /// The fields that hold a command: the Bash tool's, and those under `command`, `cmd`, `script` and `args` of any other.
+        /// The strings a quote look-alike is judged in: the Bash tool's command, and every string of any other tool, at any depth.
         var commands: [String] = []
     }
 
@@ -799,16 +845,14 @@ struct PermissionPrompt: Identifiable, Equatable {
         if let described { return described }
         let json = (try? JSONSerialization.data(withJSONObject: input, options: [.sortedKeys, .withoutEscapingSlashes, .prettyPrinted]))
             .flatMap { String(data: $0, encoding: .utf8) } ?? ""
-        return Described(title: tool, symbol: "puzzlepiece.extension", detail: input.isEmpty ? "" : json, namesTool: true, commands: commandFields(input))
+        return Described(title: tool, symbol: "puzzlepiece.extension", detail: input.isEmpty ? "" : json, namesTool: true, commands: strings(in: input))
     }
 
-    private static let commandKeys: Set<String> = ["command", "cmd", "script", "args"]
-
-    /// The strings of `value` that sit under a key of `commandKeys`, at any depth.
-    private static func commandFields(_ value: Any, inCommand: Bool = false) -> [String] {
-        if let text = value as? String { return inCommand ? [text] : [] }
-        if let list = value as? [Any] { return list.flatMap { commandFields($0, inCommand: inCommand) } }
-        if let map = value as? [String: Any] { return map.flatMap { commandFields($1, inCommand: inCommand || commandKeys.contains($0.lowercased())) } }
+    /// Every string of `value`, at any depth.
+    private static func strings(in value: Any) -> [String] {
+        if let text = value as? String { return [text] }
+        if let list = value as? [Any] { return list.flatMap(strings(in:)) }
+        if let map = value as? [String: Any] { return map.values.flatMap(strings(in:)) }
         return []
     }
 
