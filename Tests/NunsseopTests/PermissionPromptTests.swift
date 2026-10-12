@@ -354,12 +354,12 @@ struct PermissionPromptParseTests {
             #expect(PermissionText.escape("😀\u{200D}" + text, multiline: true) == "😀" + hex(0x200D) + hex(symbol), "U+\(String(symbol, radix: 16))")
         }
         #expect(PermissionText.escape("©\u{200D}®", multiline: true) == "©⟨U+200D⟩®")
-        // Nor beside the ones that read as ASCII, which are shown in a word that does not, and take neither.
+        // Nor beside the ones that read as ASCII, which are shown, with a word of ASCII or not, and take neither.
         for symbol: UInt32 in [0x2122, 0x2139, 0x203C] {
             let text = String(Unicode.Scalar(symbol)!)
             #expect(PermissionText.escape(text + "\u{FE0F}", multiline: true) == text + hex(0xFE0F), "U+\(String(symbol, radix: 16))")
             #expect(PermissionText.escape("😀\u{200D}" + text, multiline: true) == "😀" + hex(0x200D) + text, "U+\(String(symbol, radix: 16))")
-            #expect(PermissionText.escape("a" + text, multiline: true) == "a" + hex(symbol), "U+\(String(symbol, radix: 16))")
+            #expect(PermissionText.escape("a" + text, multiline: true) == "a" + text, "U+\(String(symbol, radix: 16))")
         }
         // Neither a flag letter, a skin tone nor a digit takes a joiner.
         #expect(PermissionText.escape("😀\u{200D}🇫", multiline: true) == "😀" + hex(0x200D) + hex(0x1F1EB))
@@ -433,10 +433,15 @@ struct PermissionPromptParseTests {
             checked += 1
         }
         #expect(checked > 1_000)
-        // The letters of Latin, Greek, Cyrillic, CJK and Hangul text are not touched by it, besides the ones that read as ASCII, which are
-        // written out beside the ASCII letters here, and the two ideographs that are drawn as a stroke (the checker doesn't know them).
+        // The letters of Latin, CJK and Hangul text are not touched by it, besides the ones that read as ASCII, which are written out beside the
+        // ASCII letters here, and the two ideographs that are drawn as a stroke (the checker doesn't know them). The letters of Greek and Cyrillic are
+        // all written out beside them, whatever they look like.
         let lookalike = try asciiLookalikes()
-        for range in [0x41...0x7A, 0xC0...0xFF, 0x3B1...0x3C9, 0x410...0x44F, 0x4E00...0x4FFF, 0xAC00...0xACFF] {
+        for value in Array(0x3B1...0x3C9) + Array(0x410...0x44F) {
+            guard let scalar = Unicode.Scalar(UInt32(value)), scalar.properties.isAlphabetic, direction(Int32(value)) == 0 else { continue }
+            #expect(PermissionText.escape("a" + String(Character(scalar)) + "b", multiline: true) == "a" + String(format: "⟨U+%04X⟩", value) + "b", "U+\(String(value, radix: 16, uppercase: true))")
+        }
+        for range in [0x41...0x7A, 0xC0...0xFF, 0x4E00...0x4FFF, 0xAC00...0xACFF] {
             for value in range {
                 guard let scalar = Unicode.Scalar(UInt32(value)), scalar.properties.isAlphabetic, direction(Int32(value)) == 0,
                       lookalike(scalar) == nil, ![0x4E00, 0x4E28].contains(value) else { continue }
@@ -460,12 +465,13 @@ struct PermissionPromptParseTests {
             #expect(parsed.prompt.grant == nil && parsed.suggestion == nil, "\(content)")
         }
         #expect(try offered("echo a 1 ; b 2").prompt.grant != nil)
-        #expect(try offered("echo r\u{E9}sum\u{E9} \u{D55C}\u{AE00} \u{65E5}\u{672C}").prompt.grant != nil)
+        // Nothing past ASCII is offered, whatever its script.
+        #expect(try offered("echo r\u{E9}sum\u{E9} \u{D55C}\u{AE00} \u{65E5}\u{672C}").prompt.grant == nil)
         let tool = try #require(parse("Bash", ["command": "ls"], suggestions: [addRules([["toolName": "mcp__אבג", "ruleContent": "x"]])]))
         #expect(tool.prompt.grant == nil && tool.suggestion == nil)
     }
 
-    @Test func aRuleWithAScalarThatReadsAsASCIIIsNotOfferedAsAlwaysAllow() throws {
+    @Test func aRuleWithAScalarPastASCIIIsNotOfferedAsAlwaysAllow() throws {
         func offered(_ content: String) throws -> PermissionPrompt.Parsed {
             try #require(parse("Bash", ["command": "ls"], suggestions: [addRules([["toolName": "Bash", "ruleContent": content]])]))
         }
@@ -475,23 +481,27 @@ struct PermissionPromptParseTests {
         }
         let tool = try #require(parse("Bash", ["command": "ls"], suggestions: [addRules([["toolName": "mcp__s\u{435}rver", "ruleContent": "x"]])]))
         #expect(tool.prompt.grant == nil && tool.suggestion == nil)
-        // Nor does the card show them: the command is the text with each written out.
+        // Nor does the card show them as they are: the one before a letter is written out.
         let command = try #require(parse("Bash", ["command": "git push \u{2011}\u{2011}force"])).prompt
-        #expect(command.detail == "git push ⟨U+2011⟩⟨U+2011⟩force")
+        #expect(command.detail == "git push \u{2011}⟨U+2011⟩force")
         // Nor one with a look-alike beside a punctuation mark of another script, or with a run that is all of them.
         for content in ["ls \u{3161}la", "echo a\u{3002}b", "rm \u{2014}rf", "echo \u{FF52}\u{FF4D}", "ls\u{3000}\u{3161}la", "echo \u{2795}"] {
             let parsed = try offered(content)
             #expect(parsed.prompt.grant == nil && parsed.suggestion == nil, "\(content)")
         }
-        // Nor one that the card would show as it is, which the run rule lets pass: a host name made of look-alikes, one by itself, a word of its own language.
+        // Nor one that the card would show as it is: a host name made of look-alikes, one by itself, a word of its own language.
         for content in ["curl \u{430}\u{440}\u{440}\u{4CF}\u{435}\u{3002}\u{441}\u{43E}:*", "curl \u{430}\u{440}\u{440}\u{4CF}\u{435}.\u{441}\u{43E}\u{43C}:*", "echo ノート:*",
                         "echo \u{FF52}\u{FF4D}:*", "echo \u{2122}:*", "echo \u{2026}:*", "echo привет:*", "echo \u{3A9}\u{3BF}:*", "echo \u{4E00}:*"] {
             let parsed = try offered(content)
             #expect(parsed.prompt.grant == nil && parsed.suggestion == nil, "\(content)")
         }
-        // Words of a language of their own and ASCII are offered, and so is every scalar that reads as no ASCII one.
-        for content in ["npm test:*", "echo 안녕:*", "ls /Users/me/한글 日本語 中文:*", "cp /home/ひらがな/문서.txt .:*", "echo r\u{E9}sum\u{E9}:*", "echo \u{43C}\u{442}:*"] {
+        // ASCII is offered, and words of a language of their own are not: nothing past ASCII is certain to read as what it is.
+        for content in ["npm test:*", "git status", "ls /Users/me/proj/*.txt:*"] {
             #expect(try offered(content).prompt.grant != nil, "\(content)")
+        }
+        for content in ["echo 안녕:*", "ls /Users/me/한글 日本語 中文:*", "cp /home/ひらがな/문서.txt .:*", "echo r\u{E9}sum\u{E9}:*", "echo \u{43C}\u{442}:*", "echo a\tb:*"] {
+            let parsed = try offered(content)
+            #expect(parsed.prompt.grant == nil && parsed.suggestion == nil, "\(content)")
         }
         // The same through grant(from:) itself, one rule among others and in the name of a tool.
         func suggestion(_ rules: [[String: Any]]) -> [String: Any] { ["type": "addRules", "behavior": "allow", "destination": "localSettings", "rules": rules] }
@@ -501,7 +511,8 @@ struct PermissionPromptParseTests {
         #expect(PermissionPrompt.grant(from: suggestion([["toolName": "Bash", "ruleContent": "echo ノート:*"], fine])) == nil)
         #expect(PermissionPrompt.grant(from: suggestion([["toolName": "mcp__ノート", "ruleContent": "x"]])) == nil)
         #expect(PermissionPrompt.grant(from: suggestion([["toolName": "mcp__\u{FF52}"]])) == nil)
-        #expect(PermissionPrompt.grant(from: suggestion([["toolName": "mcp__한글", "ruleContent": "x"]])) != nil)
+        #expect(PermissionPrompt.grant(from: suggestion([["toolName": "mcp__한글", "ruleContent": "x"]])) == nil)
+        #expect(PermissionPrompt.grant(from: suggestion([["toolName": "mcp__server", "ruleContent": "x"]])) != nil)
     }
 
     @Test func lettersThatSitOnTheCharacterBeforeThemAreWrittenOutLikeMarks() {

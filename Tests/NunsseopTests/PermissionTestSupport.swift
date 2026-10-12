@@ -28,6 +28,24 @@ func asciiLookalikes() throws -> (Unicode.Scalar) -> String? {
     }
 }
 
+/// ICU's script of a scalar (`uscript_getScript`), by its name: "Latin", "Greek", "Cyrillic", "Common", "Inherited", and "Other" for the rest.
+func scriptNames() throws -> (Unicode.Scalar) -> String {
+    typealias Script = @convention(c) (Int32, UnsafeMutablePointer<Int32>) -> Int32
+    guard let library = dlopen("/usr/lib/libicucore.dylib", RTLD_NOW), let symbol = dlsym(library, "uscript_getScript") else { throw ICUUnavailable() }
+    let script = unsafeBitCast(symbol, to: Script.self)
+    return { scalar in
+        var status: Int32 = 0
+        switch script(Int32(scalar.value), &status) {
+        case 25: return "Latin"
+        case 14: return "Greek"
+        case 8: return "Cyrillic"
+        case 0: return "Common"
+        case 1: return "Inherited"
+        default: return "Other"
+        }
+    }
+}
+
 /// Waits for `condition`, stopping as soon as it holds; the cap only matters on a slow or busy machine.
 /// It runs on the caller's actor, so a condition may read what that actor owns.
 func eventually(isolation: isolated (any Actor)? = #isolation, _ condition: () -> Bool) async {

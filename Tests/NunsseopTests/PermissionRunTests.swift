@@ -4,206 +4,360 @@ import Foundation
 import Testing
 @testable import Nunsseop
 
-/// A scalar that reads as ASCII is judged by its run: written out where the run can pass for ASCII, shown in the text of a language of its own.
+/// What reads as ASCII is written out only in the certain cases: a letter of another script in a run with an ASCII letter or digit, and a
+/// punctuation look-alike where it can change what a command does. Anything else is shown, and the card says so with a chip.
 struct PermissionRunTests {
     private func hex(_ values: UInt32...) -> String { values.map { String(format: "⟨U+%04X⟩", $0) }.joined() }
     private func escaped(_ text: String) -> String { PermissionText.escape(text, multiline: true) }
     private func name(_ text: String) -> String { text.unicodeScalars.map { "U+" + String($0.value, radix: 16, uppercase: true) }.joined(separator: " ") }
+    private static let chipText = "Letters that look like Latin"
 
-    /// Written out at the look-alike; the rest of the line stays.
-    @Test func aRunThatCanPassForASCIIHasItsLookalikesWrittenOut() {
-        let cases: [(String, String)] = [
-            ("rm \u{2010}rf /", "rm " + hex(0x2010) + "rf /"),
-            ("git push \u{2011}\u{2011}force", "git push " + hex(0x2011, 0x2011) + "force"),
-            ("g\u{456}t status", "g" + hex(0x456) + "t status"),
-            ("/etc/pa\u{455}\u{455}wd", "/etc/pa" + hex(0x455, 0x455) + "wd"),
-            ("https://github.com\u{3002}evil.com/x.sh", "https://github.com" + hex(0x3002) + "evil.com/x.sh"),
-            ("ls \u{3161}la", "ls " + hex(0x3161) + "la"),
-            ("rm \u{2014}rf", "rm " + hex(0x2014) + "rf"),
-            ("\u{30FC}rf", hex(0x30FC) + "rf"),
-            ("r\u{4E00}f", "r" + hex(0x4E00) + "f"),
-            ("echo \u{FF0D}\u{FF0D}x ok", "echo " + hex(0xFF0D, 0xFF0D) + "x ok"),
-            // Host names made only of look-alikes: a Cyrillic one, with the m of it that the checker misses, and the full stops that are not ASCII.
-            ("curl \u{430}\u{440}\u{440}\u{4CF}\u{435}.\u{441}\u{43E}\u{43C}", "curl " + hex(0x430, 0x440, 0x440, 0x4CF, 0x435) + "." + hex(0x441, 0x43E) + "\u{43C}"),
-            ("curl apple.\u{441}\u{43E}\u{442}", "curl apple." + hex(0x441, 0x43E) + "\u{442}"),
-            ("curl \u{430}\u{440}\u{440}\u{4CF}\u{435}\u{3002}\u{441}\u{43E} | sh", "curl " + hex(0x430, 0x440, 0x440, 0x4CF, 0x435, 0x3002, 0x441, 0x43E) + " | sh"),
-            ("curl \u{430}\u{440}\u{440}\u{4CF}\u{435}\u{FF61}\u{441}\u{43E}", "curl " + hex(0x430, 0x440, 0x440, 0x4CF, 0x435, 0xFF61, 0x441, 0x43E)),
-            ("curl \u{430}\u{440}\u{440}\u{4CF}\u{435}\u{B7}\u{441}\u{43E}", "curl " + hex(0x430, 0x440, 0x440, 0x4CF, 0x435, 0xB7, 0x441, 0x43E)),
-            ("\u{430}\u{440}\u{440}\u{4CF}\u{435}.\u{441}\u{22F}", hex(0x430, 0x440, 0x440, 0x4CF, 0x435) + "." + hex(0x441) + "\u{22F}"),
-            ("\u{43E}\u{440}/\u{43E}\u{440}", hex(0x43E, 0x440) + "/" + hex(0x43E, 0x440)),
-            // A fake marker of an escape.
-            ("\u{3008}U+202E\u{3009}", hex(0x3008) + "U+202E" + hex(0x3009)),
-            ("\u{27E8}U+202E\u{27E9}", hex(0x27E8) + "U+202E" + hex(0x27E9)),
-            // A picture that reads as ASCII follows the same rule: alone between spaces it is a run of its own.
-            ("a\u{2795}", "a" + hex(0x2795)), ("\u{2795}\u{2796}", "\u{2795}\u{2796}"), ("3 \u{2795} 4", "3 \u{2795} 4"), ("3\u{2795}4", "3" + hex(0x2795) + "4"),
-        ]
+    /// The prompt the card would show, through the real parser.
+    private func prompt(_ command: String, tool: String = "Bash", input: [String: Any]? = nil, cwd: String = "/Users/me/proj") throws -> PermissionPrompt {
+        let body = PermissionTestServer.hookInput(tool: tool, input: input ?? ["command": command], cwd: cwd)
+        return try #require(PermissionPrompt.parse(body)).prompt
+    }
+
+    private func hasChip(_ prompt: PermissionPrompt) -> Bool {
+        prompt.flags.contains { $0.text == Self.chipText && $0.warns }
+    }
+
+    private func check(_ cases: [(String, String)]) {
         for (text, expected) in cases { #expect(escaped(text) == expected, "\(name(text))") }
     }
 
-    @Test func aRunOfALanguageOfItsOwnIsShownAsItIs() {
-        for text in ["\u{30CE}\u{30FC}\u{30C8}", "привет мир", "Καλημέρα ο άνθρωπος", "Он пришёл а она ушла. хор сера как", "а", "хор", "сера", "ο", "그리고…", "“안녕”",
-                     "テスト（１）", "ㅡㅡ", "A — B", "naïve", "café", "Tiếng Việt", "Ứng dụng", "です。", "一", "ー", "—", "ㅡ", "・", "‒–", "\u{2795}\u{AC00}", "한글。",
-                     "日本語。中文", "\u{3008}文\u{3009}", "ls /Users/me/한글/문서.txt", "echo ノート ok",
-                     // Latin words among text that has none: the words of the other language stay whole.
-                     "サーバーでnpmを実行（テスト）", "请运行npm install命令，然后一次性完成。", "有一个bug", "Pythonでプログラム！", "echo 안녕 && ls 한글/ノート",
-                     // Alone, a look-alike is harmless: no shell has a command or a flag of it, and the full width forms are visibly wide.
-                     "\u{FF52}\u{FF4D}", "\u{FF0F}", "\u{2010}", "\u{2212}", "\u{43E}\u{440}", "\u{3002}", "echo \u{FF52}\u{FF4D} ok"] {
-            #expect(escaped(text) == text, "\(name(text))")
-        }
-        // What the text does not hold is as before.
-        #expect(escaped("ノ\u{200B}ー") == "ノ" + hex(0x200B) + "ー")
+    private func checkShown(_ texts: [String]) {
+        for text in texts { #expect(escaped(text) == text.precomposedStringWithCanonicalMapping, "\(name(text))") }
     }
 
-    /// A run is what is made of ASCII letters and digits, ASCII punctuation and look-alikes; anything else ends it.
-    @Test func aRunEndsAtAnythingThatIsNoneOfThose() {
-        let (a, o, c, m, ya) = ("\u{430}", "\u{43E}", "\u{441}", "\u{43C}", "\u{44F}")
-        // A letter that reads as no ASCII one, in the middle: each side is judged without the other.
-        #expect(escaped("x" + a + ya + o) == "x" + hex(0x430) + ya + o)
-        #expect(escaped(a + ya + o + "x") == a + ya + hex(0x43E) + "x")
-        #expect(escaped(a + m + c + "x") == a + m + hex(0x441) + "x")
-        // A look-alike at the start and at the end of a run with an ASCII letter.
-        #expect(escaped(a + "x") == hex(0x430) + "x" && escaped("x" + a) == "x" + hex(0x430) && escaped(a + "x" + a) == hex(0x430) + "x" + hex(0x430))
-        // Spaces, tabs, CR and LF end a run; CR LF is one break.
-        #expect(escaped("x " + a) == "x " + a && escaped("x\t" + a) == "x⇥ " + a && escaped("x\n" + a) == "x\n" + a && escaped("x\r\n" + a) == "x\n" + a)
-        #expect(escaped("x\r" + a) == "x" + hex(0xD) + a && escaped(a + "\tx") == a + "⇥ x" && escaped(a + "\r\nx") == a + "\nx")
-        #expect(PermissionText.escape("x\n" + a, multiline: false) == "x" + hex(0xA) + a)
-        #expect(escaped(a + ".\n." + c) == a + ".\n." + c && escaped(a + ".\t." + c) == a + ".⇥ ." + c && escaped(a + ". ." + c) == a + ". ." + c)
-        // Another space is no member of it, and ends it too: the ideographic space, no-break space, em space, zero-width space, line separator and the controls.
-        for space in ["\u{3000}", "\u{A0}", "\u{2003}", "\u{200B}", "\u{2028}", "\u{85}", "\u{0B}", "\u{0C}"] {
-            let scalar = space.unicodeScalars.first!.value
-            #expect(escaped("ls" + space + "\u{3161}") == "ls" + hex(scalar) + "\u{3161}", "\(name(space))")
-            #expect(escaped("\u{3161}" + space + "ls") == "\u{3161}" + hex(scalar) + "ls", "\(name(space))")
-            // The look-alike is still attached to the letters on its other side.
-            #expect(escaped("ls" + space + "\u{3161}la") == "ls" + hex(scalar) + hex(0x3161) + "la", "\(name(space))")
-            #expect(escaped("\u{FF52}" + space + "\u{FF4D}x") == "\u{FF52}" + hex(scalar) + hex(0xFF4D) + "x", "\(name(space))")
-        }
-        // A scalar that is written out ends it as well, and is no letter of the run: the Kelvin sign, a direction mark.
-        #expect(escaped("\u{30CE}\u{200B}\u{30FC}") == "\u{30CE}" + hex(0x200B) + "\u{30FC}")
-        #expect(escaped("\u{FF52}\u{200B}\u{FF4D}") == "\u{FF52}" + hex(0x200B) + "\u{FF4D}")
-        #expect(escaped("\u{30CE}\u{212A}\u{30FC}") == "\u{30CE}" + hex(0x212A) + "\u{30FC}")
-        #expect(escaped("r\u{200B}\u{FF4D}") == "r" + hex(0x200B) + "\u{FF4D}")
-        #expect(escaped("\u{FF4D}\u{200E}r") == "\u{FF4D}" + hex(0x200E) + "r")
-        #expect(escaped("x\u{212A}\u{FF4D}") == "x" + hex(0x212A) + "\u{FF4D}")
-        #expect(escaped("\u{FF4D}\u{FE0F}r") == "\u{FF4D}" + hex(0xFE0F) + "r")
-        // A picture ends it, and so does a combining mark that is written out.
-        #expect(escaped("\u{FF4D}\u{1F600}r") == "\u{FF4D}\u{1F600}r" && escaped("r\u{1F600}\u{FF4D}") == "r\u{1F600}\u{FF4D}")
-        #expect(escaped("\u{FF4D}\u{1F44D}\u{1F3FD}r") == "\u{FF4D}\u{1F44D}\u{1F3FD}r")
-        #expect(escaped("\u{FF4D}\u{1F600}") == "\u{FF4D}\u{1F600}" && escaped("r\u{FF4D}") == "r" + hex(0xFF4D))
-        #expect(escaped("\u{FF4D}\u{323}r") == "\u{FF4D}" + hex(0x323) + "r")
-        #expect(escaped("m\u{323}\u{FF4D}") == "m\u{323}\u{FF4D}")
+    // MARK: A1, letters of another script among ASCII ones
+
+    /// A Cyrillic or Greek letter, a full width Latin one, or a Latin one that ICU calls a look-alike, in a run with an ASCII letter or digit: written
+    /// out at those scalars, and nowhere else.
+    @Test func aLetterOfAnotherScriptInARunWithASCIIIsWrittenOut() {
+        check([
+            ("\u{43F}pm install", hex(0x43F) + "pm install"),
+            ("https://registry.\u{43F}pmjs.org", "https://registry." + hex(0x43F) + "pmjs.org"),
+            ("g\u{456}t status", "g" + hex(0x456) + "t status"),
+            ("/etc/pa\u{455}\u{455}wd", "/etc/pa" + hex(0x455, 0x455) + "wd"),
+            ("curl apple.\u{441}\u{43E}\u{43C}", "curl apple." + hex(0x441, 0x43E, 0x43C)),
+            ("\u{FF52}m -rf", hex(0xFF52) + "m -rf"), ("r\u{FF4D}", "r" + hex(0xFF4D)), ("\u{FF15}5", hex(0xFF15) + "5"),
+            // Greek and Cyrillic letters that are no look-alikes at all go the same way: the script is what is judged.
+            ("\u{39B}pm \u{452}pm \u{45B}pm \u{44F}x", hex(0x39B) + "pm " + hex(0x452) + "pm " + hex(0x45B) + "pm " + hex(0x44F) + "x"),
+            // A Latin letter the checker calls a look-alike: the dotless i, the ordinal indicators, the long s, the thorn.
+            ("g\u{131}t", "g" + hex(0x131) + "t"), ("1\u{BA} 2\u{AA}", "1" + hex(0xBA) + " 2" + hex(0xAA)), ("\u{17F}ed", hex(0x17F) + "ed"), ("\u{FE}orn", hex(0xFE) + "orn"),
+            // The glue of a name keeps a run whole; a space, a comma, a bracket, an equals sign, a semicolon or a line break ends it.
+            ("~/\u{43F}x", "~/" + hex(0x43F) + "x"), ("a_\u{43F}", "a_" + hex(0x43F)), ("a@\u{43F}", "a@" + hex(0x43F)), ("a:\u{43F}", "a:" + hex(0x43F)),
+            ("a\\\u{43F}", "a\\" + hex(0x43F)), ("a'\u{43F}", "a'" + hex(0x43F)), ("a\"\u{43F}", "a\"" + hex(0x43F)), ("a.\u{43F}", "a." + hex(0x43F)),
+            ("a-\u{43F}", "a-" + hex(0x43F)), ("a/\u{43F}", "a/" + hex(0x43F)), ("a~\u{43F}", "a~" + hex(0x43F)),
+            ("a \u{43F}", "a \u{43F}"), ("a,\u{43F}", "a,\u{43F}"), ("a(\u{43F}", "a(\u{43F}"), ("a=\u{43F}", "a=\u{43F}"), ("a;\u{43F}", "a;\u{43F}"), ("a\n\u{43F}", "a\n\u{43F}"),
+            // A combining mark belongs to the run and goes with the letter it sits on.
+            ("\u{43F}\u{301}x", hex(0x43F, 0x301) + "x"),
+            // The run is the input's: a Korean letter between Cyrillic and ASCII ones does not end it.
+            ("\u{43F}\u{D55C}x", hex(0x43F) + "\u{D55C}x"),
+            // Digits count as much as letters, in either direction.
+            ("10-\u{445}", "10-" + hex(0x445)), ("\u{43F}1", hex(0x43F) + "1"),
+        ])
     }
 
-    /// Punctuation with a look-alike on each side makes a run a dotted, slashed or joined name; at its edge, or beside ASCII punctuation, it makes none.
-    @Test func punctuationBetweenTwoLookalikesMakesTheRunAName() {
-        let (a, o, c) = ("\u{430}", "\u{43E}", "\u{441}")
-        // ASCII punctuation between two look-alikes: all the run's look-alikes go, and the punctuation stays as it is.
-        for glue in [".", "/", "-", "_", ":", "@", "\\", "~", "%", "&", "|", ";", "#", "$", "=", "+", "*", "?", "!", ",", "<", ">", "(", ")", "[", "]", "{", "}", "'", "\"", "`", "^"] {
-            #expect(escaped(a + glue + o) == hex(0x430) + glue + hex(0x43E), "\(glue)")
-            #expect(escaped(a + c + glue + o + c) == hex(0x430, 0x441) + glue + hex(0x43E, 0x441), "\(glue)")
-            // At the edge, or with ASCII punctuation beside it or a letter that reads as no ASCII one, it is none.
-            #expect(escaped(glue + a + o) == glue + a + o && escaped(a + o + glue) == a + o + glue, "\(glue)")
-            #expect(escaped(glue + a + glue) == glue + a + glue, "\(glue)")
-            #expect(escaped(a + glue + glue + o) == a + glue + glue + o, "\(glue)")
-            #expect(escaped(a + glue + "\u{44F}" + o) == a + glue + "\u{44F}" + o, "\(glue)")
-        }
-        // A look-alike that is punctuation or a symbol between two look-alikes, whether those are letters or punctuation themselves.
-        for mark in ["\u{3002}", "\u{FF61}", "\u{B7}", "\u{2010}", "\u{FF0F}", "\u{2014}", "\u{2795}", "\u{2758}"] {
-            #expect(escaped(a + mark + o) == hex(0x430) + hex(UInt32(mark.unicodeScalars.first!.value)) + hex(0x43E), "\(name(mark))")
-            #expect(escaped(a + mark + mark + o) == hex(0x430) + String(repeating: hex(UInt32(mark.unicodeScalars.first!.value)), count: 2) + hex(0x43E), "\(name(mark))")
-            #expect(escaped(mark + mark + mark) == String(repeating: hex(UInt32(mark.unicodeScalars.first!.value)), count: 3), "\(name(mark))")
-            #expect(escaped(mark + mark) == mark + mark && escaped(mark + a) == mark + a && escaped(a + mark) == a + mark, "\(name(mark))")
-        }
-        // A letter or a digit between them is none: strokes, the prolonged sound mark, full width digits.
-        for letter in ["\u{3161}", "\u{30FC}", "\u{4E00}", "\u{30CE}", "\u{FF11}", "\u{FF41}"] {
-            #expect(escaped(a + letter + o) == a + letter + o && escaped(letter + letter + letter) == letter + letter + letter, "\(name(letter))")
-        }
-        // Two names, one of them with the punctuation of a name, are judged one by one.
-        #expect(escaped(a + "." + o + " " + a + o + " " + c + "/") == hex(0x430) + "." + hex(0x43E) + " " + a + o + " " + c + "/")
-        // A name that holds a letter that reads as no ASCII one is cut there.
-        #expect(escaped(a + "." + o + "\u{44F}" + c + "." + a) == hex(0x430) + "." + hex(0x43E) + "\u{44F}" + hex(0x441) + "." + hex(0x430))
-        #expect(escaped(a + "." + "\u{44F}" + "." + o) == a + "." + "\u{44F}" + "." + o)
-        // Full width and ideographic punctuation of a sentence is not a name.
-        #expect(escaped("テスト（１）") == "テスト（１）" && escaped("（１）") == "（１）")
-        #expect(escaped("（（１））") == hex(0xFF08, 0xFF08, 0xFF11, 0xFF09, 0xFF09))
+    /// With no ASCII letter or digit in the run, the letters are shown.
+    @Test func aRunWithoutASCIIShowsItsLetters() {
+        checkShown(["curl \u{430}\u{440}\u{440}\u{4CF}\u{435}.\u{441}\u{43E}\u{43C}", "~/\u{455}\u{441}\u{43E}\u{440}\u{435}", "ls -\u{430}", "git push origin \u{441}\u{43E}\u{440}\u{443}",
+                    "curl \"\u{430}\u{440}\u{440}\u{4CF}\u{435}\".\u{441}\u{43E}\u{43C}", "\u{430}\u{440}\u{440}\u{4CF}\u{435}\\.\u{441}\u{43E}\u{43C}", "привет мир", "Καλημέρα ο άνθρωπος",
+                    "\u{FF52}\u{FF4D}", "echo \u{FF52}\u{FF4D} ok", "echo \u{131}", "А.С. Пушкин", "Α.Ε.", "Он пришёл а она ушла. хор сера как", "\u{43E}\u{440}/\u{43E}\u{440}"])
     }
 
-    /// The scalars drawn like ASCII punctuation that the checker misses count with the rest.
-    @Test func scalarsDrawnLikePunctuationAreJudgedLikeTheLookalikesOfTheChecker() {
-        let extras: [UInt32] = [0x3161, 0x3163, 0x4E28, 0x4E00, 0x30FC, 0xFF70, 0x3021, 0x2758, 0x2014, 0x2015, 0xB7, 0x3002, 0xFF61, 0x3008, 0x3009]
-        for value in extras {
-            let text = String(Unicode.Scalar(value)!), label = "U+" + String(value, radix: 16, uppercase: true)
-            // With a letter or a digit anywhere in the run.
-            #expect(escaped("a" + text) == "a" + hex(value), "\(label)")
-            #expect(escaped(text + "a") == hex(value) + "a", "\(label)")
-            #expect(escaped("9" + text + "z") == "9" + hex(value) + "z", "\(label)")
-            #expect(escaped("-" + text + "_5") == "-" + hex(value) + "_5", "\(label)")
-            // By themselves, among themselves, among ASCII punctuation, and in the text of another script.
-            #expect(escaped(text) == text, "\(label)")
-            #expect(escaped(text + text) == text + text, "\(label)")
-            #expect(escaped(text + "-/" + text) == text + "-/" + text, "\(label)")
-            #expect(escaped(text + "한") == text + "한", "\(label)")
-            #expect(escaped("한" + text + "글") == "한" + text + "글", "\(label)")
-            #expect(escaped("한 " + text + " a") == "한 " + text + " a", "\(label)")
-            // Between look-alikes of the checker.
-            #expect(escaped("\u{43E}" + text + "\u{43E}") == (isLetterOrNumber(value) ? "\u{43E}" + text + "\u{43E}" : hex(0x43E, value, 0x43E)), "\(label)")
-        }
-        #expect(escaped("\u{2012}\u{2014}") == "\u{2012}\u{2014}" && escaped("\u{2012}\u{2013}\u{2014}") == hex(0x2012, 0x2013, 0x2014))
-        #expect(escaped("\u{2012}\u{2013}") == "\u{2012}\u{2013}")
+    @Test func aLatinLetterNoOneMistakesAndTheLigaturesAreShownAmongASCII() {
+        // Latin letters ICU does not call look-alikes, the hooked y and the dotless j among them, are of the script of the rest of the run.
+        checkShown(["na\u{EF}ve", "caf\u{E9}", "Tiếng Việt Ứng dụng", "Za\u{17C}\u{F3}\u{142}\u{107} g\u{119}\u{15B}l\u{105} ja\u{17A}\u{144}", "\u{1B4}pm \u{237}s", "\u{111}\u{F8}x"])
+        // Ligatures of two ASCII letters or more are not look-alikes of one.
+        checkShown(["\u{153}uvre", "c\u{153}ur", "\u{E6}ther", "\u{133}s", "\u{1C6}x", "\u{152}uvre"])
     }
 
-    private func isLetterOrNumber(_ value: UInt32) -> Bool {
-        switch Unicode.Scalar(value)!.properties.generalCategory {
+    // MARK: A2, punctuation that changes what a command means
+
+    @Test func aDashLookalikeRightBeforeAnASCIILetterOrDigitIsWrittenOut() {
+        check([
+            ("rm \u{2010}rf /", "rm " + hex(0x2010) + "rf /"), ("rm \u{30FC}rf", "rm " + hex(0x30FC) + "rf"), ("rm \u{2014}rf", "rm " + hex(0x2014) + "rf"),
+            ("rm \u{2015}rf", "rm " + hex(0x2015) + "rf"), ("ls \u{3161}la", "ls " + hex(0x3161) + "la"), ("r\u{4E00}f", "r" + hex(0x4E00) + "f"),
+            ("ls \u{2212}1", "ls " + hex(0x2212) + "1"), ("x \u{FF70}y", "x " + hex(0xFF70) + "y"), ("ls \u{2013}l", "ls " + hex(0x2013) + "l"),
+            // Of two in a row, the one before the letter goes.
+            ("git push \u{2011}\u{2011}force", "git push \u{2011}" + hex(0x2011) + "force"), ("echo \u{FF0D}\u{FF0D}x", "echo \u{FF0D}" + hex(0xFF0D) + "x"),
+        ])
+        // Not before an ASCII letter or digit: shown.
+        checkShown(["Python\u{4E00}\u{952E}", "TypeScript\u{30FC}", "\u{6709}\u{4E00}\u{4E2A}bug", "A \u{2014} B", "\u{3161}\u{3161}", "x \u{2212} 1", "ls \u{2010} -l", "foo\u{2010}",
+                    "\u{30CE}\u{30FC}\u{30C8}", "\u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{3067}npm", "\u{4E00}\u{4E8C}\u{4E09}", "\u{2014}", "\u{2010}\u{2010}", "\u{4E00}\u{4E2D}"])
+    }
+
+    @Test func aDotColonOrAtLookalikeBetweenTwoLettersOrDigitsIsWrittenOut() {
+        check([
+            ("https://github.com\u{3002}evil.com/x.sh", "https://github.com" + hex(0x3002) + "evil.com/x.sh"),
+            ("a\u{FF61}b", "a" + hex(0xFF61) + "b"), ("a\u{FF0E}b", "a" + hex(0xFF0E) + "b"), ("a\u{FF1A}b", "a" + hex(0xFF1A) + "b"), ("a\u{FF20}b", "a" + hex(0xFF20) + "b"),
+            ("1\u{3002}2", "1" + hex(0x3002) + "2"), ("a\u{2024}b", "a" + hex(0x2024) + "b"),
+            // Between letters of Cyrillic, Greek and Latin as well: the neighbours need not be ASCII, only letters or digits of those scripts.
+            ("\u{430}\u{3002}\u{431}", "\u{430}" + hex(0x3002) + "\u{431}"), ("\u{3B1}\u{3002}\u{3B2}", "\u{3B1}" + hex(0x3002) + "\u{3B2}"), ("\u{E9}\u{3002}a", "\u{E9}" + hex(0x3002) + "a"),
+            ("a\u{3002}\u{43F}", "a" + hex(0x3002) + "\u{43F}"),
+        ])
+        checkShown(["Python\u{3002}", "\u{3067}\u{3059}\u{3002}", "\u{3002}abc", "a \u{3002} b", "a\u{3002}\u{3002}b", "\u{3067}\u{3059}\u{3002}abc", "\u{D55C}\u{AE00}\u{3002}a",
+                    "AI\u{B7}\u{BC18}\u{B3C4}\u{CCB4} iOS\u{B7}Android", "a\u{B7}b", "\u{6709}\u{FF1A}a", "\u{6CE8}\u{610F}\u{FF1A}abc"])
+    }
+
+    @Test func aSlashBarOrShellOperatorLookalikeBesideASCIIIsWrittenOut() {
+        check([
+            ("ls \u{FF0F}tmp", "ls " + hex(0xFF0F) + "tmp"), ("a\u{FF0F}b", "a" + hex(0xFF0F) + "b"), ("ls \u{D55C}\u{AE00}/\u{30CE}\u{30FC}\u{30C8}", "ls \u{D55C}\u{AE00}/" + hex(0x30CE) + "\u{30FC}\u{30C8}"),
+            ("a\u{FF3C}b", "a" + hex(0xFF3C) + "b"), ("a\u{FF5C}b", "a" + hex(0xFF5C) + "b"), ("a\u{4E28}b", "a" + hex(0x4E28) + "b"), ("a\u{3163}b", "a" + hex(0x3163) + "b"),
+            ("x\u{FF06}\u{FF06}y", "x" + hex(0xFF06, 0xFF06) + "y"), ("a\u{FF1B}b", "a" + hex(0xFF1B) + "b"), ("a\u{FF04}HOME", "a" + hex(0xFF04) + "HOME"),
+            ("a\u{FF1C}b", "a" + hex(0xFF1C) + "b"), ("a\u{FF1E}b", "a" + hex(0xFF1E) + "b"), ("a\u{FF1D}b", "a" + hex(0xFF1D) + "b"), ("\u{FF0A}.txt", hex(0xFF0A) + ".txt"),
+            ("a\u{FF1F}", "a" + hex(0xFF1F)), ("a\u{FF03}", "a" + hex(0xFF03)), ("a\u{FF5E}b", "a" + hex(0xFF5E) + "b"), ("\u{FF04}(id)", hex(0xFF04) + "(id)"),
+            ("echo\u{30CE}x", "echo" + hex(0x30CE) + "x"), ("\u{2039}a\u{203A}", hex(0x2039) + "a" + hex(0x203A)), ("a&\u{FF06}", "a&" + hex(0xFF06)),
+        ])
+        checkShown(["x \u{FF0F} y", "\u{30CE}\u{30FC}\u{30C8}", "\u{FF0F}", "\u{6709}\u{FF06}\u{6CA1}", "x \u{FF5C} y", "\u{4E28}", "\u{3163}\u{3163}", "a \u{FF1D} b", "\u{65E5}\u{FF5E}\u{672C}", "\u{FF0F}\u{FF0F}"])
+    }
+
+    @Test func theAngleBracketsThatMarkAnEscapeAreWrittenOutBesideASCIILetters() {
+        check([
+            ("\u{3008}U+202E\u{3009}", hex(0x3008) + "U+202E" + hex(0x3009)), ("\u{27E8}U+202E\u{27E9}", hex(0x27E8) + "U+202E" + hex(0x27E9)),
+            ("\u{3008}7", hex(0x3008) + "7"), ("7\u{3009}", "7" + hex(0x3009)),
+        ])
+        checkShown(["\u{3008}\u{6587}\u{3009}", "\u{3008}", "\u{3009}", "a\u{3008}", "\u{3009}a", "\u{3008}\u{3009}"])
+    }
+
+    /// The rest of what ICU calls a look-alike is shown: the quotes, the ellipsis, the superscripts, the trademark sign, the full width brackets and commas, the crosses.
+    @Test func everythingElseICUCallsALookalikeIsShown() {
+        checkShown(["\u{201C}hello\u{201D}", "Don\u{2019}t", "Loading\u{2026}", "m\u{B2} n\u{B3} \u{2122}", "\u{FF08}a\u{FF09}", "a\u{FF0C}b", "a\u{FF01}", "x \u{2715} y", "a\u{2715}b",
+                    "\u{4F7F}\u{7528}\u{FF08}API\u{FF09}\u{63A5}\u{53E3}", "\u{6709}\u{4E00}\u{4E2A}bug\u{FF0C}\u{8BF7}\u{68C0}\u{67E5}", "a\u{2795}b", "3\u{2795}4", "\u{2022}a", "a\u{2018}b"])
+    }
+
+    /// Prose of the languages the app is localized into, as the card shows it: nothing written out.
+    @Test func ordinaryProseIsShownAsItIs() {
+        checkShown(["C\u{2019}est l\u{2019}\u{E9}t\u{E9}, \u{153}uvre, m\u{B2} \u{E7}a marche\u{2026}", "Don\u{2019}t", "Loading\u{2026}", "\u{201C}hello\u{201D}", "\u{6709}\u{4E00}\u{4E2A}bug\u{FF0C}\u{8BF7}\u{68C0}\u{67E5}",
+                    "\u{4F7F}\u{7528}\u{FF08}API\u{FF09}\u{63A5}\u{53E3}", "Python\u{3002}", "Python\u{4E00}\u{952E}\u{5B89}\u{88C5}", "TypeScript\u{30FC}", "AI\u{B7}\u{BC18}\u{B3C4}\u{CCB4} iOS\u{B7}Android",
+                    "\u{410}.\u{421}. \u{41F}\u{443}\u{448}\u{43A}\u{438}\u{43D}", "\u{391}.\u{395}.", "Tiếng Việt", "サーバーでnpmを実行（テスト）", "请运行npm install命令，然后一次性完成。",
+                    "echo 안녕 && ls 한글 ノート", "echo 😀 ❤️‍🔥 👍🏽"])
+    }
+
+    // MARK: Every scalar, against ICU asked in the test
+
+    private func isLetterOrDigit(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.properties.generalCategory {
         case .uppercaseLetter, .lowercaseLetter, .titlecaseLetter, .modifierLetter, .otherLetter, .decimalNumber, .letterNumber, .otherNumber: return true
         default: return false
         }
     }
 
-    /// Every look-alike the checker finds, beside an ASCII digit, is written out whatever the language; none is lost to the run rule.
-    @Test func everyLookalikeBesideAnASCIIDigitIsWrittenOut() throws {
-        let lookalike = try asciiLookalikes()
-        var checked = 0, shownAlone = 0
-        for value in UInt32(0x80)...0x10FFFF {
-            guard let scalar = Unicode.Scalar(value), lookalike(scalar) != nil else { continue }
-            let text = "7" + String(scalar)
-            guard text.precomposedStringWithCanonicalMapping.unicodeScalars.elementsEqual(text.unicodeScalars) else { continue }
-            #expect(escaped(text) == "7" + hex(value), "U+\(String(value, radix: 16, uppercase: true))")
-            #expect(escaped(String(scalar) + "7") == hex(value) + "7", "U+\(String(value, radix: 16, uppercase: true))")
-            if escaped(String(scalar)) == String(scalar) { shownAlone += 1 }
-            checked += 1
-        }
-        #expect(checked > 1_000, "\(checked)")
-        #expect(shownAlone > 300, "\(shownAlone)")
+    private func isFullWidthLatin(_ scalar: Unicode.Scalar) -> Bool {
+        (0xFF10...0xFF19).contains(scalar.value) || (0xFF21...0xFF3A).contains(scalar.value) || (0xFF41...0xFF5A).contains(scalar.value)
     }
 
-    /// For every look-alike that is shown by itself: with punctuation between two of them, or two of them round a third that is punctuation, the run goes.
-    @Test func everyShownLookalikeIsJudgedByThePunctuationBetweenItsNeighbours() {
-        var letters = 0, marks = 0
-        for value in UInt32(0x80)...0x10FFFF {
-            guard let scalar = Unicode.Scalar(value), PermissionText.hasLookalike(String(scalar)), escaped(String(scalar)) == String(scalar) else { continue }
-            let text = String(scalar), label = "U+" + String(value, radix: 16, uppercase: true)
-            // A dot between two of them.
-            #expect(escaped(text + "." + text) == hex(value) + "." + hex(value), "\(label)")
-            #expect(escaped(text + ".") == text + "." && escaped("." + text) == "." + text && escaped(text + ".." + text) == text + ".." + text, "\(label)")
-            // Three of them in a row: the middle one decides, by being punctuation or a symbol.
-            if isLetterOrNumber(value) {
-                letters += 1
-                #expect(escaped(text + text + text) == text + text + text, "\(label)")
-            } else {
-                marks += 1
-                #expect(escaped(text + text + text) == hex(value, value, value), "\(label)")
+    /// What the rules say of a scalar that `escape` shows by itself, worked out here from ICU's skeleton, compatibility form and script and the lead's list.
+    private enum Kind: Equatable { case foreignLetter, standsFor(Character), plain }
+
+    private func kind(of scalar: Unicode.Scalar, lookalike: (Unicode.Scalar) -> String?, script: (Unicode.Scalar) -> String) -> Kind {
+        let extras: [UInt32: Character] = [0x3161: "-", 0x4E00: "-", 0x30FC: "-", 0xFF70: "-", 0x2014: "-", 0x2015: "-", 0x3163: "|", 0x4E28: "|", 0x3021: "|", 0x2758: "|",
+                                           0x3002: ".", 0xFF61: "."]
+        let name = script(scalar), form = lookalike(scalar)
+        if isLetterOrDigit(scalar) {
+            if isFullWidthLatin(scalar) || ((name == "Cyrillic" || name == "Greek") && scalar.properties.generalCategory != .otherNumber) { return .foreignLetter }
+            if name == "Latin", let form, !form.hasPrefix("no skeleton") {
+                return form.unicodeScalars.filter { $0.properties.isAlphabetic && $0.value < 0x80 }.count >= 2 ? .plain : .foreignLetter
             }
-            #expect(escaped(text + text) == text + text, "\(label)")
+            if name == "Latin", form != nil { return .foreignLetter }
         }
-        #expect(letters > 200 && marks > 100, "\(letters) \(marks)")
+        if let extra = extras[scalar.value] { return .standsFor(extra) }
+        if scalar.value == 0x3008 || scalar.value == 0x3009 { return .plain }
+        if let form, form.count == 1, "-/\\.:@~|;&$<>=*?#".contains(form.first!) { return .standsFor(form.first!) }
+        return .plain
     }
 
-    @Test func aRuleOfTheAlwaysAllowButtonHoldsNoScalarThatReadsAsASCII() {
-        for text in ["\u{43E}", "\u{FF52}", "\u{2010}", "\u{3002}", "\u{30CE}", "\u{30FC}", "\u{4E00}", "\u{2122}", "\u{2026}", "Bash(echo ノート)", "a\u{FF0F}", "有一个bug"] {
-            #expect(PermissionText.hasLookalike(text), "\(name(text))")
+    /// For every scalar `escape` shows by itself: a Cyrillic or Greek letter, a full width Latin letter or digit or a Latin letter that ICU takes for an ASCII
+    /// one is written out beside an ASCII letter and gives the chip alone, and nothing else gives the chip.
+    @Test func everyForeignLetterIsWrittenOutBesideASCIIAndGivesTheChipAlone() throws {
+        let (lookalike, script) = (try asciiLookalikes(), try scriptNames())
+        var foreign = 0, byScript: [String: Int] = [:]
+        for value in UInt32(0x80)...0x10FFFF {
+            guard let scalar = Unicode.Scalar(value), escaped(String(scalar)) == String(scalar) else { continue }
+            let text = String(scalar), label = "U+" + String(value, radix: 16, uppercase: true)
+            let isForeign = kind(of: scalar, lookalike: lookalike, script: script) == .foreignLetter
+            #expect(PermissionText.hasLatinLookalike(text) == isForeign, "\(label)")
+            if isForeign {
+                foreign += 1
+                byScript[script(scalar), default: 0] += 1
+                for around in ["a" + text, text + "a", "a" + text + "b", "7" + text, "~/" + text + "x", "x." + text] {
+                    let expected = around.unicodeScalars.map { $0 == scalar ? hex(value) : String($0) }.joined()
+                    #expect(escaped(around) == expected, "\(label) in \(around)")
+                }
+                // With no ASCII letter or digit in the run, it is shown.
+                for around in [text, text + text, " " + text + " ", "~/" + text, "-" + text, "\"" + text + "\".", "\u{43E}" + text, "\u{AC00}" + text] {
+                    #expect(escaped(around) == around, "\(label) in \(around)")
+                }
+            }
         }
-        for text in ["", "npm test", "echo 안녕", "ls /Users/me/한글/문서.txt", "echo r\u{E9}sum\u{E9} \u{D55C}\u{AE00} \u{65E5}\u{672C}", "\u{43C}\u{442}", "请运行npm"] {
-            #expect(!PermissionText.hasLookalike(text), "\(name(text))")
+        #expect(foreign > 400 && byScript["Cyrillic", default: 0] > 200 && byScript["Greek", default: 0] > 100 && byScript["Latin", default: 0] > 50, "\(foreign) \(byScript)")
+    }
+
+    /// For every scalar `escape` shows by itself that stands for one of `- / \\ . : @ ~ | ; & $ < > = * ? #`: the rule of its class, in every neighbourhood.
+    @Test func everyPunctuationLookalikeFollowsTheRuleOfItsClass() throws {
+        let (lookalike, script) = (try asciiLookalikes(), try scriptNames())
+        var classes: [Character: Int] = [:]
+        for value in UInt32(0x80)...0x10FFFF {
+            guard let scalar = Unicode.Scalar(value), escaped(String(scalar)) == String(scalar),
+                  case .standsFor(let ascii) = kind(of: scalar, lookalike: lookalike, script: script) else { continue }
+            let text = String(scalar), written = hex(value), label = "U+" + String(value, radix: 16, uppercase: true)
+            classes[ascii, default: 0] += 1
+            // Every class is shown with spaces, a Korean letter or a CJK one about it, and alone.
+            for around in [" " + text + " ", "\u{D55C}" + text + "\u{AE00}", "\u{4E2D}" + text + "\u{6587}", text + text, text + "\u{D55C}", "\u{D55C}" + text] {
+                #expect(escaped(around) == around, "\(label) in \(around)")
+            }
+            switch ascii {
+            case "-":
+                // Written out right before an ASCII letter or digit, and nowhere else.
+                for after in ["a", "Z", "0", "9"] { #expect(escaped(text + after) == written + after && escaped("x" + text + after) == "x" + written + after, "\(label) \(after)") }
+                for around in ["a" + text, "a" + text + " ", "a" + text + "\u{D55C}", "a" + text + ".", "a" + text + "-", "9" + text + "_"] { #expect(escaped(around) == around, "\(label) in \(around)") }
+            case ".", ":", "@":
+                // Written out between two letters or digits of ASCII, Latin, Cyrillic or Greek.
+                for (before, after) in [("a", "b"), ("1", "2"), ("a", "9"), ("\u{E9}", "x"), ("\u{430}", "\u{431}"), ("\u{3B1}", "\u{3B2}"), ("x", "\u{43F}")] {
+                    #expect(escaped(before + text + after) == before + written + after, "\(label) \(before)\(after)")
+                }
+                for around in ["a" + text, text + "a", "a" + text + ".", "a" + text + " b", "a" + text + "\u{D55C}", "\u{D55C}" + text + "a", "a" + text + "\u{4E2D}", "a" + text + "-b", "a-" + text + "b"] {
+                    #expect(escaped(around) == around, "\(label) in \(around)")
+                }
+            default:
+                // Written out beside an ASCII letter, digit or punctuation mark on either side.
+                for other in ["a", "9", ".", "/", "-", "(", "\"", "~", "$"] {
+                    #expect(escaped(text + other) == written + other && escaped(other + text) == other + written && escaped(" " + text + other) == " " + written + other, "\(label) \(other)")
+                }
+                for around in [text + " ", " " + text, text + "\u{D55C}", "\u{D55C}" + text, text + "\u{4E2D}", "\u{D55C}" + text + "\u{4E2D}"] { #expect(escaped(around) == around, "\(label) in \(around)") }
+            }
         }
+        #expect(classes["-", default: 0] >= 8 && classes["."] != nil && classes[":"] != nil && classes["@"] != nil && classes["/"] != nil && classes["\\"] != nil && classes["|"] != nil
+                && classes["&"] != nil && classes["$"] != nil && classes["="] != nil && classes["<"] != nil && classes[">"] != nil && classes["*"] != nil && classes["?"] != nil
+                && classes["#"] != nil && classes[";"] != nil && classes["~"] != nil, "\(classes)")
+    }
+
+    /// Ordinary text the certain cases write out anyway, pinned so a change to the rules shows. Each is a consequence of a rule, not a goal: a Latin letter ICU
+    /// takes for an ASCII one among ASCII letters, a Cyrillic letter after a digit and a hyphen, a dash between ASCII letters or digits, a katakana that
+    /// reads as a slash after a slash.
+    @Test func theOrdinaryTextTheRulesDoWriteOutIsPinned() {
+        check([
+            ("k\u{131}sa", "k" + hex(0x131) + "sa"), ("1\u{BA} piso, N\u{BA} 5, 2\u{AA}", "1" + hex(0xBA) + " piso, N" + hex(0xBA) + " 5, 2" + hex(0xAA)), ("\u{FE}etta", hex(0xFE) + "etta"),
+            ("10\u{2013}20", "10" + hex(0x2013) + "20"), ("end\u{2014}start", "end" + hex(0x2014) + "start"), ("10-\u{445}", "10-" + hex(0x445)),
+            ("~/\u{30CE}\u{30FC}\u{30C8}", "~/" + hex(0x30CE) + "\u{30FC}\u{30C8}"),
+            // A letter ICU takes for an ASCII one that is of no script the rules judge is shown.
+            ("\u{2113}s", "\u{2113}s"), ("x \u{211D}", "x \u{211D}"),
+        ])
+    }
+
+    // MARK: Fail closed
+
+    /// Without ICU every scalar past ASCII is written out, whatever it is made of.
+    @Test func withoutICUEveryScalarPastASCIIIsWrittenOut() {
+        let samples = ["\u{1F1F0}\u{1F1F7}", "\u{1F600}", "\u{2764}\u{FE0F}", "\u{2764}\u{FE0E}", "1\u{FE0F}\u{20E3}", "#\u{FE0F}\u{20E3}", "\u{1F44D}\u{1F3FD}", "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}",
+                       "\u{1F3F3}\u{FE0F}\u{200D}\u{1F308}", "\u{D55C}\u{AE00}", "\u{65E5}\u{672C}", "\u{30CE}\u{30FC}\u{30C8}", "\u{43F}pm", "\u{FF52}m", "\u{E9}t\u{E9}", "\u{153}uvre", "\u{2019}", "\u{2026}",
+                       "x\u{323}", "\u{200D}", "\u{3002}", "\u{3008}\u{3009}", "\u{20E3}", "\u{1F3FD}", "\u{FE0F}", "\u{300}"]
+        for sample in samples {
+            for text in [sample, "ls " + sample + " ok", "a" + sample] {
+                let expected = String(String.UnicodeScalarView(text.precomposedStringWithCanonicalMapping.unicodeScalars.flatMap { scalar -> [Unicode.Scalar] in
+                    scalar.value < 0x80 ? [scalar] : Array(hex(scalar.value).unicodeScalars)
+                }))
+                #expect(PermissionText.escape(text, multiline: true, failClosed: true) == expected, "\(name(text))")
+            }
+        }
+        // ASCII, the tab and the line break are as before.
+        #expect(PermissionText.escape("a\tb\r\nc", multiline: true, failClosed: true) == "a\u{21E5} b\nc")
+        #expect(PermissionText.escape("a\nb", multiline: false, failClosed: true) == "a" + hex(0xA) + "b")
+        // With ICU the same samples are not all written out.
+        #expect(escaped("\u{1F600}") == "\u{1F600}" && escaped("\u{D55C}\u{AE00}") == "\u{D55C}\u{AE00}")
+    }
+
+    /// Every scalar of Unicode, alone and after what could carry it along (a letter, a picture that takes a tone or a selector, a digit for a keycap, a regional
+    /// indicator, a joiner): nothing past ASCII is left in what comes out but the brackets of an escape and the tab's arrow.
+    @Test func withoutICUNothingPastASCIIIsLeftInWhatComesOut() {
+        let contexts = ["", "a", "\u{1F44D}", "\u{2764}", "1\u{FE0F}", "\u{1F1E6}", "\u{1F600}\u{200D}"]
+        let allowed: Set<UInt32> = [0x27E8, 0x27E9, 0x21E5]
+        var checked = 0
+        for value in UInt32(0x80)...0x10FFFF {
+            guard let scalar = Unicode.Scalar(value), scalar.properties.generalCategory != .unassigned, scalar.properties.generalCategory != .privateUse else { continue }
+            for context in contexts {
+                for text in [context + String(scalar) + "\u{20E3}\u{1F600}"] {
+                    let out = PermissionText.escape(text, multiline: true, failClosed: true)
+                    if let leaked = out.unicodeScalars.first(where: { $0.value > 0x7F && !allowed.contains($0.value) }) {
+                        Issue.record("U+\(String(leaked.value, radix: 16, uppercase: true)) is left in \(name(text))")
+                        return
+                    }
+                    checked += 1
+                }
+            }
+        }
+        #expect(checked > 500_000, "\(checked)")
+    }
+
+    // MARK: The chip
+
+    @Test func theChipIsOnTheCardWhenAScalarThatLooksLatinIsShown() throws {
+        let shown = ["curl \u{430}\u{440}\u{440}\u{4CF}\u{435}.\u{441}\u{43E}\u{43C}", "~/\u{455}\u{441}\u{43E}\u{440}\u{435}", "ls -\u{430}", "git push origin \u{441}\u{43E}\u{440}\u{443}",
+                     "curl \"\u{430}\u{440}\u{440}\u{4CF}\u{435}\".\u{441}\u{43E}\u{43C}", "\u{430}\u{440}\u{440}\u{4CF}\u{435}\\.\u{441}\u{43E}\u{43C}", "привет мир", "Καλημέρα",
+                     "\u{FF52}\u{FF4D}", "echo \u{131}", "А.С. Пушкин", "Α.Ε.", "echo \u{FF21}", "echo \u{BA}", "echo \u{17F}"]
+        for command in shown {
+            let prompt = try prompt(command)
+            #expect(hasChip(prompt), "\(name(command))")
+            #expect(prompt.flags.last == .init(text: Self.chipText, warns: true) && prompt.scrollText.hasPrefix(Self.chipText + "\n"), "\(name(command))")
+        }
+    }
+
+    @Test func theChipIsNotOnTheCardWhenNothingThatLooksLatinIsShown() throws {
+        let quiet = ["echo \u{C548}\u{B155}\u{D558}\u{C138}\u{C694}", "\u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{3067}npm\u{3092}\u{5B9F}\u{884C}", "\u{8BF7}\u{8FD0}\u{884C}npm install\u{547D}\u{4EE4}\u{FF0C}\u{7136}\u{540E}\u{5B8C}\u{6210}\u{3002}",
+                     "C\u{2019}est l\u{2019}\u{E9}t\u{E9}, \u{153}uvre, m\u{B2} \u{E7}a marche\u{2026}", "Tiếng Việt Ứng dụng", "\u{201C}hello\u{201D} Don\u{2019}t", "echo 😀 ❤️‍🔥 👍🏽", "npm test",
+                     "echo \u{D55C}\u{AE00}\u{3131}", "rm \u{2010}rf /", "\u{43F}pm install", "g\u{131}t status", "\u{FF52}m", "echo a\u{FF0F}b", "\u{3042}\u{30A2}\u{4E2D}\u{FF01}"]
+        for command in quiet {
+            #expect(!hasChip(try prompt(command)), "\(name(command))")
+        }
+        // A letter that was written out is not shown, so there is nothing to say.
+        #expect(try prompt("g\u{131}t").detail == "g" + hex(0x131) + "t")
+    }
+
+    /// Wherever the card shows text: the detail, the rest of the listing, the title of a tool nobody has heard of, the folder, whatever the tool.
+    @Test func theChipIsForWhateverTheCardShowsAndWhateverTheTool() throws {
+        #expect(hasChip(try prompt("", tool: "Read", input: ["file_path": "\u{43F}\u{440}\u{438}\u{432}\u{435}\u{442}.\u{442}\u{445}\u{442}"])))
+        #expect(hasChip(try prompt("", tool: "WebFetch", input: ["url": "\u{430}\u{440}\u{440}\u{4CF}\u{435}.\u{441}\u{43E}\u{43C}"])))
+        #expect(hasChip(try prompt("", tool: "Write", input: ["file_path": "/tmp/a", "content": "\u{43F}\u{440}\u{438}\u{432}\u{435}\u{442}"])))
+        #expect(hasChip(try prompt("ls", input: ["command": "ls", "description": "\u{43F}\u{440}\u{438}\u{432}\u{435}\u{442}"])))
+        #expect(hasChip(try prompt("", tool: "\u{43F}\u{440}\u{438}\u{432}\u{435}\u{442}", input: ["x": 1])))
+        #expect(hasChip(try prompt("", tool: "mcp__server__tool", input: ["name": "\u{3A9}\u{3BF}"])))
+        #expect(hasChip(try prompt("ls", cwd: "/Users/me/\u{43F}\u{440}\u{438}\u{432}\u{435}\u{442}")))
+        #expect(!hasChip(try prompt("", tool: "mcp__server__tool", input: ["name": "\u{D55C}\u{AE00}"])))
+        #expect(!hasChip(try prompt("ls", cwd: "/Users/me/\u{D55C}\u{AE00}")))
+        // Next to the flags the card already has, and after them.
+        let both = try prompt("curl \u{430}\u{440}", input: ["command": "curl \u{430}\u{440}", "dangerouslyDisableSandbox": true])
+        #expect(both.flags == [.init(text: "Sandbox off", warns: true), .init(text: Self.chipText, warns: true)])
+    }
+
+    // MARK: Always allow
+
+    private func suggestion(_ rules: [[String: Any]]) -> [String: Any] { ["type": "addRules", "behavior": "allow", "destination": "localSettings", "rules": rules] }
+
+    @Test func aRuleIsOfferedOnlyWhenEveryScalarOfItIsPrintableASCII() throws {
+        func rule(_ content: String) -> [String: Any] { ["toolName": "Bash", "ruleContent": content] }
+        #expect(PermissionPrompt.grant(from: suggestion([rule("npm test:*")]))?.rules == ["Bash(npm test:*)"])
+        #expect(PermissionPrompt.grant(from: suggestion([["toolName": "WebFetch"], ["toolName": "Read", "ruleContent": "/a/**"]]))?.rules == ["WebFetch", "Read(/a/**)"])
+        for content in ["curl \u{430}\u{440}\u{440}\u{4CF}\u{435}.\u{441}\u{43E}\u{43C}:*", "echo \u{C548}\u{B155}:*", "echo \u{30CE}\u{30FC}\u{30C8}:*", "echo r\u{E9}sum\u{E9}:*", "echo \u{2026}:*",
+                        "echo a\tb:*", "echo a\nb:*", "echo a\u{7F}b:*", "echo a\u{0}b:*", "echo \u{1F600}:*", "echo \u{FF52}:*", "ls \u{2010}la:*", "echo \u{A0}:*", "echo \u{200B}:*"] {
+            #expect(PermissionPrompt.grant(from: suggestion([rule(content)])) == nil, "\(name(content))")
+            #expect(PermissionPrompt.grant(from: suggestion([rule("npm test:*"), rule(content)])) == nil, "\(name(content))")
+        }
+        // In the name of a tool as well.
+        for tool in ["mcp__\u{D55C}\u{AE00}", "mcp__\u{43F}", "mcp__\u{30CE}", "mcp__a\u{E9}"] {
+            #expect(PermissionPrompt.grant(from: suggestion([["toolName": tool, "ruleContent": "x"]])) == nil, "\(name(tool))")
+            #expect(PermissionPrompt.grant(from: suggestion([["toolName": tool]])) == nil, "\(name(tool))")
+        }
+        // Through the parser: the prompt has no rule and the answer has no suggestion to echo.
+        for content in ["curl \u{430}\u{440}\u{440}\u{4CF}\u{435}.\u{441}\u{43E}\u{43C}:*", "echo \u{C548}\u{B155}:*", "echo \u{30CE}\u{30FC}\u{30C8}:*"] {
+            let body = PermissionTestServer.hookInput(suggestions: [suggestion([rule(content)])])
+            let parsed = try #require(PermissionPrompt.parse(body))
+            #expect(parsed.prompt.grant == nil && parsed.suggestion == nil, "\(name(content))")
+        }
+        let fine = PermissionTestServer.hookInput(suggestions: [suggestion([rule("npm test:*")])])
+        let parsed = try #require(PermissionPrompt.parse(fine))
+        #expect(parsed.prompt.grant?.rules == ["Bash(npm test:*)"] && parsed.suggestion != nil)
     }
 
     // MARK: Emoji controls
@@ -282,14 +436,14 @@ struct PermissionRunTests {
         #expect(escaped("\u{1F600}\u{FE0F}\u{200D}\u{1F32B}") == "\u{1F600}" + hex(0xFE0F, 0x200D) + "\u{1F32B}")
     }
 
-    /// A joiner is kept only before a picture that is shown: one that reads as ASCII, in a run that can pass for ASCII, is written out.
+    /// A joiner is kept only before a picture that is shown: a picture that stands for a dash, right before an ASCII letter, is written out, and the joiner with it.
     @Test func aJoinerBeforeAPictureThatIsWrittenOutIsWrittenOutToo() {
         let family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}"
         #expect(drawing(family).count == 1)
-        #expect(escaped(family + "\u{200D}\u{2795}x") == family + hex(0x200D, 0x2795) + "x")
+        #expect(escaped(family + "\u{200D}\u{2796}x") == family + hex(0x200D, 0x2796) + "x")
         #expect(escaped(family) == family && escaped("a" + family) == "a" + family)
         // Where the picture is shown, the whole is no picture of the font's: every joiner goes.
-        #expect(escaped(family + "\u{200D}\u{2795}") == "\u{1F468}" + hex(0x200D) + "\u{1F469}" + hex(0x200D) + "\u{1F467}" + hex(0x200D) + "\u{2795}")
+        #expect(escaped(family + "\u{200D}\u{2796}") == "\u{1F468}" + hex(0x200D) + "\u{1F469}" + hex(0x200D) + "\u{1F467}" + hex(0x200D) + "\u{2796}")
     }
 
     @Test func aKeycapKeepsItsSelectorAndNothingElseDoes() {

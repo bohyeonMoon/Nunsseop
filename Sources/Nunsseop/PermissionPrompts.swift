@@ -99,41 +99,82 @@ enum PermissionText {
     /// The pictures: assigned emoji of the Mahjong tiles to Symbols and Pictographs Extended-A, and of Miscellaneous Symbols
     /// and Dingbats. Text symbols such as ©, ™ and ↔ are not among them, and nothing joins to those.
     private static let pictures: [ClosedRange<UInt32>] = [0x2600...0x27BF, 0x1F000...0x1FAFF]
-    /// The scalars of `shown`, `pictures` and `marks` that read as ASCII. ICU's spoof checker maps each to its skeleton, the form
-    /// two strings share when they can be mistaken for each other: a scalar whose skeleton is ASCII, and so not itself, is one
-    /// (the hyphens U+2010 and U+2212, the Greek and Cyrillic letters drawn like Latin ones). The full width forms are too, and so
-    /// is anything whose compatibility form is ASCII, which the skeleton doesn't always say. They are judged by the run they
-    /// stand in, as a browser judges a host name, and written out when the run can be read as ASCII. Worked out once, on first
-    /// use. Nil when the checker can't be loaded: nothing past ASCII is shown then.
-    private static let lookalikes: Set<UInt32>? = {
+    /// What ICU says about the scalars of `shown`, `pictures` and `marks`, worked out once, on first use. Nil when ICU can't be
+    /// loaded: nothing past ASCII is shown then.
+    private struct Confusables {
+        /// Letters and digits that pass for ASCII ones in the middle of a word: every letter of Cyrillic and of Greek, the full
+        /// width Latin letters and digits, and the letters of Latin that ICU's spoof checker calls look-alikes (its skeleton, or
+        /// the compatibility form, is ASCII), but not the ligatures whose form is two letters or more (`œ`, `æ`, `ĳ`).
+        let foreign: Set<UInt32>
+        /// The letters and digits of Latin, Greek and Cyrillic past ASCII, and the full width ones.
+        let letters: Set<UInt32>
+        /// The one ASCII character of `-/\\.:@~|;&$<>=*?#` that a punctuation mark or symbol stands for: by the skeleton, by the
+        /// compatibility form, or by `drawnLike`.
+        let stands: [UInt32: UInt8]
+    }
+
+    /// ICU's codes of the scripts that are judged.
+    private static let latinScript: Int32 = 25, greekScript: Int32 = 14, cyrillicScript: Int32 = 8
+
+    /// Scalars the checker misses that draw like ASCII punctuation: the Korean and CJK strokes and the prolonged sound mark
+    /// like a hyphen or a vertical bar, the long dashes, and the ideographic full stops that IDNA maps to a period.
+    private static let drawnLike: [UInt32: UInt8] = [
+        0x3161: 0x2D, 0x4E00: 0x2D, 0x30FC: 0x2D, 0xFF70: 0x2D, 0x2014: 0x2D, 0x2015: 0x2D,
+        0x3163: 0x7C, 0x4E28: 0x7C, 0x3021: 0x7C, 0x2758: 0x7C,
+        0x3002: 0x2E, 0xFF61: 0x2E]
+
+    private static let confusables: Confusables? = {
         typealias Open = @convention(c) (UnsafeMutablePointer<Int32>) -> OpaquePointer?
         typealias Close = @convention(c) (OpaquePointer?) -> Void
         typealias Skeleton = @convention(c) (OpaquePointer?, UInt32, UnsafePointer<UInt8>?, Int32, UnsafeMutablePointer<UInt8>?, Int32,
                                              UnsafeMutablePointer<Int32>) -> Int32
+        typealias Script = @convention(c) (Int32, UnsafeMutablePointer<Int32>) -> Int32
         guard let library = dlopen("/usr/lib/libicucore.dylib", RTLD_NOW), let open = dlsym(library, "uspoof_open"),
-              let close = dlsym(library, "uspoof_close"), let skeleton = dlsym(library, "uspoof_getSkeletonUTF8") else { return nil }
+              let close = dlsym(library, "uspoof_close"), let skeleton = dlsym(library, "uspoof_getSkeletonUTF8"),
+              let script = dlsym(library, "uscript_getScript") else { return nil }
         var status: Int32 = 0
         guard let checker = unsafeBitCast(open, to: Open.self)(&status), status <= 0 else { return nil }
         defer { unsafeBitCast(close, to: Close.self)(checker) }
-        let skeletonOf = unsafeBitCast(skeleton, to: Skeleton.self)
-        var found = Set<UInt32>()
+        let skeletonOf = unsafeBitCast(skeleton, to: Skeleton.self), scriptOf = unsafeBitCast(script, to: Script.self)
+        let targets = Set("-/\\.:@~|;&$<>=*?#".unicodeScalars.map(\.value))
+        func isASCII(_ bytes: [UInt8]) -> Bool { !bytes.isEmpty && bytes.allSatisfy { $0 < 0x80 } }
+        var foreign = Set<UInt32>(), letters = Set<UInt32>(), stands = [UInt32: UInt8]()
         var out = [UInt8](repeating: 0, count: 64)
         for value in (shown + pictures + marks).lazy.flatMap({ $0 }) where value >= 0x80 {
             guard let scalar = Unicode.Scalar(value) else { continue }
             let text = Array(String(scalar).utf8)
             status = 0
             let length = skeletonOf(checker, 0, text, Int32(text.count), &out, Int32(out.count), &status)
+            let form = status > 0 ? [] : Array(out[0..<Int(length)])
             let compatible = Array(String(scalar).decomposedStringWithCompatibilityMapping.utf8)
-            if status > 0 || (length > 0 && out[0..<Int(length)].allSatisfy { $0 < 0x80 })
-                || (!compatible.isEmpty && compatible.allSatisfy { $0 < 0x80 }) { found.insert(value) }
+            switch scalar.properties.generalCategory {
+            case .uppercaseLetter, .lowercaseLetter, .titlecaseLetter, .modifierLetter, .otherLetter,
+                 .decimalNumber, .letterNumber, .otherNumber:
+                var code: Int32 = 0
+                let fullWidth = (0xFF10...0xFF19).contains(value) || (0xFF21...0xFF3A).contains(value) || (0xFF41...0xFF5A).contains(value)
+                let script = fullWidth ? latinScript : scriptOf(Int32(value), &code)
+                guard script == latinScript || script == greekScript || script == cyrillicScript else { break }
+                letters.insert(value)
+                if fullWidth || script != latinScript {
+                    foreign.insert(value)
+                } else {
+                    // A look-alike by the checker's skeleton or the compatibility form; a ligature of two letters or more is not one.
+                    let ascii = isASCII(form) ? form : compatible
+                    let spelled = ascii.filter { ($0 | 0x20) >= 0x61 && ($0 | 0x20) <= 0x7A }.count
+                    if status > 0 || (isASCII(ascii) && spelled < 2) { foreign.insert(value) }
+                }
+            default: break
+            }
+            if foreign.contains(value) { continue }
+            if let drawn = drawnLike[value] { stands[value] = drawn; continue }
+            for candidate in [form, compatible] where candidate.count == 1 && candidate != text && targets.contains(UInt32(candidate[0])) {
+                stands[value] = candidate[0]
+                break
+            }
         }
-        return found
+        return Confusables(foreign: foreign, letters: letters, stands: stands)
     }()
-    /// Scalars the checker misses that draw like ASCII punctuation: the Korean and CJK strokes and the prolonged sound mark
-    /// like a hyphen or a slash, the dashes and the middle dot, the ideographic full stops that IDNA maps to a period, and the
-    /// angle brackets that look like the ones round an escape. They count with `lookalikes` wherever a run is judged.
-    private static let drawnLikeASCII: Set<UInt32> = [
-        0x3161, 0x3163, 0x4E28, 0x4E00, 0x30FC, 0xFF70, 0x3021, 0x2758, 0x2014, 0x2015, 0xB7, 0x3002, 0xFF61, 0x3008, 0x3009]
+
     /// Whether the zero-width joiners in a sequence of pictures draw it as one picture in the card's font, by sequence. Asked of
     /// CoreText once each; the cache stops growing at a few thousand.
     private static let sequences = OSAllocatedUnfairLock(initialState: [String: Bool]())
@@ -147,19 +188,25 @@ enum PermissionText {
     /// into its unified one). The rest is put in form C, so a path macOS stored decomposed reads as it was typed.
     /// What is shown is ASCII, the space, and the scalars of `shown`; a tab is shown as `tab`, and a line break stays one
     /// when `multiline`. Anything else is written out as `⟨U+202E⟩`, and so are the angle brackets that mark one, so an
-    /// escape can't be faked. A scalar that reads as ASCII, of `lookalikes` or `drawnLikeASCII`, is judged by its run: the
-    /// longest stretch of the input made only of ASCII letters and digits, ASCII punctuation, and such scalars. A scalar that
-    /// is none of those ends it, and so does a space, a tab, a CR, an LF, a scalar that is written out, and a picture. Every
-    /// look-alike of a run is written out when the run has an ASCII letter or digit, or when an ASCII punctuation mark or a
-    /// look-alike that is punctuation or a symbol has a look-alike right before it and another right after, as in a host name
-    /// or a path made of them. Otherwise they are shown, as in a word of a language of its own. The runs are the input's, not
-    /// the escaped text's, which holds the letters and digits of every escape. What emoji are made of stays: the emoji
+    /// escape can't be faked. Of what reads as ASCII, only the certain cases are written out (the rest is shown, and
+    /// `hasLatinLookalike` tells the card to say so):
+    /// - A letter of `Confusables.foreign` in a letter run that holds an ASCII letter or digit. A letter run is the longest
+    ///   stretch of the input made of letters, digits and combining marks of any script and the ASCII `. - _ / : @ \ ~ ' "`.
+    /// - A hyphen-like scalar (`-`) right before an ASCII letter or digit (so between two as well); a full stop, colon or at sign
+    ///   look-alike between two letters or digits of ASCII, Latin, Cyrillic or Greek; a slash, backslash, bar or shell
+    ///   operator look-alike (`/ \ | ; & $ < > = * ? # ~`) beside an ASCII letter, digit or punctuation mark; `〈` right before
+    ///   an ASCII letter or digit and `〉` right after one, which pass for the brackets of an escape.
+    /// What emoji are made of stays: the emoji
     /// variation selector right after a picture that it changes (not one drawn in colour already), the text one, and one skin
     /// tone right after a picture that takes it, each only when CoreText draws the picture differently with it; the zero-width
     /// joiners of a sequence of pictures, up to `maxJoiners` in a row, that CoreText draws as one picture, and the colour
     /// selectors in it; regional indicators two by two; the keycap of a digit, `#` or `*`. A combining mark of `marks` stays
-    /// when it is the only one on a letter of `markBases`. CR LF counts as one break.
-    static func escape(_ text: String, multiline: Bool) -> String {
+    /// when it is the only one on a letter of `markBases`. CR LF counts as one break. When ICU can't be loaded, or with
+    /// `failClosed` (for a test), every scalar past ASCII is written out, those of emoji included.
+    /// Constraint, accepted: the colour selector that stays inside a sequence drawn as one glyph changes nothing a reader sees, so
+    /// two paths made of nothing but such emoji could differ by an invisible selector.
+    static func escape(_ text: String, multiline: Bool, failClosed: Bool = false) -> String {
+        let confusables = failClosed ? nil : Self.confusables
         var tokens: [Token] = []
         var run = String.UnicodeScalarView()
         func flush() {
@@ -176,7 +223,7 @@ enum PermissionText {
             }
         }
         flush()
-        hideLookalikes(&tokens)
+        if let confusables { hideConfusables(&tokens, confusables) }
 
         var result = String.UnicodeScalarView()
         // What was just shown, and what may follow it.
@@ -205,7 +252,7 @@ enum PermissionText {
             } else if scalar == "\t" {
                 result.append(contentsOf: tab.unicodeScalars)
                 reset()
-            } else if changes {
+            } else if changes || confusables == nil && scalar.value >= 0x80 {
                 appendEscape(scalar, to: &result)
                 reset()
             } else if scalar.value == 0xFE0E || scalar.value == 0xFE0F, let before = previous, !selected,
@@ -285,13 +332,11 @@ enum PermissionText {
             && !withheld.contains { $0.contains(scalar.value) }
     }
 
-    private static func isLookalike(_ scalar: Unicode.Scalar) -> Bool {
-        scalar.value >= 0x80 && (lookalikes?.contains(scalar.value) ?? true)
-    }
-
-    /// Whether any scalar of `text` reads as ASCII, whatever it stands beside: of `lookalikes` or `drawnLikeASCII`.
-    static func hasLookalike(_ text: String) -> Bool {
-        text.unicodeScalars.contains { isLookalike($0) || drawnLikeASCII.contains($0.value) }
+    /// Whether `text` holds a letter that passes for a Latin one: a Cyrillic or Greek letter, a full width Latin letter or digit,
+    /// or a Latin letter ICU's spoof checker calls a look-alike. Asked of what `escape` returned, so it is about what is shown.
+    static func hasLatinLookalike(_ text: String) -> Bool {
+        guard let confusables else { return false }
+        return text.unicodeScalars.contains { confusables.foreign.contains($0.value) }
     }
 
     /// A scalar of the input, in form C unless its own form C is another, and whether it is written out for reading as ASCII.
@@ -301,40 +346,59 @@ enum PermissionText {
         var hidden = false
     }
 
-    /// Marks the look-alikes that are written out, run by run; the rule is in `escape`. Without the checker every scalar past
-    /// ASCII is one.
-    private static func hideLookalikes(_ tokens: inout [Token]) {
-        func isAlphanumeric(_ scalar: Unicode.Scalar) -> Bool {
-            (0x30...0x39).contains(scalar.value) || (0x41...0x5A).contains(scalar.value) || (0x61...0x7A).contains(scalar.value)
+    private static func isASCIILetterOrDigit(_ scalar: Unicode.Scalar?) -> Bool {
+        guard let value = scalar?.value else { return false }
+        return (0x30...0x39).contains(value) || (0x41...0x5A).contains(value) || (0x61...0x7A).contains(value)
+    }
+
+    private static func isASCIIPunctuation(_ scalar: Unicode.Scalar?) -> Bool {
+        guard let value = scalar?.value else { return false }
+        return (0x21...0x2F).contains(value) || (0x3A...0x40).contains(value) || (0x5B...0x60).contains(value) || (0x7B...0x7E).contains(value)
+    }
+
+    /// Letters, digits and combining marks of any script, and the ASCII marks that join them in a name or a path.
+    private static func isLetterRun(_ token: Token) -> Bool {
+        guard !token.changes else { return false }
+        let scalar = token.scalar
+        if scalar.value < 0x80 { return isASCIILetterOrDigit(scalar) || ".-_/:@\\~'\"".unicodeScalars.contains(scalar) }
+        switch scalar.properties.generalCategory {
+        case .uppercaseLetter, .lowercaseLetter, .titlecaseLetter, .modifierLetter, .otherLetter,
+             .decimalNumber, .letterNumber, .otherNumber, .nonspacingMark, .spacingMark, .enclosingMark: return true
+        default: return false
         }
-        func like(_ scalar: Unicode.Scalar) -> Bool { isLookalike(scalar) || drawnLikeASCII.contains(scalar.value) }
-        func inRun(_ token: Token) -> Bool { !token.changes && ((0x21...0x7E).contains(token.scalar.value) || like(token.scalar)) }
-        func isPunctuationOrSymbol(_ scalar: Unicode.Scalar) -> Bool {
-            switch scalar.properties.generalCategory {
-            case .connectorPunctuation, .dashPunctuation, .openPunctuation, .closePunctuation, .initialPunctuation, .finalPunctuation,
-                 .otherPunctuation, .mathSymbol, .currencySymbol, .modifierSymbol, .otherSymbol: return true
-            default: return false
-            }
-        }
-        guard lookalikes != nil else {
-            for at in tokens.indices where tokens[at].scalar.value >= 0x80 { tokens[at].hidden = true }
-            return
+    }
+
+    /// Marks the scalars that are written out for reading as ASCII; the rules are in `escape`.
+    private static func hideConfusables(_ tokens: inout [Token], _ confusables: Confusables) {
+        func scalar(_ at: Int) -> Unicode.Scalar? { tokens.indices.contains(at) && !tokens[at].changes ? tokens[at].scalar : nil }
+        func isWordLetter(_ scalar: Unicode.Scalar?) -> Bool {
+            isASCIILetterOrDigit(scalar) || scalar.map { confusables.letters.contains($0.value) } == true
         }
         var start = 0
         while start < tokens.count {
-            guard inRun(tokens[start]) else { start += 1; continue }
+            guard isLetterRun(tokens[start]) else { start += 1; continue }
             var end = start
-            while end < tokens.count, inRun(tokens[end]) { end += 1 }
-            var hide = tokens[start..<end].contains { isAlphanumeric($0.scalar) }
-            if !hide {
-                // A punctuation mark or symbol between two look-alikes: the run is a dotted, slashed or joined name made of them.
-                for at in start..<end where at > start && at + 1 < end {
-                    let scalar = tokens[at].scalar
-                    if (scalar.value < 0x80 || isPunctuationOrSymbol(scalar)) && like(tokens[at - 1].scalar) && like(tokens[at + 1].scalar) { hide = true; break }
+            while end < tokens.count, isLetterRun(tokens[end]) { end += 1 }
+            if tokens[start..<end].contains(where: { isASCIILetterOrDigit($0.scalar) }) {
+                for at in start..<end where confusables.foreign.contains(tokens[at].scalar.value) { tokens[at].hidden = true }
+            }
+            start = end
+        }
+        for at in tokens.indices where !tokens[at].changes && tokens[at].scalar.value >= 0x80 {
+            let (before, after) = (scalar(at - 1), scalar(at + 1))
+            switch tokens[at].scalar.value {
+            case 0x3008: tokens[at].hidden = isASCIILetterOrDigit(after)
+            case 0x3009: tokens[at].hidden = isASCIILetterOrDigit(before)
+            case let value:
+                guard let ascii = confusables.stands[value] else { continue }
+                switch ascii {
+                // A flag, or a name with a dash drawn in it: a letter or digit right after. (Between two, it has one right after as well.)
+                case 0x2D: tokens[at].hidden = isASCIILetterOrDigit(after)
+                case 0x2E, 0x3A, 0x40: tokens[at].hidden = isWordLetter(before) && isWordLetter(after)
+                default:
+                    tokens[at].hidden = [before, after].contains { isASCIILetterOrDigit($0) || isASCIIPunctuation($0) }
                 }
             }
-            if hide { for at in start..<end where like(tokens[at].scalar) { tokens[at].hidden = true } }
-            start = end
         }
     }
 
@@ -547,15 +611,19 @@ struct PermissionPrompt: Identifiable, Equatable {
         let detail = PermissionText.escape(described.detail, multiline: true)
         let secondary = PermissionText.escape(described.secondary, multiline: true)
         let shownTitle = PermissionText.escape(described.title, multiline: false)
-        let shown = detail.unicodeScalars.count + secondary.unicodeScalars.count + described.flags.reduce(0) { $0 + $1.text.unicodeScalars.count }
+        let folder = PermissionText.clipped(PermissionText.escape(((json["cwd"] as? String).map { ($0 as NSString).lastPathComponent }) ?? "",
+                                                                  multiline: false), limit: 80)
+        // Letters that pass for Latin ones, shown anywhere on the card, whatever the tool: said, since they are not written out.
+        var flags = described.flags
+        if [shownTitle, folder, detail, secondary].contains(where: PermissionText.hasLatinLookalike) {
+            flags.append(Flag(text: String(localized: "Letters that look like Latin"), warns: true))
+        }
+        let shown = detail.unicodeScalars.count + secondary.unicodeScalars.count + flags.reduce(0) { $0 + $1.text.unicodeScalars.count }
         guard shown <= detailLimit, shownTitle.unicodeScalars.count <= titleLimit else { return nil }
         let suggestion = addRulesSuggestion(in: json["permission_suggestions"])
         let grant = suggestion.flatMap(grant(from:))
-        let folder = (json["cwd"] as? String).map { ($0 as NSString).lastPathComponent } ?? ""
-        let prompt = PermissionPrompt(id: UUID(), title: shownTitle, symbol: described.symbol, detail: detail, flags: described.flags,
-                                      secondary: secondary,
-                                      folder: PermissionText.clipped(PermissionText.escape(folder, multiline: false), limit: 80),
-                                      grant: grant)
+        let prompt = PermissionPrompt(id: UUID(), title: shownTitle, symbol: described.symbol, detail: detail, flags: flags,
+                                      secondary: secondary, folder: folder, grant: grant)
         return Parsed(prompt: prompt, suggestion: grant == nil ? nil : suggestion)
     }
 
@@ -669,9 +737,10 @@ struct PermissionPrompt: Identifiable, Equatable {
         }
     }
 
-    /// Every rule as Claude Code writes it, or nil when any part of the suggestion can't be shown as it is: a rule that
-    /// needs escaping or holds a scalar that reads as ASCII, wherever it stands, one that is missing or odd, a key nobody has
-    /// seen, too many rules, rules that take more rows than the card has for them, or a place that isn't known.
+    /// Every rule as Claude Code writes it, or nil when any part of the suggestion can't be shown as it is: a rule with a scalar
+    /// that isn't printable ASCII, wherever it stands (what is saved is what was approved, and nothing past ASCII is certain to
+    /// read as what it is), one that is missing or odd, a key nobody has seen, too many rules, rules that take more rows than
+    /// the card has for them, or a place that isn't known.
     static func grant(from suggestion: [String: Any]) -> Grant? {
         guard Set(suggestion.keys).isSubset(of: ["type", "behavior", "rules", "destination"]),
               let place = (suggestion["destination"] as? String).flatMap(Grant.Place.init(rawValue:)),
@@ -685,7 +754,7 @@ struct PermissionPrompt: Identifiable, Equatable {
                 guard let content = content as? String, !content.isEmpty else { return nil }
                 text += "(\(content))"
             }
-            guard PermissionText.escape(text, multiline: false) == text, !PermissionText.hasLookalike(text) else { return nil }
+            guard text.unicodeScalars.allSatisfy({ (0x20...0x7E).contains($0.value) }) else { return nil }
             rules.append(text)
         }
         let grant = Grant(rules: rules, place: place)

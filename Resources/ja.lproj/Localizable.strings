@@ -384,6 +384,7 @@
 "Scroll for the rest: 1 more line" = "続きはスクロール: あと 1 行";
 "Sandbox off" = "サンドボックスはオフ";
 "Runs in the background" = "バックグラウンドで実行";
+"Letters that look like Latin" = "ラテン文字に似た文字";
 "Always allow saves this %@" = "「常に許可」は、この規則を%@保存します";
 "in this project, just for you" = "このプロジェクトで、あなただけに";
 "in this project" = "このプロジェクトで";
