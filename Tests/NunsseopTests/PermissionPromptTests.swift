@@ -420,7 +420,7 @@ struct PermissionPromptParseTests {
     }
 
     /// The system's ICU, which knows every scalar's bidi class, asked about all of them.
-    @Test func everyScalarOfBidiClassRightToLeftOrArabicNumberIsWrittenOut() throws {
+    @Test(.tags(.exhaustive)) func exhaustiveEveryScalarOfBidiClassRightToLeftOrArabicNumberIsWrittenOut() throws {
         typealias CharDirection = @convention(c) (Int32) -> Int32
         let library = try #require(dlopen("/usr/lib/libicucore.dylib", RTLD_NOW))
         let direction = unsafeBitCast(try #require(dlsym(library, "u_charDirection")), to: CharDirection.self)

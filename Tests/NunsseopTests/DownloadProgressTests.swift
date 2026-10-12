@@ -55,7 +55,7 @@ struct DownloadProgressTests {
     }
 
     private static func wait(_ condition: @MainActor () -> Bool) async -> Bool {
-        let deadline = Date.now.addingTimeInterval(30)
+        let deadline = Date.now.addingTimeInterval(eventDeadline)
         while !condition() && Date.now < deadline {
             try? await Task.sleep(for: .milliseconds(50))
         }

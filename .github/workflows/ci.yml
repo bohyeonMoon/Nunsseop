@@ -13,7 +13,7 @@ jobs:
   build-and-test:
     # The sources use macOS 26 APIs behind #available, so they need the macOS 26 SDK (Xcode 26) to compile.
     runs-on: macos-26
-    timeout-minutes: 30
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@v4
       - name: Toolchain
@@ -22,11 +22,17 @@ jobs:
         run: |
           swift build 2>&1 | tee build.log
           if grep -q "warning:" build.log; then grep "warning:" build.log | sort -u; exit 1; fi
+      # Two passes that never overlap: the exhaustive sweeps (all of Unicode, thousands of glyphs) use every core of the
+      # runner, and the tests that wait for a real event with a deadline time out beside them.
+      # Each step takes about two minutes. scripts/test.sh ends a pass that hangs after ten minutes, with a sample of it; the timeout of
+      # the step, above two such passes, is only for the script itself hanging.
       - name: Test
-        run: swift test
+        timeout-minutes: 22
+        run: ./scripts/test.sh
       # A second run catches a test that passes only sometimes.
       - name: Test again
-        run: swift test
+        timeout-minutes: 22
+        run: ./scripts/test.sh
 
   bundle:
     runs-on: macos-26

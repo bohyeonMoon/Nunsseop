@@ -196,7 +196,7 @@ struct PermissionRunTests {
         var classes: [Character: Int] = [:]
     }
 
-    @Test func everyForeignLetterIsWrittenOutBesideASCIIAndGivesTheChipAlone() async throws {
+    @Test(.tags(.exhaustive)) func exhaustiveEveryForeignLetterIsWrittenOutBesideASCIIAndGivesTheChipAlone() async throws {
         let (lookalike, script) = (try asciiLookalikes(), try scriptNames())
         let shownScalars = await ShownScalars.pastASCII()
         // On a thread of its own (see `offPool`), which reports what failed and leaves the expectations to this task.
@@ -228,7 +228,7 @@ struct PermissionRunTests {
     }
 
     /// For every scalar `escape` shows by itself that stands for one of `- / \\ . : @ ~ | ; & $ < > = * ? #`: the rule of its class, in every neighbourhood.
-    @Test func everyPunctuationLookalikeFollowsTheRuleOfItsClass() async throws {
+    @Test(.tags(.exhaustive)) func exhaustiveEveryPunctuationLookalikeFollowsTheRuleOfItsClass() async throws {
         let (lookalike, script) = (try asciiLookalikes(), try scriptNames())
         let shownScalars = await ShownScalars.pastASCII()
         // On a thread of its own (see `offPool`), which reports what failed and leaves the expectations to this task.
@@ -311,7 +311,7 @@ struct PermissionRunTests {
 
     /// Every scalar of Unicode, alone and after what could carry it along (a letter, a picture that takes a tone or a selector, a digit for a keycap, a regional
     /// indicator, a joiner): nothing past ASCII is left in what comes out but the brackets of an escape and the tab's arrow.
-    @Test func withoutICUNothingPastASCIIIsLeftInWhatComesOut() async {
+    @Test(.tags(.exhaustive)) func exhaustiveWithoutICUNothingPastASCIIIsLeftInWhatComesOut() async {
         let contexts = ["", "a", "\u{1F44D}", "\u{2764}", "1\u{FE0F}", "\u{1F1E6}", "\u{1F600}\u{200D}"]
         let allowed: Set<UInt32> = [0x27E8, 0x27E9, 0x21E5]
         // On a thread of its own (see `offPool`): the first scalar left in is reported, and the sweep stops there.

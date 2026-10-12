@@ -373,7 +373,7 @@ struct NotifyServerListenTests {
         try await Task.sleep(for: .milliseconds(300))
         holder.release()
         var answer: String?
-        let deadline = Date.now.addingTimeInterval(30)
+        let deadline = Date.now.addingTimeInterval(eventDeadline)
         while answer == nil && Date.now < deadline {
             answer = ask(holder.port)
             if answer == nil { try await Task.sleep(for: .milliseconds(100)) }
@@ -387,7 +387,7 @@ struct NotifyServerListenTests {
         first.start()
         second.start()
         defer { first.stop(); second.stop() }
-        let deadline = Date.now.addingTimeInterval(30)
+        let deadline = Date.now.addingTimeInterval(eventDeadline)
         while (first.listeningPort == nil || second.listeningPort == nil) && Date.now < deadline {
             try await Task.sleep(for: .milliseconds(20))
         }
