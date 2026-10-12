@@ -96,6 +96,8 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
     func uninstall() throws { try Self.queue.sync { try uninstallNow() } }
 
     func installNow() throws {
+        // The hooks name this file; it has to be there before a tool runs one.
+        NotifyServer.syncAuthHeader()
         switch self {
         case .claudeCode, .gemini:
             let settings = try Self.loadJSON(at: configURL)
@@ -134,6 +136,32 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
     /// untouched, except for agent hooks of ours that a deleted notice hook or notify command left behind.
     static func updateConnected() {
         queue.async { updateConnectedNow() }
+    }
+
+    /// Whether a hook or script of an older version is in place that puts the token on curl's command line (see
+    /// `NotifyServer`): a hook of Nunsseop's in Claude Code's, Gemini CLI's or Codex's hooks file, or the script Codex's
+    /// notify command runs, or the one for terminal bells. Read only; the OpenCode plugin sends the token from inside
+    /// OpenCode, in no command line.
+    static var holdsLegacyTokenCommands: Bool {
+        for tool in [NotifyIntegration.claudeCode, .gemini] {
+            if let settings = try? loadJSON(at: tool.configURL), JSONHook.holdsLegacyToken(in: settings) { return true }
+        }
+        if let hooks = try? loadJSON(at: NotifyIntegration.codex.hooksURL), JSONHook.holdsLegacyToken(in: hooks) { return true }
+        if let config = try? String(contentsOf: NotifyIntegration.codex.configURL, encoding: .utf8), CodexNotify.isInstalled(in: config),
+           CodexNotify.isLegacy(script: try? String(contentsOf: CodexNotify.scriptURL, encoding: .utf8)) { return true }
+        return TerminalBell.isLegacy(script: try? String(contentsOf: TerminalBell.scriptURL, encoding: .utf8))
+    }
+
+    /// With local notifications off nothing else refreshes what is connected, and the old commands would go on showing
+    /// the token to every user; so they are replaced anyway, but only when there are any.
+    static func replaceLegacyTokenCommands() {
+        queue.async { replaceLegacyTokenCommandsNow() }
+    }
+
+    static func replaceLegacyTokenCommandsNow() {
+        guard holdsLegacyTokenCommands else { return }
+        TerminalBell.installIfPresent()
+        updateConnectedNow()
     }
 
     static func updateConnectedNow() {
@@ -263,6 +291,18 @@ enum JSONHook {
         hooks(in: group).contains { isOurs(hook: $0, event: event) }
     }
 
+    /// Whether a hook of Nunsseop's still sends the token itself (`Authorization: Bearer …` on curl's command line)
+    /// rather than the file with the header. Nothing of ours says "Bearer" any more.
+    static func holdsLegacyToken(in settings: [String: Any]) -> Bool {
+        (settings["hooks"] as? [String: Any] ?? [:]).contains { event, groups in
+            ((groups as? [Any]) ?? []).contains { group in
+                hooks(in: group).contains { hook in
+                    isOurs(hook: hook, event: event) && ((hook as? [String: Any])?["command"] as? String)?.contains("Bearer") == true
+                }
+            }
+        }
+    }
+
     /// Whether any of Nunsseop's hooks is there, notice or not; what Disconnect has to clear.
     static func holdsAny(in settings: [String: Any]) -> Bool {
         (settings["hooks"] as? [String: Any] ?? [:]).contains { event, groups in
@@ -360,19 +400,26 @@ enum CodexNotify {
         NotifyServer.tokenURL.deletingLastPathComponent().appendingPathComponent("codex-notify.sh")
     }
 
-    static let script = """
+    static let script = script(port: NotifyServer.port)
+
+    /// curl gets the file with the header, not the token, which would be in its command line for any user to read.
+    static func script(port: UInt16) -> String {
+        """
         #!/bin/sh
         # Added by Nunsseop. Codex passes its event JSON as the last argument. This shows the turn in the notch,
         # then runs the notify command that was set before Nunsseop, if any, with the same arguments.
         for payload; do :; done
-        token=$(cat "$HOME/Library/Application Support/Nunsseop/notify-token" 2>/dev/null)
         printf '%s' "$payload" | plutil -extract last-assistant-message raw -o - - 2>/dev/null \\
-            | curl -s -m 2 -X POST http://127.0.0.1:\(NotifyServer.port)/notify -H "Authorization: Bearer $token" \\
+            | curl -s -m 2 -X POST http://127.0.0.1:\(port)/notify \(NotifyServer.authHeaderOption) \\
                 -H 'X-Title: Codex' -H "X-App: $__CFBundleIdentifier" --data-binary @- >/dev/null 2>&1
         [ $# -gt 1 ] && exec "$@"
         exit 0
 
         """
+    }
+
+    /// A script of an older version, which read the token and gave it to curl on its command line.
+    static func isLegacy(script: String?) -> Bool { script?.contains("Bearer") == true }
 
     /// The root-level `notify = [...]` line: its index among the lines and its strings.
     /// Root-level keys come before the first `[table]` header.

@@ -173,8 +173,9 @@ Chacun a un interrupteur dans Réglages › Alertes (WezTerm a plutôt un bouton
 N’importe quel script peut aussi en envoyer une :
 
 ```sh
+# notify-auth contient l'en-tête Authorization, le jeton n'apparaît donc jamais dans la liste des processus.
 curl -X POST http://127.0.0.1:47750/notify \
-  -H "Authorization: Bearer $(cat ~/Library/Application\ Support/Nunsseop/notify-token)" \
+  -H @"$HOME/Library/Application Support/Nunsseop/notify-auth" \
   -d '{"title": "Build", "message": "Finished in 42 s"}'
 ```
 

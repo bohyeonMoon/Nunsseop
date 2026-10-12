@@ -173,8 +173,9 @@ Claude Code を手動で設定するには、**Claude Code フックのコマン
 スクリプトからも通知を送れます。
 
 ```sh
+# notify-auth には Authorization ヘッダーが入っているので、トークンがプロセス一覧に表示されません。
 curl -X POST http://127.0.0.1:47750/notify \
-  -H "Authorization: Bearer $(cat ~/Library/Application\ Support/Nunsseop/notify-token)" \
+  -H @"$HOME/Library/Application Support/Nunsseop/notify-auth" \
   -d '{"title": "Build", "message": "Finished in 42 s"}'
 ```
 

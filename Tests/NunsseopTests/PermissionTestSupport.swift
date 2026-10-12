@@ -141,18 +141,28 @@ func eventually(isolation: isolated (any Actor)? = #isolation, _ condition: () -
     }
 }
 
-/// A scratch home folder holding a notify token, removed when this goes away.
+/// A scratch home folder holding a notify token and a permission key, removed when this goes away.
 final class ScratchHome {
     let url: URL
     let tokenFile: URL
+    let permissionKeyFile: URL
 
-    init(token: String? = nil) throws {
+    /// - token: the notify token's text, nil for no file; the header file beside it is made from it, as the app makes it.
+    /// - permissionKey: the permission key's text, nil for no file.
+    init(token: String? = nil, permissionKey: String? = nil) throws {
         url = FileManager.default.temporaryDirectory.appendingPathComponent("nunsseop-test-\(UUID().uuidString.prefix(8))")
         tokenFile = url.appendingPathComponent("Library/Application Support/Nunsseop/notify-token")
+        permissionKeyFile = tokenFile.deletingLastPathComponent().appendingPathComponent("permission-key")
         try FileManager.default.createDirectory(at: tokenFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+        for (file, text) in [(tokenFile, token), (permissionKeyFile, permissionKey)] {
+            guard let text else { continue }
+            try Data(text.utf8).write(to: file)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+        }
         if let token {
-            try Data(token.utf8).write(to: tokenFile)
-            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: tokenFile.path)
+            let header = tokenFile.deletingLastPathComponent().appendingPathComponent("notify-auth")
+            try Data("Authorization: Bearer \(token)\n".utf8).write(to: header)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: header.path)
         }
     }
 
@@ -180,8 +190,11 @@ final class PermissionTestServer {
     let events: PromptEvents
     let port: UInt16
 
-    init(hold: Double = PermissionGate.holdSeconds) async throws {
-        let home = try ScratchHome()
+    /// - token: one already in the home, as an earlier run left it.
+    /// - seed: puts what an earlier version left in the home (tools' settings, say) before the server starts.
+    init(hold: Double = PermissionGate.holdSeconds, token: String? = nil, seed: (URL) throws -> Void = { _ in }) async throws {
+        let home = try ScratchHome(token: token)
+        try seed(home.url)
         let server = NotifyIntegration.$homeOverride.withValue(home.url) { NotifyServer(port: 0, permissionHold: hold) }
         let events = PromptEvents()
         server.permissions.onPrompt = { events.add($0) }
@@ -206,6 +219,7 @@ final class PermissionTestServer {
     deinit { server.stop() }
 
     var token: String { server.token }
+    var permissionKey: String { server.permissionKey }
 
     /// The hook as Claude Code runs it, aimed at this server.
     var hookCommand: String { NotifyServer.permissionHookCommand(port: port) }
@@ -213,7 +227,7 @@ final class PermissionTestServer {
     /// A request with a correct proof for `nonce`, unless told otherwise.
     func request(body: Data, nonce: String = PermissionTestServer.nonce(), proof: String? = nil, path: String = "/permission",
                  method: String = "POST") -> Data {
-        let proof = proof ?? PermissionWire.requestProof(token: token, nonce: nonce, body: body)
+        let proof = proof ?? PermissionWire.requestProof(key: permissionKey, nonce: nonce, body: body)
         let head = "\(method) \(path) HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Nonce: \(nonce)\r\nX-Proof: \(proof)\r\n"
             + "Content-Length: \(body.count)\r\n\r\n"
         return Data(head.utf8) + body

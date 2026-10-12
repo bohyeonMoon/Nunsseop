@@ -173,8 +173,9 @@ Jedes hat unter Einstellungen › Hinweise einen Schalter (bei WezTerm eine Scha
 Auch jedes Skript kann eine Mitteilung senden:
 
 ```sh
+# notify-auth enthält den Authorization-Header, damit das Token nie in der Prozessliste auftaucht.
 curl -X POST http://127.0.0.1:47750/notify \
-  -H "Authorization: Bearer $(cat ~/Library/Application\ Support/Nunsseop/notify-token)" \
+  -H @"$HOME/Library/Application Support/Nunsseop/notify-auth" \
   -d '{"title": "Build", "message": "Finished in 42 s"}'
 ```
 

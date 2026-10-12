@@ -8,9 +8,10 @@ enum PermissionAnswer: Equatable {
     case allow, deny, always
 }
 
-/// The messages between Claude Code's PermissionRequest hook and the server. The token never travels: each side proves
-/// it knows it with an HMAC-SHA256 keyed by the token, over a domain, the request's nonce and a SHA-256 of what is
-/// vouched for, so neither a request nor an answer can be forged or moved to another request.
+/// The messages between Claude Code's PermissionRequest hook and the server. The key never travels: each side proves it
+/// knows it with an HMAC-SHA256 keyed by the key, over a domain, the request's nonce and a SHA-256 of what is vouched for,
+/// so neither a request nor an answer can be forged or moved to another request. The key is the permission key, a secret
+/// of its own: the notify token, which every notice hook sends to whatever listens on the port, is not it and proves nothing here.
 enum PermissionWire {
     static let requestDomain = "nunsseop-permission-request"
     static let responseDomain = "nunsseop-permission-response"
@@ -20,21 +21,21 @@ enum PermissionWire {
         value.utf8.count == 32 && value.utf8.allSatisfy { ($0 >= 48 && $0 <= 57) || ($0 >= 97 && $0 <= 102) }
     }
 
-    static func mac(token: String, domain: String, nonce: String, payload: Data) -> String {
+    static func mac(key: String, domain: String, nonce: String, payload: Data) -> String {
         let digest = SHA256.hash(data: payload).map { String(format: "%02x", $0) }.joined()
         let message = Data("\(domain)\n\(nonce)\n\(digest)".utf8)
-        return HMAC<SHA256>.authenticationCode(for: message, using: SymmetricKey(data: Data(token.utf8)))
+        return HMAC<SHA256>.authenticationCode(for: message, using: SymmetricKey(data: Data(key.utf8)))
             .map { String(format: "%02x", $0) }.joined()
     }
 
     /// Sent as `X-Proof`, with the nonce as `X-Nonce`; the payload is the request body.
-    static func requestProof(token: String, nonce: String, body: Data) -> String {
-        mac(token: token, domain: requestDomain, nonce: nonce, payload: body)
+    static func requestProof(key: String, nonce: String, body: Data) -> String {
+        mac(key: key, domain: requestDomain, nonce: nonce, payload: body)
     }
 
     /// The answer's body is this, a space, and the decision the hook prints.
-    static func responseProof(token: String, nonce: String, decision: Data) -> String {
-        mac(token: token, domain: responseDomain, nonce: nonce, payload: decision)
+    static func responseProof(key: String, nonce: String, decision: Data) -> String {
+        mac(key: key, domain: responseDomain, nonce: nonce, payload: decision)
     }
 
     static let denyMessage = "Denied in Nunsseop"

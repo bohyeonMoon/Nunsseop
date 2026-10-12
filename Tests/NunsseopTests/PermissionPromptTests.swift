@@ -9,26 +9,26 @@ struct PermissionWireTests {
     }
 
     @Test func theProofIsAnHMACOverTheDomainTheNonceAndTheBodysDigest() {
-        let token = String(repeating: "ab", count: 32), nonce = String(repeating: "0f", count: 16)
+        let key = String(repeating: "ab", count: 32), nonce = String(repeating: "0f", count: 16)
         let body = Data("{\"tool_name\":\"Bash\"}".utf8)
         let digest = SHA256.hash(data: body).map { String(format: "%02x", $0) }.joined()
         let message = Data("nunsseop-permission-request\n\(nonce)\n\(digest)".utf8)
-        let expected = HMAC<SHA256>.authenticationCode(for: message, using: SymmetricKey(data: Data(token.utf8)))
+        let expected = HMAC<SHA256>.authenticationCode(for: message, using: SymmetricKey(data: Data(key.utf8)))
             .map { String(format: "%02x", $0) }.joined()
-        #expect(PermissionWire.requestProof(token: token, nonce: nonce, body: body) == expected)
+        #expect(PermissionWire.requestProof(key: key, nonce: nonce, body: body) == expected)
         #expect(expected.count == 64)
     }
 
     @Test func requestAndResponseProofsAreBoundToTheirDomainAndNonce() {
-        let token = String(repeating: "cd", count: 32), nonce = String(repeating: "1a", count: 16)
+        let key = String(repeating: "cd", count: 32), nonce = String(repeating: "1a", count: 16)
         let other = String(repeating: "2b", count: 16)
         let bytes = Data("same bytes".utf8)
-        let request = PermissionWire.requestProof(token: token, nonce: nonce, body: bytes)
-        let response = PermissionWire.responseProof(token: token, nonce: nonce, decision: bytes)
+        let request = PermissionWire.requestProof(key: key, nonce: nonce, body: bytes)
+        let response = PermissionWire.responseProof(key: key, nonce: nonce, decision: bytes)
         #expect(request != response)
-        #expect(response != PermissionWire.responseProof(token: token, nonce: other, decision: bytes))
-        #expect(response != PermissionWire.responseProof(token: token + "0", nonce: nonce, decision: bytes))
-        #expect(response != PermissionWire.responseProof(token: token, nonce: nonce, decision: bytes + [0x20]))
+        #expect(response != PermissionWire.responseProof(key: key, nonce: other, decision: bytes))
+        #expect(response != PermissionWire.responseProof(key: key + "0", nonce: nonce, decision: bytes))
+        #expect(response != PermissionWire.responseProof(key: key, nonce: nonce, decision: bytes + [0x20]))
     }
 
     @Test func aNonceIsSixteenBytesOfLowercaseHex() {

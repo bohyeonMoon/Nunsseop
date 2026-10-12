@@ -625,18 +625,25 @@ enum TerminalBell {
             [ "$(printf '%s\n' "$commands" | wc -l | tr -d ' ')" = 1 ] || commands=
             set -- tmux "$session" "$name" "$commands" "$window"
         fi
-        token=$(cat "$HOME/Library/Application Support/Nunsseop/notify-token" 2>/dev/null)
         app=$(printf '%s' "$1" | tr -cd '[:alnum:]._-' | cut -c1-40)
         agent=$(printf '%s' "$4" | tr -cd '[:alnum:]._-' | cut -c1-40)
         target=$(printf '%s' "$5" | tr -cd '[:alnum:]%@._-' | cut -c1-40)
         bundle=$(printf '%s' "$__CFBundleIdentifier" | tr -cd '[:alnum:].-' | cut -c1-80)
         if [ -n "$2" ] && [ -n "$3" ]; then where="$2 · $3"; else where="$2$3"; fi
         printf '%s' "$where" | curl -s -m 2 -X POST http://127.0.0.1:\(NotifyServer.port)/notify \\
-            -H "Authorization: Bearer $token" -H "X-Title: ${agent:-$app}" -H "X-Agent: $agent" \\
+            \(NotifyServer.authHeaderOption) -H "X-Title: ${agent:-$app}" -H "X-Agent: $agent" \\
             -H "X-App: $bundle" -H "X-Target: ${target:+$app:$target}" --data-binary @- >/dev/null 2>&1
         exit 0
 
         """
+
+    /// A script of an older version, which read the token and gave it to curl on its command line.
+    static func isLegacy(script: String?) -> Bool { script?.contains("Bearer") == true }
+
+    /// Replaces a script that is there, and adds none: with notifications off nothing asked for one.
+    static func installIfPresent(at url: URL = scriptURL) {
+        if FileManager.default.fileExists(atPath: url.path) { install(at: url) }
+    }
 
     /// Writes the current script, so one from an older version doesn't linger.
     static func install(at url: URL = scriptURL, script: String = script) {

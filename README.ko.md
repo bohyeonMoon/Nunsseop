@@ -173,8 +173,9 @@ Claude Code를 직접 설정하려면 **Claude Code 훅 명령 복사**를 누�
 어떤 스크립트든 같은 방식으로 보낼 수 있습니다.
 
 ```sh
+# notify-auth에 Authorization 헤더가 들어 있어서, 토큰이 프로세스 목록에 보이지 않습니다.
 curl -X POST http://127.0.0.1:47750/notify \
-  -H "Authorization: Bearer $(cat ~/Library/Application\ Support/Nunsseop/notify-token)" \
+  -H @"$HOME/Library/Application Support/Nunsseop/notify-auth" \
   -d '{"title": "빌드", "message": "42초 만에 끝났어요"}'
 ```
 

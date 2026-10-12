@@ -173,8 +173,9 @@ Each has a toggle under Settings › Alerts (WezTerm has a button that copies it
 Any script can send one too:
 
 ```sh
+# notify-auth holds the Authorization header, so the token never shows in the process list.
 curl -X POST http://127.0.0.1:47750/notify \
-  -H "Authorization: Bearer $(cat ~/Library/Application\ Support/Nunsseop/notify-token)" \
+  -H @"$HOME/Library/Application Support/Nunsseop/notify-auth" \
   -d '{"title": "Build", "message": "Finished in 42 s"}'
 ```
 

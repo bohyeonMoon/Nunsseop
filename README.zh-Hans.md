@@ -173,8 +173,9 @@ Nunsseop 在 `127.0.0.1:47750` 上监听来自 Mac 上各种工具的通知。�
 任何脚本也都可以发送通知：
 
 ```sh
+# notify-auth 里存的就是 Authorization 请求头，所以令牌不会出现在进程列表里。
 curl -X POST http://127.0.0.1:47750/notify \
-  -H "Authorization: Bearer $(cat ~/Library/Application\ Support/Nunsseop/notify-token)" \
+  -H @"$HOME/Library/Application Support/Nunsseop/notify-auth" \
   -d '{"title": "Build", "message": "Finished in 42 s"}'
 ```
 
