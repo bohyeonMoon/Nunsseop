@@ -381,6 +381,7 @@
 "Agents" = "에이전트";
 "Needs input" = "입력 필요";
 "Your turn" = "내 차례";
+"Idle" = "쉬는 중";
 "Plan" = "계획";
 "Auto-accept edits" = "편집 자동 수락";
 "Auto" = "자동";
@@ -388,6 +389,7 @@
 "Bypass permissions" = "권한 우회";
 "Full access" = "전체 액세스";
 "Connect Claude Code and Codex in Settings › Alerts to see their sessions here" = "설정 › 알림에서 Claude Code와 Codex를 연결하면 세션이 여기에 나타납니다";
+"No sessions used in the last 3 hours" = "최근 3시간 동안 쓴 세션이 없습니다";
 "The Agents tab lists their sessions with folder, model, context used and permission mode, read from the tools' own session files on this Mac." = "에이전트 탭에는 세션이 폴더, 모델, 사용한 컨텍스트, 권한 모드와 함께 표시됩니다. 값은 이 Mac에 있는 도구의 세션 파일에서 읽습니다.";
 
 /* Permission prompts */
