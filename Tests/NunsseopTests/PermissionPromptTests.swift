@@ -606,12 +606,13 @@ struct PermissionPromptParseTests {
     @Test func theLimitCountsScalarsNotCharacters() {
         // A letter with a mark is one character and two scalars.
         func command(letters: Int, plain: Int) -> String { String(repeating: "x\u{323}", count: letters) + String(repeating: "b", count: plain) }
-        // Not the first word of the command, which would raise the chip and count against the limit.
-        let exact = "echo " + command(letters: 100, plain: PermissionPrompt.detailLimit - 205)
-        #expect(exact.unicodeScalars.count == PermissionPrompt.detailLimit && exact.count == PermissionPrompt.detailLimit - 100)
-        #expect(parse("Bash", ["command": exact]) != nil)
-        let over = "echo " + command(letters: 100, plain: PermissionPrompt.detailLimit - 204)
-        #expect(over.unicodeScalars.count == PermissionPrompt.detailLimit + 1 && over.count < PermissionPrompt.detailLimit)
+        // The shown mark raises the chip, which counts against the limit with the detail.
+        let chip = "Unusual characters".unicodeScalars.count, limit = PermissionPrompt.detailLimit - chip
+        let exact = "echo " + command(letters: 100, plain: limit - 205)
+        #expect(exact.unicodeScalars.count == limit && exact.count == limit - 100)
+        #expect(parse("Bash", ["command": exact])?.prompt.flags.last?.text == "Unusual characters")
+        let over = "echo " + command(letters: 100, plain: limit - 204)
+        #expect(over.unicodeScalars.count == limit + 1 && over.count < limit)
         #expect(parse("Bash", ["command": over]) == nil)
         // A second mark is written out, eight scalars, and counts as such.
         let escaped = "x\u{323}\u{323}" + String(repeating: "b", count: PermissionPrompt.detailLimit - 3)

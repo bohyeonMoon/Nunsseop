@@ -5,22 +5,11 @@ import Testing
 @testable import Nunsseop
 
 /// What reads as ASCII is written out only in the certain cases: a letter of another script in a run with an ASCII letter or digit, and a
-/// punctuation look-alike where it can change what a command does. Anything else is shown, and the card says so with a chip.
+/// punctuation look-alike where it can change what a command does. Anything else is shown, and `PermissionChipTests` has the card say so with a chip.
 struct PermissionRunTests {
     private func hex(_ values: UInt32...) -> String { values.map { String(format: "⟨U+%04X⟩", $0) }.joined() }
     private func escaped(_ text: String) -> String { PermissionText.escape(text, multiline: true) }
     private func name(_ text: String) -> String { text.unicodeScalars.map { "U+" + String($0.value, radix: 16, uppercase: true) }.joined(separator: " ") }
-    private static let chipText = "Letters that look like Latin"
-
-    /// The prompt the card would show, through the real parser.
-    private func prompt(_ command: String, tool: String = "Bash", input: [String: Any]? = nil, cwd: String = "/Users/me/proj") throws -> PermissionPrompt {
-        let body = PermissionTestServer.hookInput(tool: tool, input: input ?? ["command": command], cwd: cwd)
-        return try #require(PermissionPrompt.parse(body)).prompt
-    }
-
-    private func hasChip(_ prompt: PermissionPrompt) -> Bool {
-        prompt.flags.contains { $0.text == Self.chipText && $0.warns }
-    }
 
     private func check(_ cases: [(String, String)]) {
         for (text, expected) in cases { #expect(escaped(text) == expected, "\(name(text))") }
@@ -87,6 +76,28 @@ struct PermissionRunTests {
         // Not before an ASCII letter or digit: shown.
         checkShown(["Python\u{4E00}\u{952E}", "TypeScript\u{30FC}", "\u{6709}\u{4E00}\u{4E2A}bug", "A \u{2014} B", "\u{3161}\u{3161}", "x \u{2212} 1", "ls \u{2010} -l", "foo\u{2010}",
                     "\u{30CE}\u{30FC}\u{30C8}", "\u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{3067}npm", "\u{4E00}\u{4E8C}\u{4E09}", "\u{2014}", "\u{2010}\u{2010}", "\u{4E00}\u{4E2D}"])
+    }
+
+    /// The stroke and the prolonged sound mark of CJK text are text after a letter of it; the en dash and the full width tilde are a range between digits.
+    @Test func aDashOfCJKTextAfterALetterOfItAndARangeBetweenDigitsAreShown() {
+        checkShown(["\u{30E6}\u{30FC}\u{30B6}\u{30FC}ID", "\u{30B5}\u{30FC}\u{30D0}\u{30FC}URL", "\u{7EDF}\u{4E00}API", "\u{552F}\u{4E00}ID", "\u{D55C}\u{3161}ID", "\u{FF76}\u{FF70}x",
+                    "\u{30A2}\u{30FC}\u{30C8}2", "echo \u{30E6}\u{30FC}\u{30B6}\u{30FC}ID", "10\u{2013}20", "pages 1\u{2013}9", "1\u{FF5E}3\u{65E5}", "9\u{FF5E}0"])
+        check([
+            // No letter of CJK text right before it: the start, a space, ASCII, another stroke, a dash of another kind, a digit, a bracket.
+            ("\u{30FC}rf", hex(0x30FC) + "rf"), ("ls \u{3161}la", "ls " + hex(0x3161) + "la"), ("rm \u{2010}rf", "rm " + hex(0x2010) + "rf"), ("r\u{4E00}f", "r" + hex(0x4E00) + "f"),
+            ("1\u{4E00}x", "1" + hex(0x4E00) + "x"), ("\u{30E6}\u{30FC}\u{30FC}rf", "\u{30E6}\u{30FC}" + hex(0x30FC) + "rf"), ("\u{4E00}\u{4E00}x", "\u{4E00}" + hex(0x4E00) + "x"),
+            ("\u{FF08}\u{30FC}x", "\u{FF08}" + hex(0x30FC) + "x"), ("\u{3002}\u{4E00}x", "\u{3002}" + hex(0x4E00) + "x"),
+            // Other dashes after CJK text, and the en dash and the tilde where a digit is missing on a side.
+            ("\u{30E6}\u{2014}ID", "\u{30E6}" + hex(0x2014) + "ID"), ("\u{30E6}\u{2013}ID", "\u{30E6}" + hex(0x2013) + "ID"), ("a\u{2013}1", "a" + hex(0x2013) + "1"),
+            ("1\u{2013}a", "1" + hex(0x2013) + "a"), ("ls \u{2013}l", "ls " + hex(0x2013) + "l"), ("1\u{2014}2", "1" + hex(0x2014) + "2"), ("1\u{2212}2", "1" + hex(0x2212) + "2"),
+            ("a\u{FF5E}1", "a" + hex(0xFF5E) + "1"), ("1\u{FF5E}a", "1" + hex(0xFF5E) + "a"), ("\u{FF5E}/x", hex(0xFF5E) + "/x"),
+        ])
+    }
+
+    /// The multiplication sign is text beside digits and in prose, and a letter of a name between two ASCII letters.
+    @Test func theMultiplicationSignBetweenTwoASCIILettersIsWrittenOut() {
+        check([("e\u{D7}ample.com", "e" + hex(0xD7) + "ample.com"), ("https://e\u{D7}ample.com", "https://e" + hex(0xD7) + "ample.com"), ("a\u{D7}b", "a" + hex(0xD7) + "b")])
+        checkShown(["3\u{D7}4", "3.5\u{D7}2", "a \u{D7} b", "a\u{D7}", "\u{D7}b", "a\u{D7}1", "1\u{D7}b", "\u{D7}", "\u{C5}\u{D7}b", "\u{7F16}\u{D7}b", "4K \u{D7} 3"])
     }
 
     @Test func aDotColonOrAtLookalikeBetweenTwoLettersOrDigitsIsWrittenOut() {
@@ -184,7 +195,6 @@ struct PermissionRunTests {
             guard let scalar = Unicode.Scalar(value), escaped(String(scalar)) == String(scalar) else { continue }
             let text = String(scalar), label = "U+" + String(value, radix: 16, uppercase: true)
             let isForeign = kind(of: scalar, lookalike: lookalike, script: script) == .foreignLetter
-            #expect(PermissionText.hasLatinLookalike(text) == isForeign, "\(label)")
             if isForeign {
                 foreign += 1
                 byScript[script(scalar), default: 0] += 1
@@ -242,12 +252,12 @@ struct PermissionRunTests {
     }
 
     /// Ordinary text the certain cases write out anyway, pinned so a change to the rules shows. Each is a consequence of a rule, not a goal: a Latin letter ICU
-    /// takes for an ASCII one among ASCII letters, a Cyrillic letter after a digit and a hyphen, a dash between ASCII letters or digits, a katakana that
+    /// takes for an ASCII one among ASCII letters, a Cyrillic letter after a digit and a hyphen, a dash between ASCII letters, a katakana that
     /// reads as a slash after a slash.
     @Test func theOrdinaryTextTheRulesDoWriteOutIsPinned() {
         check([
             ("k\u{131}sa", "k" + hex(0x131) + "sa"), ("1\u{BA} piso, N\u{BA} 5, 2\u{AA}", "1" + hex(0xBA) + " piso, N" + hex(0xBA) + " 5, 2" + hex(0xAA)), ("\u{FE}etta", hex(0xFE) + "etta"),
-            ("10\u{2013}20", "10" + hex(0x2013) + "20"), ("end\u{2014}start", "end" + hex(0x2014) + "start"), ("10-\u{445}", "10-" + hex(0x445)),
+            ("end\u{2014}start", "end" + hex(0x2014) + "start"), ("10-\u{445}", "10-" + hex(0x445)),
             ("~/\u{30CE}\u{30FC}\u{30C8}", "~/" + hex(0x30CE) + "\u{30FC}\u{30C8}"),
             // A letter of no script the rules judge that ICU takes for an ASCII one is written out all the same; apart, it is shown.
             ("\u{2113}s", hex(0x2113) + "s"), ("x \u{211D}", "x \u{211D}"),
@@ -298,44 +308,52 @@ struct PermissionRunTests {
         #expect(checked > 500_000, "\(checked)")
     }
 
-    // MARK: The chip
+    // MARK: Look-alikes of letters that are no letters of Latin, Greek or Cyrillic
 
-    @Test func theChipIsOnTheCardWhenAScalarThatLooksLatinIsShown() throws {
-        let shown = ["curl \u{430}\u{440}\u{440}\u{4CF}\u{435}.\u{441}\u{43E}\u{43C}", "~/\u{455}\u{441}\u{43E}\u{440}\u{435}", "ls -\u{430}", "git push origin \u{441}\u{43E}\u{440}\u{443}",
-                     "curl \"\u{430}\u{440}\u{440}\u{4CF}\u{435}\".\u{441}\u{43E}\u{43C}", "\u{430}\u{440}\u{440}\u{4CF}\u{435}\\.\u{441}\u{43E}\u{43C}", "привет мир", "Καλημέρα",
-                     "\u{FF52}\u{FF4D}", "echo \u{131}", "А.С. Пушкин", "Α.Ε.", "echo \u{FF21}", "echo \u{BA}", "echo \u{17F}"]
-        for command in shown {
-            let prompt = try prompt(command)
-            #expect(hasChip(prompt), "\(name(command))")
-            #expect(prompt.flags.last == .init(text: Self.chipText, warns: true) && prompt.scrollText.hasPrefix(Self.chipText + "\n"), "\(name(command))")
+    @Test func aLookalikeOfALetterIsWrittenOutInARunWithASCII() {
+        let cases: [(String, String)] = [
+            ("ℓs -la", hex(0x2113) + "s -la"), ("ℯcho hi", hex(0x212F) + "cho hi"), ("node -e \"ℯval('x')\"", "node -e \"" + hex(0x212F) + "val('x')\""),
+            ("ls ∣s", "ls " + hex(0x2223) + "s"), ("a∨b", "a" + hex(0x2228) + "b"), ("x╳y", "x" + hex(0x2573) + "y"), ("a⊤b", "a" + hex(0x22A4) + "b"),
+            ("a\u{2229}b ℝ", "a\u{2229}b ℝ"), ("cat ./〇a", "cat ./" + hex(0x3007) + "a"), ("ℂ1", hex(0x2102) + "1"), ("ρℓ", "\u{3C1}ℓ"),
+        ]
+        for (text, expected) in cases { #expect(escaped(text) == expected, "\(name(text))") }
+    }
+
+    /// Every one of the lead's list is a look-alike: written out beside ASCII, shown apart from it.
+    @Test func theLetterlikeAndMathScalarsAreWrittenOutBesideASCII() {
+        for scalar in "ℓℯℊℎℐℑℒℂℍℝℕℙℚℤⅇⅈⅉ∣∨⋁∪⋃⊤⋿╳〇".unicodeScalars {
+            let text = String(scalar)
+            #expect(escaped("a" + text + "b") == "a" + hex(scalar.value) + "b" && escaped(text + "a") == hex(scalar.value) + "a", "\(name(text))")
+            #expect(escaped(text) == text && escaped("x " + text) == "x " + text, "\(name(text))")
         }
     }
 
-    @Test func theChipIsNotOnTheCardWhenNothingThatLooksLatinIsShown() throws {
-        let quiet = ["echo \u{C548}\u{B155}\u{D558}\u{C138}\u{C694}", "\u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{3067}npm\u{3092}\u{5B9F}\u{884C}", "\u{8BF7}\u{8FD0}\u{884C}npm install\u{547D}\u{4EE4}\u{FF0C}\u{7136}\u{540E}\u{5B8C}\u{6210}\u{3002}",
-                     "C\u{2019}est l\u{2019}\u{E9}t\u{E9}, \u{153}uvre, m\u{B2} \u{E7}a marche\u{2026}", "echo \"Tiếng Việt Ứng dụng\"", "\u{201C}hello\u{201D} Don\u{2019}t", "echo 😀 ❤️‍🔥 👍🏽", "npm test",
-                     "echo \u{D55C}\u{AE00}\u{3131}", "rm \u{2010}rf /", "\u{43F}pm install", "g\u{131}t status", "\u{FF52}m", "echo a\u{FF0F}b", "\u{3042}\u{30A2}\u{4E2D}\u{FF01}"]
-        for command in quiet {
-            #expect(!hasChip(try prompt(command)), "\(name(command))")
-        }
-        // A letter that was written out is not shown, so there is nothing to say.
-        #expect(try prompt("g\u{131}t").detail == "g" + hex(0x131) + "t")
+    /// Signs whose form is a letter or digit but that are ordinary text: the superscripts of units and notes, and what is two letters, the trademark and
+    /// service mark signs and the infinity sign. (The multiplication sign is written out only between two ASCII letters, in its own test.)
+    @Test func theSignsOfOrdinaryTextAreShownBesideASCII() {
+        for text in ["²", "³", "¹", "™", "℠", "∞", "№", "‖", "∥", "₨", "½"] { #expect(escaped("a" + text + "b") == "a" + text + "b", "\(name(text))") }
+        checkShown(["echo 3\u{D7}4 m² cm³ note¹ Acme™ x∞", "echo \"Acme™ 12.5m² 3.5\u{D7}2\""])
     }
 
-    /// Wherever the card shows text: the detail, the rest of the listing, the title of a tool nobody has heard of, the folder, whatever the tool.
-    @Test func theChipIsForWhateverTheCardShowsAndWhateverTheTool() throws {
-        #expect(hasChip(try prompt("", tool: "Read", input: ["file_path": "\u{43F}\u{440}\u{438}\u{432}\u{435}\u{442}.\u{442}\u{445}\u{442}"])))
-        #expect(hasChip(try prompt("", tool: "WebFetch", input: ["url": "\u{430}\u{440}\u{440}\u{4CF}\u{435}.\u{441}\u{43E}\u{43C}"])))
-        #expect(hasChip(try prompt("", tool: "Write", input: ["file_path": "/tmp/a", "content": "\u{43F}\u{440}\u{438}\u{432}\u{435}\u{442}"])))
-        #expect(hasChip(try prompt("ls", input: ["command": "ls", "description": "\u{43F}\u{440}\u{438}\u{432}\u{435}\u{442}"])))
-        #expect(hasChip(try prompt("", tool: "\u{43F}\u{440}\u{438}\u{432}\u{435}\u{442}", input: ["x": 1])))
-        #expect(hasChip(try prompt("", tool: "mcp__server__tool", input: ["name": "\u{3A9}\u{3BF}"])))
-        #expect(hasChip(try prompt("ls", cwd: "/Users/me/\u{43F}\u{440}\u{438}\u{432}\u{435}\u{442}")))
-        #expect(!hasChip(try prompt("", tool: "mcp__server__tool", input: ["name": "\u{D55C}\u{AE00}"])))
-        #expect(!hasChip(try prompt("ls", cwd: "/Users/me/\u{D55C}\u{AE00}")))
-        // Next to the flags the card already has, and after them.
-        let both = try prompt("curl \u{430}\u{440}", input: ["command": "curl \u{430}\u{440}", "dangerouslyDisableSandbox": true])
-        #expect(both.flags == [.init(text: "Sandbox off", warns: true), .init(text: Self.chipText, warns: true)])
+    @Test func hanZeroIsALookalikeExceptBesideAnIdeograph() {
+        checkShown(["二〇二四年", "2024年二〇二四年", "〇〇", "〇一", "平成〇年", "ls 二〇", "echo 二〇二四年", "echo 2024年二〇二四年"])
+        #expect(escaped("a〇") == "a" + hex(0x3007) && escaped("a〇二") == "a〇二" && escaped("〇b") == hex(0x3007) + "b")
+    }
+
+    // MARK: Full width digits
+
+    @Test func aFullWidthDigitIsWrittenOutOnlyBesideAnASCIILetter() {
+        let (digit, wide) = ("\u{FF11}", hex(0xFF11))
+        // Shown where the run holds no ASCII letter.
+        checkShown(["第" + digit + "回の資料を ls する", "（" + digit + "）", digit, digit + "5", "5" + digit, "1" + digit + "3", "~/" + digit, "第" + digit + "回2024", "x " + digit + " y",
+                    "第１回の資料を ls する", "echo １２３ 4５6", "ls ~/第１回.5"])
+        // Written out beside one.
+        for (text, expected) in [("file" + digit, "file" + wide), (digit + "a", wide + "a"), ("a" + digit + "5", "a" + wide + "5"), ("第" + digit + "回.txt", "第" + wide + "回.txt"),
+                                 ("~/" + digit + "x", "~/" + wide + "x"), ("x." + digit, "x." + wide)] {
+            #expect(escaped(text) == expected, "\(name(text))")
+        }
+        // Full width letters keep to the rule of letters: written out in a run with ASCII, shown apart from it.
+        #expect(escaped("ｒm") == hex(0xFF52) + "m" && escaped("ｒｍ") == "ｒｍ" && escaped("ＡＢＣ商事の請求書.pdf") == hex(0xFF21, 0xFF22, 0xFF23) + "商事の請求書.pdf")
     }
 
     // MARK: Always allow

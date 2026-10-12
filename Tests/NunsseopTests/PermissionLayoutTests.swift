@@ -605,17 +605,17 @@ struct PermissionLayoutTests {
         func colour(_ line: String) -> Color?? { colours[PermissionText.isolated(line)] }
         #expect(colour("Sandbox off") == .some(.orange))
         #expect(colour("Runs in the background") != .some(.orange) && colour("curl x") != .some(.orange))
-        // The chip for letters that look like Latin is a warning like it.
-        let chipped = PermissionDetail(prompt: self.prompt("curl x", flags: [.init(text: "Letters that look like Latin", warns: true)]), visible: 40, planned: 40).styled
+        // The chip for unusual characters is a warning like it.
+        let chipped = PermissionDetail(prompt: self.prompt("curl x", flags: [.init(text: "Unusual characters", warns: true)]), visible: 40, planned: 40).styled
         var chipColours: [String: Color?] = [:]
         for run in chipped.runs { chipColours[String(chipped[run.range].characters)] = run.foregroundColor }
-        #expect(chipColours[PermissionText.isolated("Letters that look like Latin")] == .some(.some(.orange)))
+        #expect(chipColours[PermissionText.isolated("Unusual characters")] == .some(.some(.orange)))
         #expect(colour("tool: " + longName) != .some(.orange))
         // The description is quieter than the command, like every other field after it.
         #expect(colour("description: y") == .some(.white.opacity(0.6)) && colour("curl x") == .some(.white.opacity(0.85)))
     }
 
-    // MARK: The chip for letters that look like Latin
+    // MARK: The chip for unusual characters
 
     /// The sentence of every language the app is localized into, read from the files the app ships.
     private var chipTexts: [(language: String, text: String)] {
@@ -624,7 +624,7 @@ struct PermissionLayoutTests {
         return folders.compactMap { folder in
             guard let table = NSDictionary(contentsOfFile: resources.appendingPathComponent(folder).appendingPathComponent("Localizable.strings").path),
                   table["Sandbox off"] != nil else { return nil }
-            return (folder, table["Letters that look like Latin"] as? String ?? "")
+            return (folder, table["Unusual characters"] as? String ?? "")
         }
     }
 
@@ -632,16 +632,16 @@ struct PermissionLayoutTests {
         let texts = chipTexts
         #expect(Set(texts.map(\.language)) == ["de.lproj", "es.lproj", "fr.lproj", "ja.lproj", "ko.lproj", "zh-Hans.lproj"], "\(texts.map(\.language))")
         for (language, text) in texts {
-            #expect(!text.isEmpty && text != "Letters that look like Latin", "\(language): \(text)")
+            #expect(!text.isEmpty && text != "Unusual characters", "\(language): \(text)")
         }
-        #expect(texts.first { $0.language == "ko.lproj" }?.text == "라틴 문자와 닮은 글자")
+        #expect(texts.first { $0.language == "ko.lproj" }?.text == "낯선 문자")
     }
 
     /// In every language, the chip takes one row at the narrowest card and panel, and the body is as tall as it was sized for with the chip among the flags.
     @Test func theChipFitsTheMeasuredLayoutInEveryLanguage() {
         let gate = PermissionClickGate()
         let flags = { (text: String) in [PermissionPrompt.Flag(text: "Sandbox off", warns: true), .init(text: "Runs in the background", warns: false), .init(text: text, warns: true)] }
-        for (language, text) in chipTexts + [("en", "Letters that look like Latin")] {
+        for (language, text) in chipTexts + [("en", "Unusual characters")] {
             for place in [PermissionLayout.Place.card, .panel] {
                 let isolated = PermissionText.isolated(text)
                 let measured = PermissionLayout.height(isolated, font: PermissionLayout.codeFont, width: place.scrollWidth)
@@ -660,7 +660,7 @@ struct PermissionLayoutTests {
             #expect(abs(fitting(panel, width: PermissionLayout.Place.panel.width).height - PermissionPanel.height(for: prompt)) <= 1, "\(language) panel")
         }
         // The chip makes the prompt taller by the row it takes, and nothing else.
-        let plain = prompt("curl x"), chipped = prompt("curl x", flags: [.init(text: "Letters that look like Latin", warns: true)])
+        let plain = prompt("curl x"), chipped = prompt("curl x", flags: [.init(text: "Unusual characters", warns: true)])
         #expect(chipped.card.scroll - plain.card.scroll == PermissionLayout.rowHeight && chipped.panel.scroll - plain.panel.scroll == PermissionLayout.rowHeight)
     }
 }
