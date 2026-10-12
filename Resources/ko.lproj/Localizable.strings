@@ -390,7 +390,7 @@
 "Full access" = "전체 액세스";
 "Connect Claude Code and Codex in Settings › Alerts to see their sessions here" = "설정 › 알림에서 Claude Code와 Codex를 연결하면 세션이 여기에 나타납니다";
 "No sessions used in the last 3 hours" = "최근 3시간 동안 쓴 세션이 없습니다";
-"The Agents tab lists their sessions with folder, model, context used and permission mode, read from the tools' own session files on this Mac." = "에이전트 탭에는 세션이 폴더, 모델, 사용한 컨텍스트, 권한 모드와 함께 표시됩니다. 값은 이 Mac에 있는 도구의 세션 파일에서 읽습니다.";
+"The Agents tab lists their sessions and recent conversations with name, folder, model, context used, permission mode and last prompt, read from the tools' own session files on this Mac." = "에이전트 탭은 이 Mac에 있는 도구들의 세션 파일에서 이름, 폴더, 모델, 사용한 문맥, 권한 모드, 마지막 프롬프트를 읽어 세션과 최근 대화를 보여 줍니다.";
 
 /* Permission prompts */
 "Answer permission prompts and questions in the notch" = "권한 요청과 질문에 노치에서 답하기";
