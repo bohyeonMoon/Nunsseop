@@ -342,21 +342,59 @@ enum JSONHook {
         return try patching(table, in: settings) ?? adding(table, to: removing(from: settings))
     }
 
-    /// The settings with the hooks of `table` that are missing added after the rest, or with the permission hooks taken out when
-    /// `table` has none, and every other group where it was; nil when more than that has to change. Codex keys its trust of a hook
-    /// by the position of its group, so a hook that is already there must not move.
+    /// The settings with the hooks of `table` that are missing added after the rest, an outdated agent command replaced where it
+    /// stands, or with the permission hooks taken out when `table` has none, and every other group where it was; nil when more than
+    /// that has to change. Codex keys its trust of a hook by the position of its group, so a hook that is already there must not move.
     private static func patching(_ table: Table, in settings: [String: Any]) throws -> [String: Any]? {
         let have = counted(entries(in: settings)), keys = entries(of: table), wanted = counted(keys)
         var seen: [Entry: Int] = [:]
-        let missing = zip(table, keys).filter { _, key in
+        var missing = zip(table, keys).filter { _, key in
             seen[key, default: 0] += 1
             return seen[key]! > (have[key] ?? 0)
-        }.map(\.0)
-        let surplus = have.filter { $0.value > (wanted[$0.key] ?? 0) }
-        if surplus.isEmpty { return try adding(missing, to: settings) }
+        }
+        var surplus: [Entry: Int] = [:]
+        for (key, count) in have where count > (wanted[key] ?? 0) { surplus[key] = count - (wanted[key] ?? 0) }
+        var settings = settings
+        // An agent command that has changed is rewritten in its own hook, under the same event and matcher.
+        for (old, count) in surplus where isAgent(command: old.command) {
+            for _ in 0..<count {
+                guard let index = missing.firstIndex(where: { _, key in
+                    key.event == old.event && key.matcher == old.matcher && isAgent(command: key.command)
+                }) else { break }
+                settings = replacing(old, with: missing[index].0.command, in: settings)
+                missing.remove(at: index)
+                surplus[old] = surplus[old]! - 1
+            }
+        }
+        surplus = surplus.filter { $0.value > 0 }
+        if surplus.isEmpty { return try adding(missing.map(\.0), to: settings) }
         guard missing.isEmpty, surplus.allSatisfy({ isPermission(command: $0.key.command) }),
               !table.contains(where: { isPermission(command: $0.command) }) else { return nil }
         return removing(from: settings) { hook, _ in isPermission(command: (hook as? [String: Any])?["command"] as? String ?? "") }
+    }
+
+    private static func isAgent(command: String) -> Bool { command.contains("127.0.0.1:\(NotifyServer.port)/agent") }
+
+    /// The settings with the command of the first hook that is `old` (same event, matcher, command and timeout) replaced.
+    private static func replacing(_ old: Entry, with command: String, in settings: [String: Any]) -> [String: Any] {
+        var settings = settings
+        guard var events = settings["hooks"] as? [String: Any], var groups = events[old.event] as? [Any] else { return settings }
+        for (g, entry) in groups.enumerated() {
+            guard var group = entry as? [String: Any], (group["matcher"] as? String ?? "") == old.matcher,
+                  var hooks = group["hooks"] as? [Any] else { continue }
+            guard let h = hooks.firstIndex(where: { hook in
+                guard let hook = hook as? [String: Any], isOurs(hook: hook, event: old.event) else { return false }
+                return hook["command"] as? String == old.command && (hook["timeout"] as? NSNumber)?.intValue == old.timeout
+            }), var hook = hooks[h] as? [String: Any] else { continue }
+            hook["command"] = command
+            hooks[h] = hook
+            group["hooks"] = hooks
+            groups[g] = group
+            events[old.event] = groups
+            settings["hooks"] = events
+            return settings
+        }
+        return settings
     }
 
     static func updating(_ command: String, in settings: [String: Any]) throws -> [String: Any]? {

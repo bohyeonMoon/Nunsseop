@@ -60,11 +60,18 @@ final class AgentBoard: ObservableObject {
         var session: String? = nil
         /// From then on the agent is idle: a finished hand nobody looked at, a turn that sent nothing for too long.
         var idleFrom: Date? = nil
+        /// Where the terminal it runs in takes input from outside, when it has an API for that.
+        var input: AgentInput? = nil
+
+        /// Set by `effective(at:)`: asking for input when last told, so its dialog may be open still, however long ago. Going idle
+        /// by the clock doesn't close a dialog; only a later event does.
+        var promptMayBeOpen = false
 
         /// The agent as it is at `now`: idle once `idleFrom` has passed.
         func effective(at now: Date) -> Agent {
-            guard state != .idle, let idleFrom, idleFrom <= now else { return self }
             var agent = self
+            agent.promptMayBeOpen = state == .waiting && !finished
+            guard state != .idle, let idleFrom, idleFrom <= now else { return agent }
             (agent.state, agent.finished, agent.since) = (.idle, false, idleFrom)
             return agent
         }
@@ -163,7 +170,8 @@ extension Herdr {
             agents[id] = AgentBoard.Agent(
                 state: state, expiresAt: listed ? pane.since.addingTimeInterval(AgentBoard.recentWindow) : nil,
                 since: pane.since, finished: done, tool: pane.agent, pane: id, socket: socket, cwd: pane.cwd,
-                session: pane.session, idleFrom: done ? pane.since.addingTimeInterval(doneWindow) : nil)
+                session: pane.session, idleFrom: done ? pane.since.addingTimeInterval(doneWindow) : nil,
+                input: socket.map { .herdr(pane: id, socket: $0) })
         }
         return agents
     }

@@ -137,13 +137,15 @@ struct AgentHookEventTests {
         #expect(!command.contains("X-Pid") && !command.contains("PPID"))
     }
 
-    /// Codex asks to trust a hook again when its command changes, so this text is pinned.
-    @Test func codexHookCommandIsByteForByteWhatEarlierVersionsInstalled() {
+    /// Codex asks to trust a hook again when its command changes, so this text is pinned: a change is a decision.
+    @Test func codexHookCommandIsPinned() {
         let pinned = #"in=$(cat); k() { printf '%s' "$in" | plutil -extract "$1" raw -o - - 2>/dev/null | tr -cd 'A-Za-z0-9_.-' | cut -c1-64; }; "#
             + #"curl -s -m 1 --connect-timeout 1 -X POST http://127.0.0.1:47750/agent -d '' "#
             + #"-H @"$HOME/Library/Application Support/Nunsseop/notify-auth" "#
             + #"-H "X-Session: $(k session_id)" -H "X-Event: $(k hook_event_name)" -H "X-Type: $(k notification_type)" "#
             + #"-H "X-Subagent: $(k agent_id)" -H "X-App: $__CFBundleIdentifier" -H "X-Herdr: ${HERDR_PANE_ID:+1}" "#
+            + #"-H "X-Muxy: ${MUXY_SESSION_ID}" -H "X-Cmux: ${CMUX_SURFACE_ID}" "#
+            + #"-H "X-Mux: ${TMUX:+1}${ZELLIJ:+1}${STY:+1}" "#
             + #"-H "X-Background: ${CLAUDE_JOB_DIR:+1}" -H 'X-Agent: codex' >/dev/null 2>&1 || true"#
         #expect(NotifyServer.port == 47750)
         #expect(NotifyServer.agentHookCommand(for: .codex) == pinned)

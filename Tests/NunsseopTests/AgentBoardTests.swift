@@ -118,7 +118,7 @@ struct AgentBoardTests {
         #expect(agents.keys.sorted() == ["a"])
         #expect(agents["a"] == AgentBoard.Agent(state: .idle, expiresAt: start.addingTimeInterval(AgentBoard.recentWindow), since: start,
                                                 finished: false, tool: "claude", pane: "a", socket: "/tmp/herdr.sock",
-                                                cwd: "/x/api", session: "s1"))
+                                                cwd: "/x/api", session: "s1", input: .herdr(pane: "a", socket: "/tmp/herdr.sock")))
         let board = AgentBoard()
         board.replace(source: "herdr:x", with: agents, now: start)
         #expect(board.counts.isEmpty)

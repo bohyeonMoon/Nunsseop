@@ -117,6 +117,8 @@ struct AgentEvent: Equatable {
     var agent = AgentKind.claude
     /// The tool's own process, to tell when it is gone.
     var pid: Int32?
+    /// The input API of the terminal it runs in, when the hook says one.
+    var input: AgentInput?
 }
 
 /// Claude Code's and Codex's hook events as the agents count reads them.
@@ -164,9 +166,18 @@ enum AgentHook {
             !value.isEmpty && value.count <= 80 && value.unicodeScalars.allSatisfy(CharacterSet.bundleIDCharacters.contains)
                 ? value : nil
         }
-        return AgentEvent(session: session, action: action, app: app,
-                          inHerdr: !background && headers["x-herdr"]?.isEmpty == false, agent: agent,
-                          pid: background ? nil : pid(headers["x-pid"]))
+        let inHerdr = !background && headers["x-herdr"]?.isEmpty == false
+        let inMultiplexer = headers["x-mux"]?.isEmpty == false
+        return AgentEvent(session: session, action: action, app: app, inHerdr: inHerdr, agent: agent,
+                          pid: background ? nil : pid(headers["x-pid"]),
+                          input: background || inHerdr || inMultiplexer ? nil : input(muxy: headers["x-muxy"], cmux: headers["x-cmux"]))
+    }
+
+    /// Where text for the session can go. Muxy before cmux: a Muxy session started from a cmux terminal inherits its variables
+    /// too. Not for a session in a herdr pane, tmux, zellij or screen, or a background one: the variables are those of the
+    /// terminal around the multiplexer, or of the daemon, and text typed there reaches whichever pane is active, not the session.
+    static func input(muxy: String?, cmux: String?) -> AgentInput? {
+        AgentInput.muxySession(muxy).map(AgentInput.muxy) ?? AgentInput.cmuxSurface(cmux).map(AgentInput.cmux)
     }
 
     /// A process id from `X-Pid`: ASCII digits only, up to 10 of them, past 1 (init) and no more than a `pid_t` holds.
@@ -238,8 +249,10 @@ final class NotifyServer: @unchecked Sendable {
     /// Claude Code's hook for the agents count, the same for every event. Claude Code passes the event as JSON on
     /// stdin; only the ids and names below leave it, as headers (no prompt, reply, folder or transcript), trimmed to
     /// safe characters so a stray newline can't break one. `$PPID` is the `claude` process itself, whose end tells that
-    /// a session is gone. Nothing may reach stdout, which `UserPromptSubmit` and `SessionStart` add to Claude's context,
-    /// and a closed or stuck Nunsseop costs a session at most a second.
+    /// a session is gone. `X-Muxy` and `X-Cmux` carry the ids of the terminal it runs in (empty when it isn't in one), which
+    /// `AgentHook.event` checks again before they say where to type; `X-Mux` says it runs inside tmux, zellij or screen.
+    /// Nothing may reach stdout, which `UserPromptSubmit` and `SessionStart` add to Claude's context, and a closed or stuck
+    /// Nunsseop costs a session at most a second.
     static var agentHookCommand: String { agentHookCommand(for: .claude) }
 
     /// The same hook for Codex, which passes the same fields and adds `X-Agent` so its sessions stay apart from
@@ -250,6 +263,8 @@ final class NotifyServer: @unchecked Sendable {
             + authHeaderOption + " "
             + "-H \"X-Session: $(k session_id)\" -H \"X-Event: $(k hook_event_name)\" -H \"X-Type: $(k notification_type)\" "
             + "-H \"X-Subagent: $(k agent_id)\" -H \"X-App: $__CFBundleIdentifier\" -H \"X-Herdr: ${HERDR_PANE_ID:+1}\" "
+            + "-H \"X-Muxy: ${MUXY_SESSION_ID}\" -H \"X-Cmux: ${CMUX_SURFACE_ID}\" "
+            + "-H \"X-Mux: ${TMUX:+1}${ZELLIJ:+1}${STY:+1}\" "
             + "-H \"X-Background: ${CLAUDE_JOB_DIR:+1}\" "
             + (agent == .claude ? "-H \"X-Pid: $PPID\" " : "-H 'X-Agent: \(agent.rawValue)' ")
             + ">/dev/null 2>&1 || true"

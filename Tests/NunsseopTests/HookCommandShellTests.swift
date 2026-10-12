@@ -89,7 +89,7 @@ struct AgentHookShellTests {
             "-s", "-m", "1", "--connect-timeout", "1", "-X", "POST", "http://127.0.0.1:\(NotifyServer.port)/agent", "-d", "",
             "-H", sent.authArgument, "-H", "X-Session: abc-123", "-H", "X-Event: Stop",
             "-H", "X-Type: permission_prompt", "-H", "X-Subagent: ", "-H", "X-App: com.x",
-            "-H", "X-Herdr: ", "-H", "X-Background: ", "-H", "X-Pid: \(getpid())",
+            "-H", "X-Herdr: ", "-H", "X-Muxy: ", "-H", "X-Cmux: ", "-H", "X-Mux: ", "-H", "X-Background: ", "-H", "X-Pid: \(getpid())",
         ])
         #expect(sent.curlCalls == 1)
         #expect(sent.stdout.isEmpty)
@@ -104,6 +104,31 @@ struct AgentHookShellTests {
         #expect(background.args.contains("X-Background: 1") && background.args.contains("X-Herdr: "))
         let unset = try run(stdin, environment: [:])
         #expect(unset.args.contains("X-App: "))
+    }
+
+    @Test func theTerminalsInputTargetIsSentAsHeadersForBothTools() throws {
+        let stdin = json(["session_id": "s", "hook_event_name": "Stop"])
+        let environment = ["__CFBundleIdentifier": "com.x", "MUXY_SESSION_ID": "1978299613479001934",
+                           "CMUX_SURFACE_ID": "6F1B2C3D-0000-4000-8000-000000000001"]
+        for command in [NotifyServer.agentHookCommand, NotifyServer.agentHookCommand(for: .codex)] {
+            let sent = try ShellRun.run({ _ in ["-c", command] }, stdin: stdin, environment: environment)
+            #expect(sent.args.contains("X-Muxy: 1978299613479001934"))
+            #expect(sent.args.contains("X-Cmux: 6F1B2C3D-0000-4000-8000-000000000001"))
+            #expect(sent.stdout.isEmpty && sent.status == 0)
+        }
+    }
+
+    @Test func runningInsideTmuxZellijOrScreenIsSentForBothTools() throws {
+        let stdin = json(["session_id": "s", "hook_event_name": "Stop"])
+        for command in [NotifyServer.agentHookCommand, NotifyServer.agentHookCommand(for: .codex)] {
+            for variable in ["TMUX", "ZELLIJ", "STY"] {
+                let sent = try ShellRun.run({ _ in ["-c", command] }, stdin: stdin,
+                                            environment: ["__CFBundleIdentifier": "com.x", variable: "/tmp/x,1,0"])
+                #expect(sent.args.contains("X-Mux: 1"), "\(variable)")
+            }
+            let outside = try ShellRun.run({ _ in ["-c", command] }, stdin: stdin, environment: ["__CFBundleIdentifier": "com.x"])
+            #expect(outside.args.contains("X-Mux: "))
+        }
     }
 
     @Test func sessionStartSendsItsProcessAndPrintsNothing() throws {
@@ -161,7 +186,7 @@ struct CodexAgentHookShellTests {
             "-s", "-m", "1", "--connect-timeout", "1", "-X", "POST", "http://127.0.0.1:\(NotifyServer.port)/agent", "-d", "",
             "-H", sent.authArgument, "-H", "X-Session: 019e5b2c-7a41-7c10-8d3e-2f6a9c1b4e07",
             "-H", "X-Event: PermissionRequest", "-H", "X-Type: ", "-H", "X-Subagent: ", "-H", "X-App: com.x",
-            "-H", "X-Herdr: ", "-H", "X-Background: ", "-H", "X-Agent: codex",
+            "-H", "X-Herdr: ", "-H", "X-Muxy: ", "-H", "X-Cmux: ", "-H", "X-Mux: ", "-H", "X-Background: ", "-H", "X-Agent: codex",
         ])
         #expect(sent.body.isEmpty)
         #expect(!sent.args.joined().contains("secret") && !sent.args.joined().contains("rm -rf") && !sent.args.joined().contains("gpt"))

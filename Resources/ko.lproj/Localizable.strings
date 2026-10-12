@@ -430,3 +430,8 @@
 "Recent" = "최근";
 "Resume conversations in" = "대화를 이어서 열 곳";
 "%@ ago" = "%@ 전";
+
+/* Sending to a session */
+"Send a message" = "메시지 보내기";
+"Answer the prompt first" = "먼저 질문에 답하세요";
+"Couldn't send. Is the terminal still open?" = "보내지 못했습니다. 터미널이 아직 열려 있나요?";

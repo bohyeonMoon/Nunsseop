@@ -405,3 +405,8 @@
 "Recent" = "最近";
 "Resume conversations in" = "会話を再開するターミナル";
 "%@ ago" = "%@前";
+
+/* Sending to a session */
+"Send a message" = "メッセージを送信";
+"Answer the prompt first" = "先にプロンプトに答えてください";
+"Couldn't send. Is the terminal still open?" = "送信できませんでした。ターミナルはまだ開いていますか？";

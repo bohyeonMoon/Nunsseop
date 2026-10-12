@@ -318,11 +318,20 @@ final class NotchWindowController {
         resignObserver = NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: panel,
                                                                 queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, self.model.pinned else { return }
+                guard let self else { return }
+                // Clicking away from the message field closes it; the notch then follows the pointer again.
+                self.model.agentList.cancelCompose()
+                guard self.model.pinned else { return }
                 self.model.collapse()
                 self.panel.ignoresMouseEvents = true
             }
         }
+        // The field needs the keyboard, which a panel that never activates gets by becoming key.
+        settingsObservers.append(model.agentList.$composing.sink { [weak self] row in
+            guard row != nil else { return }
+            self?.panel.ignoresMouseEvents = false
+            self?.panel.makeKey()
+        })
         settingsObservers.append(model.settings.$searchHotkey.combineLatest(model.settings.$searchHotKey, model.settings.$recordingShortcut)
             .sink { [weak self] enabled, combo, recording in
                 guard let self else { return }
@@ -338,7 +347,12 @@ final class NotchWindowController {
         }
         if let keys = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { [weak self] event in
             guard event.keyCode == 53, let self else { return event }
-            MainActor.assumeIsolated { self.model.collapse(); self.panel.ignoresMouseEvents = true }
+            MainActor.assumeIsolated {
+                // Escape closes the message field first, and the notch only the next time.
+                if self.model.agentList.composing != nil { self.model.agentList.cancelCompose(); return }
+                self.model.collapse()
+                self.panel.ignoresMouseEvents = true
+            }
             return nil
         }) {
             monitors.append(keys)
@@ -584,6 +598,13 @@ final class NotchWindowController {
 
         if model.isExpanded {
             let inside = nearPanel && model.geometry.shapeRect(size: model.expandedSize, inset: 0).insetBy(dx: -6, dy: -6).contains(point)
+            // Typing a message to an agent: the notch stays open wherever the pointer goes, until the field closes.
+            if model.agentList.composing != nil {
+                collapseWork?.cancel()
+                collapseWork = nil
+                panel.ignoresMouseEvents = false
+                return
+            }
             if model.pinned {
                 if inside { model.pinned = false }
                 panel.ignoresMouseEvents = false

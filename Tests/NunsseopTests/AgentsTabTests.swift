@@ -212,7 +212,8 @@ struct AgentsBoardFeedTests {
         // The idle pane with an agent in it is listed, as idle.
         #expect(agents.keys.sorted() == ["w1:p1", "w1:p2", "w1:p3"])
         #expect(agents["w1:p1"] == AgentBoard.Agent(state: .waiting, since: start, finished: false, tool: "claude", pane: "w1:p1",
-                                                    socket: "/tmp/herdr.sock", cwd: "/Users/me/api", session: "abc-1"))
+                                                    socket: "/tmp/herdr.sock", cwd: "/Users/me/api", session: "abc-1",
+                                                    input: .herdr(pane: "w1:p1", socket: "/tmp/herdr.sock")))
         #expect(agents["w1:p2"]?.finished == true && agents["w1:p2"]?.idleFrom == start.addingTimeInterval(Herdr.doneWindow))
         #expect(agents["w1:p2"]?.expiresAt == start.addingTimeInterval(AgentBoard.recentWindow))
         #expect(agents["w1:p3"]?.state == .idle && agents["w1:p3"]?.expiresAt == start.addingTimeInterval(AgentBoard.recentWindow))

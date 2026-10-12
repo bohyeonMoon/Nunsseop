@@ -28,6 +28,11 @@ struct AgentRow: Identifiable, Equatable {
     let mode: AgentMode?
     let name: String?
     let target: Target?
+    /// Where the terminal takes text from outside, if it has an API for that.
+    let input: AgentInput?
+    /// A prompt may be open in the terminal this row types into: the session's own, however long it has waited, or that of
+    /// another listed session sharing the terminal (`claude -p` started from it, a Codex session it replaced).
+    private(set) var promptOnTerminal: Bool
 
     init(_ entry: AgentBoard.Entry, transcript: AgentTranscript?) {
         let agent = entry.agent
@@ -42,6 +47,26 @@ struct AgentRow: Identifiable, Equatable {
         mode = transcript?.mode
         name = transcript?.name
         target = Self.target(for: agent)
+        input = agent.input
+        promptOnTerminal = agent.promptMayBeOpen
+    }
+
+    /// Whether text can be sent to the session now: its terminal has an input API and no prompt may be waiting there.
+    var acceptsInput: Bool { input != nil && !promptOnTerminal && AgentSend.accepts(state: state, finished: finished) }
+
+    /// Its terminal takes input, but a prompt waits for the answer first.
+    var inputBlocked: Bool { input != nil && !acceptsInput }
+
+    /// The rows with `promptOnTerminal` set on every one whose terminal another row's prompt may be open in: text typed there
+    /// answers that dialog, whichever session the row it was typed from belongs to.
+    static func sharingTerminals(_ rows: [AgentRow]) -> [AgentRow] {
+        let asking = rows.filter(\.promptOnTerminal).compactMap(\.input)
+        guard !asking.isEmpty else { return rows }
+        return rows.map { row in
+            var row = row
+            if let input = row.input, asking.contains(input) { row.promptOnTerminal = true }
+            return row
+        }
     }
 
     var folder: String? { path.map { ($0 as NSString).lastPathComponent } }
@@ -147,8 +172,13 @@ final class AgentsTabModel: ObservableObject {
     @Published private(set) var recentLoaded = false
     /// Whether Claude Code or Codex is connected, which tells an empty tab from one waiting for a connection.
     @Published private(set) var connected = false
+    /// The row whose message field is open; one at a time.
+    @Published private(set) var composing: String?
+    /// A short note under a row whose message or files didn't go out, by `AgentRow.id`.
+    @Published private(set) var notes: [String: String] = [:]
     var isShowing = false {
         didSet {
+            if !isShowing { composing = nil }
             guard isShowing && !oldValue else { return }
             connected = checkConnected()
             refresh()
@@ -164,6 +194,8 @@ final class AgentsTabModel: ObservableObject {
     private let isConnected: (() -> Bool)?
     private let onResume: (RecentConversation) -> Void
     private let scratch: [String]
+    private let sender: AgentSender
+    private let clis: () -> TerminalCLIs
     private var transcripts = AgentTranscripts()
     private var loading = false
     private var changedWhileLoading = false
@@ -179,13 +211,18 @@ final class AgentsTabModel: ObservableObject {
     /// - isConnected: whether a tool is connected; by default, whether Claude Code's or Codex's settings under `home` say so.
     /// - scratch: folders whose conversations are left out.
     /// - onResume: what clicking a recent conversation does; by default, opens it in the terminal chosen in Settings.
+    /// - sender: what puts text into a terminal; tests give it one that records instead.
+    /// - clis: where the terminals' command-line tools are, looked up on every send.
     init(board: AgentBoard, home: @escaping () -> URL = { NotifyIntegration.home }, isConnected: (() -> Bool)? = nil,
-         scratch: [String] = RecentConversations.scratch, onResume: @escaping (RecentConversation) -> Void = Resume.inChosenTerminal) {
+         scratch: [String] = RecentConversations.scratch, onResume: @escaping (RecentConversation) -> Void = Resume.inChosenTerminal,
+         sender: AgentSender = .live, clis: @escaping () -> TerminalCLIs = { .live }) {
         self.board = board
         self.home = home
         self.isConnected = isConnected
         self.onResume = onResume
         self.scratch = scratch
+        self.sender = sender
+        self.clis = clis
         connected = checkConnected()
         #if DEBUG
         if CommandLine.arguments.contains("--demo-agents") {
@@ -262,6 +299,69 @@ final class AgentsTabModel: ObservableObject {
         onResume(conversation)
     }
 
+    /// Opens the message field under a row that takes input, closing any other.
+    func compose(_ row: AgentRow) {
+        guard row.acceptsInput else { return }
+        composing = row.id
+    }
+
+    func cancelCompose() {
+        composing = nil
+    }
+
+    /// Closes the field of that row only: a row whose field is scrolled out of the list drops it, and the notch must not stay
+    /// open for a field nobody can see.
+    func cancelCompose(row id: String) {
+        if composing == id { composing = nil }
+    }
+
+    /// Sends the message to the session, then Return. False when nothing was sent: the text is empty or the session no longer
+    /// takes input.
+    @discardableResult
+    func send(message: String, to row: AgentRow) -> Bool {
+        guard let text = AgentSend.message(message) else { return false }
+        return deliver(text, submit: true, to: row)
+    }
+
+    /// Types the paths of the dropped files into the session, without Return. False when nothing was sent.
+    @discardableResult
+    func send(files urls: [URL], to row: AgentRow) -> Bool {
+        guard let text = AgentSend.paths(urls) else { return false }
+        return deliver(text, submit: false, to: row)
+    }
+
+    /// Checks the session as it is now, not as the row was drawn, and sends off the main thread.
+    private func deliver(_ text: String, submit: Bool, to row: AgentRow) -> Bool {
+        guard let current = rows.first(where: { $0.id == row.id }), current.acceptsInput, let input = current.input else { return false }
+        notes[row.id] = nil
+        guard let steps = AgentSend.steps(input, text: text, submit: submit, clis: clis()) else {
+            note(Self.failure, for: row.id)
+            return true
+        }
+        let sender = sender, id = row.id
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let sent = sender.run(steps)
+            await self?.sent(sent, id)
+        }
+        return true
+    }
+
+    private func sent(_ sent: Bool, _ id: String) {
+        if !sent { note(Self.failure, for: id) }
+    }
+
+    private static var failure: String { String(localized: "Couldn't send. Is the terminal still open?") }
+
+    private func note(_ text: String, for id: String) {
+        notes[id] = text
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.noteDuration) { [weak self] in
+            MainActor.assumeIsolated { if self?.notes[id] == text { self?.notes[id] = nil } }
+        }
+    }
+
+    /// How long the note under a row stays.
+    static let noteDuration: TimeInterval = 6
+
     private func checkConnected() -> Bool {
         if let isConnected { return isConnected() }
         return NotifyIntegration.$homeOverride.withValue(home()) { NotifyIntegration.claudeCode.isInstalled || NotifyIntegration.codex.isInstalled }
@@ -277,10 +377,14 @@ final class AgentsTabModel: ObservableObject {
     }
 
     private func rebuild(_ entries: [AgentBoard.Entry]) {
-        let next = AgentRow.sorted(entries.map { entry in
+        let next = AgentRow.sorted(AgentRow.sharingTerminals(entries.map { entry in
             AgentRow(entry, transcript: fixed[entry.key] ?? AgentRow.transcriptKey(entry.agent).flatMap(transcripts.transcript))
-        })
+        }))
         if next != rows { rows = next }
+        // The field closes with its row, or when the session starts waiting on a prompt: typing could answer it.
+        if let composing, !rows.contains(where: { $0.id == composing && $0.acceptsInput }) { self.composing = nil }
+        let kept = notes.filter { id, _ in rows.contains { $0.id == id } }
+        if kept.count != notes.count { notes = kept }
     }
 }
 
@@ -299,7 +403,7 @@ struct AgentsTab: View {
                 TimelineView(.everyMinute) { context in
                     ScrollView(.vertical, showsIndicators: false) {
                         LazyVStack(spacing: 4) {
-                            ForEach(model.rows) { AgentRowView(row: $0, now: context.date) }
+                            ForEach(model.rows) { AgentRowView(row: $0, now: context.date, model: model) }
                             if !model.recent.isEmpty {
                                 Text("Recent")
                                     .font(.system(size: 10, weight: .semibold)).foregroundStyle(.white.opacity(0.4))
@@ -323,17 +427,37 @@ struct AgentsTab: View {
 private struct AgentRowView: View {
     let row: AgentRow
     let now: Date
+    @ObservedObject var model: AgentsTabModel
     @State private var hovering = false
+    @State private var dropTargeted = false
 
     var body: some View {
-        content
-            .opacity(row.state == .idle ? 0.6 : 1)
-            .padding(.horizontal, 10).padding(.vertical, 6)
-            .surface(RoundedRectangle(cornerRadius: 10), opacity: hovering && row.target != nil ? 0.14 : 0.08)
-            .contentShape(Rectangle())
-            .onTapGesture { row.target?.perform() }
-            .onHover { hovering = $0 }
-            .help(row.path.map { Text(verbatim: $0) } ?? (row.target == nil ? Text(verbatim: "") : Text("Go to where it came from")))
+        VStack(alignment: .leading, spacing: 0) {
+            // The tap goes to the terminal; the message field below it is clicked for typing, not for that.
+            content
+                .opacity(row.state == .idle ? 0.6 : 1)
+                .padding(.horizontal, 10).padding(.vertical, 6)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    model.cancelCompose()
+                    row.target?.perform()
+                }
+            if model.composing == row.id {
+                AgentComposer(row: row, model: model)
+                    .padding(.horizontal, 10).padding(.bottom, 6)
+            }
+        }
+        .surface(RoundedRectangle(cornerRadius: 10), opacity: (hovering && row.target != nil) || dropTargeted ? 0.14 : 0.08)
+        .overlay {
+            if dropTargeted { RoundedRectangle(cornerRadius: 10).stroke(Color.accentColor.opacity(0.9), lineWidth: 1.5) }
+        }
+        .onHover { hovering = $0 }
+        // Only a session that takes input accepts files; otherwise the drop isn't taken at all.
+        .onDrop(of: row.acceptsInput ? [.fileURL] : [], isTargeted: $dropTargeted) { providers in
+            ShelfSharing.loadURLs(from: providers) { model.send(files: $0, to: row) }
+            return true
+        }
+        .help(row.path.map { Text(verbatim: $0) } ?? (row.target == nil ? Text(verbatim: "") : Text("Go to where it came from")))
     }
 
     private var content: some View {
@@ -346,6 +470,7 @@ private struct AgentRowView: View {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(verbatim: row.title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
                     Spacer(minLength: 4)
+                    if row.input != nil && (hovering || model.composing == row.id) { sendButton }
                     if let elapsed = AgentRow.elapsed(since: row.since, now: now) {
                         Text(verbatim: elapsed).font(.system(size: 10).monospacedDigit()).foregroundStyle(.white.opacity(0.4))
                     }
@@ -357,8 +482,47 @@ private struct AgentRowView: View {
                     }
                     .font(.system(size: 11)).foregroundStyle(.white.opacity(0.6)).lineLimit(1)
                 }
+                if let note = model.notes[row.id] {
+                    Text(verbatim: note).font(.system(size: 10)).foregroundStyle(.orange).lineLimit(2)
+                }
             }
         }
+    }
+
+    /// Opens the message field; not usable while a prompt waits for its answer.
+    private var sendButton: some View {
+        Button { model.compose(row) } label: {
+            Image(systemName: "bubble.left.fill")
+                .font(.system(size: 10))
+                .foregroundStyle(.white.opacity(row.acceptsInput ? 0.7 : 0.25))
+                .frame(width: 18, height: 14)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!row.acceptsInput)
+        .help(row.inputBlocked ? Text("Answer the prompt first") : Text("Send a message"))
+    }
+}
+
+/// The one-line field under a row: Return sends the message and closes it. Escape (see the notch's key monitor) and losing the
+/// keyboard focus close it without sending.
+private struct AgentComposer: View {
+    let row: AgentRow
+    @ObservedObject var model: AgentsTabModel
+    @State private var text = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        TextField("Send a message", text: $text)
+            .textFieldStyle(.plain)
+            .font(.system(size: 11))
+            .focused($focused)
+            .onSubmit { if model.send(message: text, to: row) { model.cancelCompose() } }
+            .padding(.horizontal, 8).frame(height: 24)
+            .surface(RoundedRectangle(cornerRadius: 6), opacity: 0.1)
+            .onAppear { focused = true }
+            .onDisappear { model.cancelCompose(row: row.id) }
+            .onChange(of: focused) { _, isFocused in if !isFocused { model.cancelCompose() } }
     }
 }
 
