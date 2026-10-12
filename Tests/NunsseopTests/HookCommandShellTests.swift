@@ -14,6 +14,9 @@ private struct ShellRun {
     var status: Int32 = 0
     var dir: URL
 
+    /// What curl is given for the header: the file holding it, never the token.
+    var authArgument: String { "@" + dir.path + "/Library/Application Support/Nunsseop/notify-auth" }
+
     /// - arguments: what to give `/bin/sh`, given the scratch folder.
     /// - environment: extra variables; the inherited ones are not passed on.
     static func run(_ arguments: (URL) throws -> [String], stdin: String = "", environment: [String: String] = [:],
@@ -25,6 +28,7 @@ private struct ShellRun {
         let support = dir.appendingPathComponent("Library/Application Support/Nunsseop")
         try fileManager.createDirectory(at: support, withIntermediateDirectories: true)
         try "tok\n".write(to: support.appendingPathComponent("notify-token"), atomically: true, encoding: .utf8)
+        try "Authorization: Bearer tok\n".write(to: support.appendingPathComponent("notify-auth"), atomically: true, encoding: .utf8)
         let curl = dir.appendingPathComponent("bin/curl")
         try """
         #!/bin/sh
@@ -83,7 +87,7 @@ struct AgentHookShellTests {
                                  "prompt": "secret prompt", "cwd": "/Users/me/secret"]))
         #expect(sent.args == [
             "-s", "-m", "1", "--connect-timeout", "1", "-X", "POST", "http://127.0.0.1:\(NotifyServer.port)/agent", "-d", "",
-            "-H", "Authorization: Bearer tok", "-H", "X-Session: abc-123", "-H", "X-Event: Stop",
+            "-H", sent.authArgument, "-H", "X-Session: abc-123", "-H", "X-Event: Stop",
             "-H", "X-Type: permission_prompt", "-H", "X-Subagent: ", "-H", "X-App: com.x",
             "-H", "X-Herdr: ", "-H", "X-Background: ",
         ])
@@ -148,7 +152,7 @@ struct CodexAgentHookShellTests {
         let sent = try run(permissionRequest)
         #expect(sent.args == [
             "-s", "-m", "1", "--connect-timeout", "1", "-X", "POST", "http://127.0.0.1:\(NotifyServer.port)/agent", "-d", "",
-            "-H", "Authorization: Bearer tok", "-H", "X-Session: 019e5b2c-7a41-7c10-8d3e-2f6a9c1b4e07",
+            "-H", sent.authArgument, "-H", "X-Session: 019e5b2c-7a41-7c10-8d3e-2f6a9c1b4e07",
             "-H", "X-Event: PermissionRequest", "-H", "X-Type: ", "-H", "X-Subagent: ", "-H", "X-App: com.x",
             "-H", "X-Herdr: ", "-H", "X-Background: ", "-H", "X-Agent: codex",
         ])
@@ -199,7 +203,7 @@ struct NoticeHookShellTests {
         let sent = try run()
         #expect(sent.args == [
             "-s", "-m", "2", "-X", "POST", "http://127.0.0.1:\(NotifyServer.port)/notify",
-            "-H", "Authorization: Bearer tok", "-H", "X-Title: Claude Code", "-H", "X-App: com.apple.Terminal",
+            "-H", sent.authArgument, "-H", "X-Title: Claude Code", "-H", "X-App: com.apple.Terminal",
             "-H", "X-Background: ", "--data-binary", "@-",
         ])
         #expect(sent.body == "Claude needs your permission\n")
@@ -241,7 +245,7 @@ struct CodexNotifyScriptTests {
         let sent = try run(["PREVIOUS", "--flag", payload])
         #expect(sent.args == [
             "-s", "-m", "2", "-X", "POST", "http://127.0.0.1:\(NotifyServer.port)/notify",
-            "-H", "Authorization: Bearer tok", "-H", "X-Title: Codex", "-H", "X-App: com.x", "--data-binary", "@-",
+            "-H", sent.authArgument, "-H", "X-Title: Codex", "-H", "X-App: com.x", "--data-binary", "@-",
         ])
         #expect(sent.body == "All done\n")
         #expect(sent.previousArgs == ["--flag", payload])

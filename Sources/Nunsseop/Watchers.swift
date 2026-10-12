@@ -165,7 +165,10 @@ enum AgentHook {
 
 /// Accepts notifications from local tools such as Claude Code hooks:
 /// `POST http://127.0.0.1:47750/notify` with `Authorization: Bearer <token>` and a JSON body
-/// `{"title": "...", "message": "..."}`. The token lives in Application Support/Nunsseop/notify-token.
+/// `{"title": "...", "message": "..."}`. The token lives in Application Support/Nunsseop/notify-token; the same header, as
+/// one line, in notify-auth beside it. The commands below give curl that file (`-H @file`) instead of the token, which
+/// would be in the command line of curl, and `ps` shows every process's command line to every user: a stranger who read
+/// the token there could answer a permission prompt in the notch's place while Nunsseop isn't listening.
 /// `POST /agent` takes Claude Code's and Codex's session events for the agents count, as headers only (see `agentHookCommand`).
 /// `POST /permission` holds a Claude Code permission prompt until it is answered in the notch (see `PermissionGate`).
 final class NotifyServer: @unchecked Sendable {
@@ -204,10 +207,14 @@ final class NotifyServer: @unchecked Sendable {
     /// JSON on stdin; its `message` field is sent as the notification text.
     static var hookCommand: String { hookCommand(title: "Claude Code") }
 
+    /// What every command gives curl in place of `-H "Authorization: Bearer <token>"`: the path of the file holding that
+    /// one header line (curl reads headers from `-H @file` since 7.55), so no command line ever holds the token.
+    static let authHeaderOption = "-H @\"$HOME/Library/Application Support/Nunsseop/notify-auth\""
+
     /// The same command for any tool that passes JSON with a `message` field on stdin, such as Gemini CLI.
-    static func hookCommand(title: String) -> String {
+    static func hookCommand(title: String, port: UInt16 = NotifyServer.port) -> String {
         "plutil -extract message raw -o - - 2>/dev/null | curl -s -m 2 -X POST http://127.0.0.1:\(port)/notify "
-            + "-H \"Authorization: Bearer $(cat \"$HOME/Library/Application Support/Nunsseop/notify-token\")\" "
+            + authHeaderOption + " "
             + "-H 'X-Title: \(title)' -H \"X-App: $__CFBundleIdentifier\" -H \"X-Background: ${CLAUDE_JOB_DIR:+1}\" --data-binary @- >/dev/null || true"
     }
 
@@ -219,10 +226,10 @@ final class NotifyServer: @unchecked Sendable {
 
     /// The same hook for Codex, which passes the same fields and adds `X-Agent` so its sessions stay apart from
     /// Claude Code's. Codex asks to trust a hook again when its command changes, so this text shouldn't change lightly.
-    static func agentHookCommand(for agent: AgentKind) -> String {
+    static func agentHookCommand(for agent: AgentKind, port: UInt16 = NotifyServer.port) -> String {
         "in=$(cat); k() { printf '%s' \"$in\" | plutil -extract \"$1\" raw -o - - 2>/dev/null | tr -cd 'A-Za-z0-9_.-' | cut -c1-64; }; "
             + "curl -s -m 1 --connect-timeout 1 -X POST http://127.0.0.1:\(port)/agent -d '' "
-            + "-H \"Authorization: Bearer $(cat \"$HOME/Library/Application Support/Nunsseop/notify-token\")\" "
+            + authHeaderOption + " "
             + "-H \"X-Session: $(k session_id)\" -H \"X-Event: $(k hook_event_name)\" -H \"X-Type: $(k notification_type)\" "
             + "-H \"X-Subagent: $(k agent_id)\" -H \"X-App: $__CFBundleIdentifier\" -H \"X-Herdr: ${HERDR_PANE_ID:+1}\" "
             + "-H \"X-Background: ${CLAUDE_JOB_DIR:+1}\" "
@@ -272,9 +279,10 @@ final class NotifyServer: @unchecked Sendable {
     }
 
     /// A command for scripts: the text after `--data-binary` becomes the notification.
-    static var scriptCommand: String {
-        "curl -s -m 2 -X POST http://127.0.0.1:\(port)/notify "
-            + "-H \"Authorization: Bearer $(cat \"$HOME/Library/Application Support/Nunsseop/notify-token\")\" "
+    static var scriptCommand: String { scriptCommand(port: port) }
+
+    static func scriptCommand(port: UInt16) -> String {
+        "curl -s -m 2 -X POST http://127.0.0.1:\(port)/notify " + authHeaderOption + " "
             + "-H 'X-Title: Script' --data-binary 'Done'"
     }
 
@@ -284,20 +292,51 @@ final class NotifyServer: @unchecked Sendable {
             .appendingPathComponent("Nunsseop/notify-token")
     }
 
+    /// The file with the `Authorization` header line the commands give curl (`-H @file`), beside the token.
+    static var authHeaderURL: URL { tokenURL.deletingLastPathComponent().appendingPathComponent("notify-auth") }
+
+    /// Writes `text` to `url` so it is never readable by anyone else: the file is private from the moment it exists,
+    /// and replaces the old one in a single step.
+    private static func writeSecret(_ text: String, to url: URL) {
+        let fileManager = FileManager.default
+        try? fileManager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let scratch = url.deletingLastPathComponent().appendingPathComponent(".\(url.lastPathComponent).\(UUID().uuidString.prefix(8))")
+        guard fileManager.createFile(atPath: scratch.path, contents: Data(text.utf8), attributes: [.posixPermissions: 0o600]) else { return }
+        if rename(scratch.path, url.path) != 0 { try? fileManager.removeItem(at: scratch) }
+    }
+
+    /// Makes the header file say what the token file does. A missing, stale or loosely held one is replaced; it holds
+    /// the token as much as the token file does, so it is private as well. Does nothing without a usable token file.
+    static func syncAuthHeader() {
+        guard let token = try? String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines),
+              token.count >= 32 else { return }
+        let line = "Authorization: Bearer \(token)\n"
+        let url = authHeaderURL
+        if (try? String(contentsOf: url, encoding: .utf8)) == line {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+        } else {
+            writeSecret(line, to: url)
+        }
+    }
+
+    /// The token is made new, once, when a hook or script of an older version is still in place: those put it on curl's
+    /// command line, where any user could read it. It happens here, before the server or the permission gate has the
+    /// token, so nothing has to change hands while running; hooks read the file whenever they run, so the ones about to
+    /// be replaced (see `NotifyIntegration.updateConnected`) go on working with the new token until they are.
     init(port: UInt16 = NotifyServer.port, permissionHold: Double = PermissionGate.holdSeconds) {
         listenPort = port
         let queue = DispatchQueue(label: "nunsseop.notify")
         self.queue = queue
         let url = Self.tokenURL
         if let existing = try? String(contentsOf: url, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines),
-           existing.count >= 32 {
+           existing.count >= 32, !NotifyIntegration.holdsLegacyTokenCommands {
             token = existing
             try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
         } else {
             token = (UUID().uuidString + UUID().uuidString).replacingOccurrences(of: "-", with: "").lowercased()
-            try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            FileManager.default.createFile(atPath: url.path, contents: Data(token.utf8), attributes: [.posixPermissions: 0o600])
+            Self.writeSecret(token, to: url)
         }
+        Self.syncAuthHeader()
         permissions = PermissionGate(token: token, queue: queue, holdSeconds: permissionHold)
     }
 

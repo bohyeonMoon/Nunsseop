@@ -173,8 +173,9 @@ Cada uno tiene un interruptor en Ajustes › Avisos (WezTerm tiene un botón que
 Cualquier script también puede enviar una:
 
 ```sh
+# notify-auth guarda la cabecera Authorization, así el token no aparece en la lista de procesos.
 curl -X POST http://127.0.0.1:47750/notify \
-  -H "Authorization: Bearer $(cat ~/Library/Application\ Support/Nunsseop/notify-token)" \
+  -H @"$HOME/Library/Application Support/Nunsseop/notify-auth" \
   -d '{"title": "Build", "message": "Finished in 42 s"}'
 ```
 

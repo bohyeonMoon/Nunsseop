@@ -164,7 +164,8 @@ struct PermissionServerTests {
         server.server.permissions.answer(try #require(server.events.prompts.first).id, .allow)
         let result = try #require(await process.finish())
         #expect(result.stdout == (try decisionText(.allow)))
-        #expect(files(under: server.home.url) == ["Library/Application Support/Nunsseop/notify-token"])
+        #expect(files(under: server.home.url) == ["Library/Application Support/Nunsseop/notify-auth",
+                                                  "Library/Application Support/Nunsseop/notify-token"])
     }
 
     // MARK: When the hook goes away

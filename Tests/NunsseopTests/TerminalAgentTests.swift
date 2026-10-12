@@ -448,6 +448,7 @@ struct TerminalBellScriptTests {
         let support = dir.appendingPathComponent("Library/Application Support/Nunsseop")
         try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
         try "secret-token".write(to: support.appendingPathComponent("notify-token"), atomically: true, encoding: .utf8)
+        try "Authorization: Bearer secret-token\n".write(to: support.appendingPathComponent("notify-auth"), atomically: true, encoding: .utf8)
         let bin = dir.appendingPathComponent("bin")
         try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
         let curl = bin.appendingPathComponent("curl")
@@ -500,7 +501,8 @@ struct TerminalBellScriptTests {
     @Test func postsTheAgentAndWhereTheBellRang() throws {
         let sent = try run(["tmux", "work", "api", "claude"])
         #expect(sent.args.contains("http://127.0.0.1:\(NotifyServer.port)/notify"))
-        #expect(sent.args.contains("Authorization: Bearer secret-token"))
+        #expect(sent.args.contains { $0.hasPrefix("@") && $0.hasSuffix("/Library/Application Support/Nunsseop/notify-auth") })
+        #expect(!sent.args.joined().contains("secret-token"))
         #expect(sent.args.contains("X-Title: claude"))
         #expect(sent.args.contains("X-Agent: claude"))
         #expect(sent.body == "work · api")

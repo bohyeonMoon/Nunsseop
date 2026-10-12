@@ -180,8 +180,11 @@ final class PermissionTestServer {
     let events: PromptEvents
     let port: UInt16
 
-    init(hold: Double = PermissionGate.holdSeconds) async throws {
-        let home = try ScratchHome()
+    /// - token: one already in the home, as an earlier run left it.
+    /// - seed: puts what an earlier version left in the home (tools' settings, say) before the server starts.
+    init(hold: Double = PermissionGate.holdSeconds, token: String? = nil, seed: (URL) throws -> Void = { _ in }) async throws {
+        let home = try ScratchHome(token: token)
+        try seed(home.url)
         let server = NotifyIntegration.$homeOverride.withValue(home.url) { NotifyServer(port: 0, permissionHold: hold) }
         let events = PromptEvents()
         server.permissions.onPrompt = { events.add($0) }

@@ -401,6 +401,9 @@ final class NotchWindowController {
                 if enabled && self.panel.isVisible { feature.start() } else { feature.stop(false) }
             })
         }
+        // The feature above refreshes what is connected, but only while notifications are on and the notch is showing;
+        // hooks of an older version that put the token on curl's command line are replaced regardless.
+        NotifyIntegration.replaceLegacyTokenCommands()
         // A Nunsseop that crashed with tmux bells on left its hook; with the feature off now, it comes off once.
         if !(model.settings.tmuxBells && model.settings.localNotifications) { model.tmux.clearLeftover() }
         updatesObserver = model.settings.$checkForUpdates
