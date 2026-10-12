@@ -86,7 +86,7 @@ Dock 아이콘은 없습니다. Nunsseop은 노치에 삽니다.
 - **Claude Code에서 가져오는 Claude 한도.** 설정 → 서비스 → AI 사용량에서 Claude Code의 상태 표시줄을 연결하세요. Claude Code가 답할 때마다 5시간·주간 한도를 넘겨 주므로, 작업하는 동안 AI 탭이 계속 최신으로 유지되고 Nunsseop이 Anthropic에 따로 묻지도 않습니다. 원래 쓰던 상태 표시줄은 그대로 보이고, 연결 해제를 누르면 원래대로 돌아갑니다. 이전에 쓰던 명령을 되살릴 수 없으면 설정에서 알려 줍니다.
 - **Claude 실시간 한도 (선택).** Claude를 다른 곳에서 쓴다면, AI 탭이 Anthropic에서 Claude의 5시간·주간 한도를 받아올지 한 번 묻습니다. 켜면 Claude Code가 키체인에 둔 로그인 정보로 한 시간에 한 번쯤 받아옵니다. 허락하기 전에는 꺼져 있고, 나중에 설정 → 서비스에서 바꿀 수 있습니다. 가장 최근 값이 우선하고, 그 값에 요금제와 모델별 막대가 없으면 이전 것을 그대로 보여 줍니다.
 - **에이전트와 터미널 알림.** Claude Code, Codex, Gemini CLI, OpenCode 훅, Muxy·cmux·herdr 안의 에이전트, tmux와 WezTerm의 벨이 노치에 뜹니다. 알림을 누르면 그 터미널, 창, 탭이 앞으로 나옵니다([설정 방법](#에이전트와-터미널-알림)).
-- **권한 요청.** Claude Code가 실행이나 편집을 물으면 노치에서 바로 허용, 거부, 항상 허용할 수 있습니다. 항상 허용은 Claude Code가 제안한 규칙이 카드에 들어갈 때만 나타납니다. 터미널에서 먼저 답하면 카드는 사라집니다. 지금은 Claude Code만 지원하고, 요청 내용은 메모리에만 남습니다(설정 → 알림에서 끌 수 있습니다).
+- **권한 요청.** Claude Code가 실행이나 편집을 물으면 노치에서 바로 허용, 거부, 항상 허용할 수 있습니다. 항상 허용은 Claude Code가 제안한 규칙이 일반 키보드 문자(출력 가능한 ASCII)만으로 카드에 들어갈 때만 나타납니다. 카드에는 도구, 폴더, 모든 항목이 보이고, 텍스트에 영문자나 기호로 보일 수 있는 문자가 있으면 주황색 「확인 필요한 문자」 칩으로 알립니다. 터미널에서 먼저 답하면 카드는 사라집니다. 지금은 Claude Code만 지원하고, 요청 내용은 메모리에만 남습니다(설정 → 알림에서 끌 수 있습니다).
 - **알림 탭.** 에이전트, 터미널, 캘린더에서 온 최근 알림 30개를 모아 두고, 아직 안 본 개수를 배지로 보여 줍니다. 누르면 알림이 온 곳으로 돌아갑니다. 기본으로는 꺼져 있고(설정 → 노치 구성), 메모리에만 둡니다.
 - **작업 중인 에이전트.** 닫힌 노치에 나를 기다리는 코딩 에이전트 수(노란 손)를 보여 주고, 기다리는 에이전트가 없으면 일하는 에이전트 수(초록 번개)를 보여 줍니다. herdr와, 훅으로 연결한 Claude Code·Codex(설정 → 알림에서 연결, Codex는 다음에 시작할 때 훅을 신뢰할지 묻습니다)를 따라가며, `claude --bg`로 띄운 백그라운드 세션도 셉니다.
 - **에이전트 탭.** 작업 중이거나 나를 기다리는 Claude Code, Codex, herdr 세션을 폴더, 모델, 사용한 컨텍스트, 기본값이 아닌 권한 모드와 함께 나열하고, 누르면 해당 터미널이 앞으로 나옵니다. 이 Mac에 있는 도구의 세션 파일에서 폴더, 모델, 토큰 수, 권한 모드만 읽습니다.
@@ -147,7 +147,7 @@ Nunsseop은 macOS가 '지금 재생 중'으로 아는 것을 보여 줍니다. �
 
 Nunsseop은 이 Mac 안(`127.0.0.1:47750`)에서만 다른 도구의 알림을 받습니다. 요청에는 `~/Library/Application Support/Nunsseop/notify-token`에 저장된 비밀 토큰이 있어야 합니다.
 
-설정 → 알림에서 Claude Code, Codex, Gemini CLI, OpenCode 옆의 **연결**을 누르세요. 이 Mac에서 써 본 도구만 보입니다. Nunsseop이 그 도구의 설정 파일(`~/.claude/settings.json`, `~/.codex/config.toml`, `~/.codex/hooks.json`, `~/.gemini/settings.json`)을 바꾸거나 `~/.config/opencode/plugins`에 플러그인을 추가하고, 기존 파일은 `.nunsseop-backup` 확장자로 남겨 둡니다. Codex는 `notify` 명령을 하나만 둘 수 있어서, 이미 있던 명령은 Nunsseop 다음에 그대로 실행됩니다. 작업 중인 에이전트 수를 위한 훅은 다른 도구의 훅 옆에 `~/.codex/hooks.json`으로 들어가며, Codex가 다음에 시작할 때 신뢰할지 묻습니다(“Review hooks”로 Nunsseop의 훅만 신뢰할 수 있고, “Trust all and continue”는 모든 도구의 새 훅을 신뢰합니다). 그 전에는 실행되지 않습니다. **연결 해제**를 누르면 원래대로 돌아갑니다. 그 뒤에 시작한 세션의 알림이 노치에 뜹니다.
+설정 → 알림에서 Claude Code, Codex, Gemini CLI, OpenCode 옆의 **연결**을 누르세요. 이 Mac에서 써 본 도구만 보입니다. Nunsseop이 그 도구의 설정 파일(`~/.claude/settings.json`, `~/.codex/config.toml`, `~/.codex/hooks.json`, `~/.gemini/settings.json`)을 바꾸거나 `~/.config/opencode/plugins`에 플러그인을 추가하고, 기존 파일은 `.nunsseop-backup` 확장자로 남겨 둡니다. Codex는 `notify` 명령을 하나만 둘 수 있어서, 이미 있던 명령은 Nunsseop 다음에 그대로 실행됩니다. 작업 중인 에이전트 수를 위한 훅은 다른 도구의 훅 옆에 `~/.codex/hooks.json`으로 들어가며, Codex가 다음에 시작할 때 신뢰할지 묻습니다(“Review hooks”로 Nunsseop의 훅만 신뢰할 수 있고, “Trust all and continue”는 모든 도구의 새 훅을 신뢰합니다). 그 전에는 실행되지 않고, 훅 문구가 바뀌는 업데이트 뒤에는 다시 묻습니다. **연결 해제**를 누르면 원래대로 돌아갑니다. 그 뒤에 시작한 세션의 알림이 노치에 뜹니다.
 
 Claude Code를 직접 설정하려면 **Claude Code 훅 명령 복사**를 누르고 `~/.claude/settings.json`에 넣으세요.
 
