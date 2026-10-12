@@ -163,11 +163,8 @@ private struct LayoutPane: View {
     var body: some View {
         Form {
             Section {
-                TabRow(tab: .home, settings: settings, canMoveUp: false, canMoveDown: false)
-                let tabs = settings.orderedTabs
-                ForEach(Array(tabs.enumerated()), id: \.element) { index, tab in
-                    TabRow(tab: tab, settings: settings, canMoveUp: index > 0, canMoveDown: index < tabs.count - 1)
-                }
+                TabRow(tab: .home, settings: settings)
+                TabOrderList(settings: settings)
             } header: {
                 Text("Tabs")
             } footer: {
@@ -217,24 +214,108 @@ private struct LayoutPane: View {
     }
 }
 
+/// Where a dragged row lands, and how far the rows it passes step aside, in rows.
+enum TabReorder {
+    /// The index a row dragged from `from` by `offset` points lands on: the slot its middle is over.
+    static func target(from: Int, offset: CGFloat, rowHeight: CGFloat, count: Int) -> Int {
+        min(max(from + Int((offset / rowHeight).rounded()), 0), count - 1)
+    }
+
+    /// -1, 0 or 1 for the row at `index` while the row at `from` is over `target`.
+    static func shift(_ index: Int, from: Int?, target: Int?) -> Int {
+        guard let from, let target, index != from else { return 0 }
+        if from < target, index > from, index <= target { return -1 }
+        if target < from, index >= target, index < from { return 1 }
+        return 0
+    }
+}
+
+/// The tabs after Home. A row is dragged where it should go: it follows the pointer and the rows it passes step
+/// aside. A Form's rows don't take onMove, so the list is one row of its own with the separators drawn in place.
+private struct TabOrderList: View {
+    @ObservedObject var settings: AppSettings
+    @State private var dragging: NotchTab?
+    @State private var offset: CGFloat = 0
+    private static let rowHeight: CGFloat = 36
+
+    var body: some View {
+        let tabs = settings.orderedTabs
+        let from = dragging.flatMap { tabs.firstIndex(of: $0) }
+        let target = from.map { TabReorder.target(from: $0, offset: offset, rowHeight: Self.rowHeight, count: tabs.count) }
+        ZStack(alignment: .top) {
+            VStack(spacing: 0) {
+                ForEach(1..<max(tabs.count, 1), id: \.self) { _ in
+                    Divider().padding(.top, Self.rowHeight - 1)
+                }
+            }
+            ForEach(Array(tabs.enumerated()), id: \.element) { index, tab in
+                let lifted = tab == dragging
+                TabRow(tab: tab, settings: settings)
+                    .frame(height: Self.rowHeight)
+                    .background {
+                        if lifted {
+                            RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .controlBackgroundColor))
+                                .shadow(color: .black.opacity(0.25), radius: 6, y: 2).padding(.horizontal, -6)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                    .offset(y: CGFloat(index) * Self.rowHeight
+                            + (lifted ? clamped(offset, from: index, count: tabs.count)
+                                      : CGFloat(TabReorder.shift(index, from: from, target: target)) * Self.rowHeight))
+                    .zIndex(lifted ? 1 : 0)
+                    .animation(lifted ? nil : .easeOut(duration: 0.15), value: target)
+                    .gesture(drag(tab, at: index, count: tabs.count))
+            }
+        }
+        .frame(height: CGFloat(tabs.count) * Self.rowHeight, alignment: .top)
+        .coordinateSpace(name: "tabOrder")
+    }
+
+    /// Keeps a dragged row within the list.
+    private func clamped(_ offset: CGFloat, from index: Int, count: Int) -> CGFloat {
+        min(max(offset, -CGFloat(index) * Self.rowHeight), CGFloat(count - 1 - index) * Self.rowHeight)
+    }
+
+    private func drag(_ tab: NotchTab, at index: Int, count: Int) -> some Gesture {
+        DragGesture(minimumDistance: 3, coordinateSpace: .named("tabOrder"))
+            .onChanged { value in
+                guard dragging == nil || dragging == tab else { return }
+                dragging = tab
+                offset = value.translation.height
+            }
+            .onEnded { _ in
+                guard dragging == tab else { return }
+                let to = TabReorder.target(from: index, offset: offset, rowHeight: Self.rowHeight, count: count)
+                // Settle into the slot, then reorder in place so nothing jumps.
+                withAnimation(.easeOut(duration: 0.12)) {
+                    offset = CGFloat(to - index) * Self.rowHeight
+                } completion: {
+                    var still = Transaction()
+                    still.disablesAnimations = true
+                    withTransaction(still) {
+                        if to != index { settings.moveTabs(from: [index], to: to > index ? to + 1 : to) }
+                        dragging = nil
+                        offset = 0
+                    }
+                }
+            }
+    }
+}
+
 private struct TabRow: View {
     let tab: NotchTab
     @ObservedObject var settings: AppSettings
-    let canMoveUp: Bool
-    let canMoveDown: Bool
 
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: tab.symbol).frame(width: 20).foregroundStyle(.secondary)
             Text(tab.title)
             Spacer()
+            // Home stays first; the others are dragged into order.
             if tab != .home {
-                Button { settings.moveTab(tab, by: -1) } label: { Image(systemName: "chevron.up") }
-                    .buttonStyle(.borderless).disabled(!canMoveUp)
-                    .help(Text("Move up"))
-                Button { settings.moveTab(tab, by: 1) } label: { Image(systemName: "chevron.down") }
-                    .buttonStyle(.borderless).disabled(!canMoveDown)
-                    .help(Text("Move down"))
+                Image(systemName: "line.3.horizontal").foregroundStyle(.tertiary)
+                    .help(Text("Drag to reorder"))
+                    .onHover { $0 ? NSCursor.openHand.push() : NSCursor.pop() }
             }
             Toggle("", isOn: Binding(get: { settings.isVisible(tab) }, set: { settings.setVisible(tab, $0) }))
                 .labelsHidden()
