@@ -217,13 +217,16 @@ struct PermissionHookShellTests {
         let port = holder.port
         holder.release()
         let home = try ScratchHome(token: String(repeating: "0123456789abcdef", count: 4))
-        let started = Date.now
         let hook = try HookProcess(command: NotifyServer.permissionHookCommand(port: port), home: home.url,
                                    stdin: PermissionTestServer.hookInput())
         let result = try #require(await hook.finish())
         #expect(result.stdout == "" && result.status == 0)
-        // A hook that waited for the missing server would take curl's whole 590 s; a loaded machine is slow, never that slow.
-        #expect(Date.now.timeIntervalSince(started) < 15)
+        // A hook that waited for the missing server would take curl's whole 590 s; a loaded machine is slow, never that slow. It is the
+        // hook's own run that is timed, from its start to its exit: the wall clock of this task also counts the time the task waited to
+        // be resumed, which on a runner busy with the other tests' synchronous work was over a minute for a hook that took a second.
+        await eventually { hook.lifetime != nil }
+        let lifetime = try #require(hook.lifetime)
+        #expect(lifetime < 15, "the hook ran \(lifetime) s")
     }
 
     @Test func theConnectTimeoutIsOneSecondAndTheWholeRequestIsBoundedBelowTheHooksOwn() {

@@ -266,6 +266,8 @@ final class HookProcess: @unchecked Sendable {
     let process = Process()
     private let output = Pipe()
     private var collected: Data?
+    private var started: Date?
+    private var ended: Date?
     private let lock = NSLock()
 
     /// Nothing but /dev/null may be written to, by the shell or anything it starts.
@@ -287,6 +289,10 @@ final class HookProcess: @unchecked Sendable {
         process.standardInput = input
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice
+        // The end is stamped by the process's own exit, on a dispatch thread, so it doesn't wait for the test's task to be resumed: on a
+        // loaded runner the cooperative pool is held by long synchronous tests, and a task resumes a minute late.
+        process.terminationHandler = { [self] _ in lock.withLock { ended = Date.now } }
+        lock.withLock { started = Date.now }
         try process.run()
         let reader = output.fileHandleForReading
         DispatchQueue.global().async { [self] in
@@ -311,6 +317,9 @@ final class HookProcess: @unchecked Sendable {
     }
 
     var isRunning: Bool { process.isRunning }
+
+    /// How long the command ran, from its start to its exit, as the system saw them; nil while it is running.
+    var lifetime: TimeInterval? { lock.withLock { ended.flatMap { end in started.map { end.timeIntervalSince($0) } } } }
 
     func terminate() { process.terminate() }
 

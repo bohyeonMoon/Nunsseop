@@ -89,13 +89,95 @@ enum PermissionText {
     /// The letters of ASCII that rise no higher than the middle of the row and sink no lower than its baseline: the only ones
     /// that may carry a combining mark, because a mark on a taller or deeper one reaches into the next row.
     private static let markBases = Set("acemnorsuvwxz".unicodeScalars.map(\.value))
-    /// The combining marks that fit above, below or beside those letters in every font the card uses. Not among them: the double
-    /// marks of U+035C-0362, which reach over the next letter, the grapheme joiner, which draws nothing, and the marks that
-    /// normalization turns into others.
-    private static let marks: [ClosedRange<UInt32>] = [
-        0x300...0x315, 0x31A...0x31B, 0x320...0x320, 0x323...0x324, 0x327...0x328, 0x32E...0x332, 0x334...0x334,
-        0x337...0x338, 0x33C...0x33E, 0x342...0x342, 0x346...0x346, 0x34A...0x34A, 0x350...0x352, 0x357...0x358, 0x363...0x364,
-        0x366...0x368, 0x36B...0x36C, 0x36E...0x36F]
+    /// The combining marks that may be shown on those letters: the block of U+0300-036F, but not the grapheme joiner, which
+    /// draws nothing, the double marks of U+035C-0362, which reach over the next letter, and the marks that normalization
+    /// turns into others. Of these, `fittingMarks` keeps the ones the machine's fonts draw inside the row.
+    private static let marks: ClosedRange<UInt32> = 0x300...0x36F
+    private static let refusedMarks: Set<UInt32> = Set([0x34F] + Array(0x35C...0x362))
+
+    /// The marks that fit above, below or beside every letter of `markBases` in every font the card uses, measured on this
+    /// machine the first time a mark follows one of those letters (a few milliseconds, once; a static is initialised once and
+    /// safely from any thread). The fonts, and so the marks that fit, differ from one macOS to the next, so no list of them is
+    /// kept. A pair fits when CoreText draws it in a real glyph, with ink, inside the row and not more than a point past either
+    /// side of its cell, by the outline or by the pixels it paints.
+    private static let fittingMarks: Set<UInt32> = {
+        let faces = [PermissionLayout.codeFont, PermissionLayout.titleFont, NSFont.systemFont(ofSize: 11)]
+        let measure = MarkRaster()
+        let letters = markBases.sorted().map { String(Unicode.Scalar($0)!) }
+        return Set(marks.filter { value in
+            guard !refusedMarks.contains(value), let mark = Unicode.Scalar(value),
+                  String(mark).precomposedStringWithCanonicalMapping.unicodeScalars.elementsEqual(String(mark).unicodeScalars) else { return false }
+            return letters.allSatisfy { letter in faces.allSatisfy { measure.fits(letter + String(mark), in: $0) } }
+        })
+    }()
+
+    /// Draws a line into a bitmap, to read off the pixels what its outline may not tell.
+    private final class MarkRaster {
+        static let scale = 4, margin = 8, width = 96, height = 64
+        /// Ink may pass the row's edge by a twentieth of a point, and the cell's sides by a point.
+        static let slack: CGFloat = 0.05, sideways: CGFloat = 1.0
+        private var pixels = [UInt8](repeating: 0, count: width * scale * height * scale * 4)
+        private let context: CGContext
+
+        init() {
+            let (width, height, scale) = (Self.width, Self.height, Self.scale)
+            context = pixels.withUnsafeMutableBytes {
+                CGContext(data: $0.baseAddress, width: width * scale, height: height * scale, bitsPerComponent: 8, bytesPerRow: width * scale * 4,
+                          space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+            }
+            context.scaleBy(x: CGFloat(scale), y: CGFloat(scale))
+        }
+
+        /// Whether `text` lays out in a row of `font`: it has a width, no fallback glyph, ink; its ink, by its outline and by
+        /// its pixels, is no more than a point past either side of the advance, and none passes above or below the row.
+        func fits(_ text: String, in font: NSFont) -> Bool {
+            let above = ceil(font.ascender), below = ceil(-font.descender) + ceil(font.leading)
+            let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: [.font: font]))
+            let advance = CTLineGetTypographicBounds(line, nil, nil, nil)
+            guard advance > 0, !drawsFallback(line) else { return false }
+            let ink = CTLineGetBoundsWithOptions(line, .useGlyphPathBounds)
+            guard !ink.isNull, ink.width > 0, ink.height > 0, ink.minX >= -Self.sideways, ink.maxX <= advance + Self.sideways,
+                  ink.maxY <= above + Self.slack, ink.minY >= -below - Self.slack else { return false }
+            guard ink.minX < -Self.sideways / 2 || ink.maxX > advance + Self.sideways / 2 else { return true }
+            guard let past = overshoot(line, advance: advance, below: below) else { return true }
+            return past <= Self.sideways
+        }
+
+        /// The line is in the LastResort font, which draws a box, or has glyph 0, the one a font keeps for what it can't draw.
+        private func drawsFallback(_ line: CTLine) -> Bool {
+            for run in CTLineGetGlyphRuns(line) as? [CTRun] ?? [] {
+                if let font = (CTRunGetAttributes(run) as NSDictionary)[kCTFontAttributeName],
+                   (CTFontCopyPostScriptName(font as! CTFont) as String).hasPrefix("LastResort") { return true }
+                var glyphs = [CGGlyph](repeating: 0, count: CTRunGetGlyphCount(run))
+                CTRunGetGlyphs(run, CFRange(location: 0, length: 0), &glyphs)
+                if glyphs.contains(0) { return true }
+            }
+            return false
+        }
+
+        /// How many points the pixels (alpha of 48 or more) pass the advance on the side they pass it by most; nil when the line
+        /// is too wide for the bitmap.
+        private func overshoot(_ line: CTLine, advance: Double, below: CGFloat) -> CGFloat? {
+            let (scale, margin) = (Self.scale, Self.margin)
+            guard advance + Double(2 * margin) <= Double(Self.width) else { return nil }
+            let used = Int(ceil(advance)) + 2 * margin
+            context.clear(CGRect(x: 0, y: 0, width: used, height: Self.height))
+            context.textPosition = CGPoint(x: Double(margin), y: Double(Self.height / 2) + below)
+            CTLineDraw(line, context)
+            let stride = Self.width * scale * 4, rows = Self.height * scale
+            let leftEdge = margin * scale, rightEdge = Int(((Double(margin) + advance) * Double(scale)).rounded()), usedPixels = used * scale
+            return pixels.withUnsafeBufferPointer { buffer in
+                func inked(_ x: Int) -> Bool {
+                    for y in 0..<rows where buffer[y * stride + x * 4 + 3] >= 48 { return true }
+                    return false
+                }
+                var past = 0
+                if let x = (0..<leftEdge).first(where: inked) { past = leftEdge - x }
+                if let x = (rightEdge..<usedPixels).last(where: inked) { past = max(past, x + 1 - rightEdge) }
+                return CGFloat(past) / CGFloat(scale)
+            }
+        }
+    }
     /// The pictures: assigned emoji of the Mahjong tiles to Symbols and Pictographs Extended-A, and of Miscellaneous Symbols
     /// and Dingbats. Text symbols such as ©, ™ and ↔ are not among them, and nothing joins to those.
     private static let pictures: [ClosedRange<UInt32>] = [0x2600...0x27BF, 0x1F000...0x1FAFF]
@@ -153,7 +235,7 @@ enum PermissionText {
         func isASCIIAlnum(_ byte: UInt8) -> Bool { (0x30...0x39).contains(byte) || (0x41...0x5A).contains(byte) || (0x61...0x7A).contains(byte) }
         var foreign = Set<UInt32>(), letters = Set<UInt32>(), stands = [UInt32: UInt8](), asciiPictures = Set<UInt32>()
         var out = [UInt8](repeating: 0, count: 64)
-        for value in (shown + pictures + marks).lazy.flatMap({ $0 }) where value >= 0x80 {
+        for value in (shown + pictures + [marks]).lazy.flatMap({ $0 }) where value >= 0x80 {
             guard let scalar = Unicode.Scalar(value) else { continue }
             let text = Array(String(scalar).utf8)
             status = 0
@@ -224,7 +306,7 @@ enum PermissionText {
     /// variation selector right after a picture that it changes (not one drawn in colour already), the text one, and one skin
     /// tone right after a picture that takes it, each only when CoreText draws the picture differently with it; the zero-width
     /// joiners of a sequence of pictures, up to `maxJoiners` in a row, that CoreText draws as one picture, and the colour
-    /// selectors in it; regional indicators two by two; the keycap of a digit, `#` or `*`. A combining mark of `marks` stays
+    /// selectors in it; regional indicators two by two; the keycap of a digit, `#` or `*`. A combining mark of `fittingMarks` stays
     /// when it is the only one on a letter of `markBases`. CR LF counts as one break. When ICU can't be loaded, or with
     /// `failClosed` (for a test), every scalar past ASCII is written out, those of emoji included.
     /// Constraint, accepted: the colour selector that stays inside a sequence drawn as one glyph changes nothing a reader sees, so
@@ -309,7 +391,7 @@ enum PermissionText {
                 reset()
                 previous = scalar
                 pairOpen = opened
-            } else if takesMark, marks.contains(where: { $0.contains(scalar.value) }) {
+            } else if takesMark, marks.contains(scalar.value), fittingMarks.contains(scalar.value) {
                 result.append(scalar)
                 reset()
                 previous = scalar
