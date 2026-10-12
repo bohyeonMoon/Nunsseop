@@ -95,6 +95,8 @@ enum AgentAction: Equatable {
     case finished
     /// Waiting at the prompt: a turn that was cut short no longer works and nothing is being asked, but a finished hand stays.
     case idle
+    /// A session started, or was resumed, cleared or compacted: listed as idle when not yet known, otherwise unchanged.
+    case opened
     /// The session is over.
     case remove
 }
@@ -113,6 +115,8 @@ struct AgentEvent: Equatable {
     /// Whether it runs in a herdr pane, which herdr's own count covers.
     var inHerdr = false
     var agent = AgentKind.claude
+    /// The tool's own process, to tell when it is gone.
+    var pid: Int32?
 }
 
 /// Claude Code's and Codex's hook events as the agents count reads them.
@@ -124,6 +128,7 @@ enum AgentHook {
         case "UserPromptSubmit": return .working
         case "Stop", "StopFailure": return .finished
         case "SessionEnd": return .remove
+        case "SessionStart": return .opened
         case "PermissionRequest": return .needsInput
         case "Interrupt": return .idle
         case "Notification":
@@ -140,7 +145,8 @@ enum AgentHook {
     /// The event a request's headers describe. The hook already trims its values; anything outside the
     /// whitelist is refused here as well. A call from a subagent (`X-Subagent`) is the main session's business.
     /// A background session (`X-Background`, from `claude --bg`) runs in Claude Code's daemon, so the app and the herdr
-    /// pane it seems to be in are only the daemon's, inherited from wherever it was first started.
+    /// pane it seems to be in are only the daemon's, inherited from wherever it was first started, and its process may
+    /// be one the daemon shares with other sessions.
     static func event(headers: [String: String]) -> AgentEvent? {
         let word = { (name: String) -> String? in
             guard let value = headers[name], !value.isEmpty, value.count <= 64,
@@ -159,7 +165,15 @@ enum AgentHook {
                 ? value : nil
         }
         return AgentEvent(session: session, action: action, app: app,
-                          inHerdr: !background && headers["x-herdr"]?.isEmpty == false, agent: agent)
+                          inHerdr: !background && headers["x-herdr"]?.isEmpty == false, agent: agent,
+                          pid: background ? nil : pid(headers["x-pid"]))
+    }
+
+    /// A process id from `X-Pid`: ASCII digits only, up to 10 of them, past 1 (init) and no more than a `pid_t` holds.
+    static func pid(_ value: String?) -> Int32? {
+        guard let value, (1...10).contains(value.utf8.count), value.utf8.allSatisfy({ (UInt8(ascii: "0")...UInt8(ascii: "9")).contains($0) }),
+              let pid = Int32(value), pid > 1 else { return nil }
+        return pid
     }
 }
 
@@ -223,8 +237,9 @@ final class NotifyServer: @unchecked Sendable {
 
     /// Claude Code's hook for the agents count, the same for every event. Claude Code passes the event as JSON on
     /// stdin; only the ids and names below leave it, as headers (no prompt, reply, folder or transcript), trimmed to
-    /// safe characters so a stray newline can't break one. Nothing may reach stdout, which `UserPromptSubmit` adds to
-    /// Claude's context, and a closed or stuck Nunsseop costs a session at most a second.
+    /// safe characters so a stray newline can't break one. `$PPID` is the `claude` process itself, whose end tells that
+    /// a session is gone. Nothing may reach stdout, which `UserPromptSubmit` and `SessionStart` add to Claude's context,
+    /// and a closed or stuck Nunsseop costs a session at most a second.
     static var agentHookCommand: String { agentHookCommand(for: .claude) }
 
     /// The same hook for Codex, which passes the same fields and adds `X-Agent` so its sessions stay apart from
@@ -236,7 +251,7 @@ final class NotifyServer: @unchecked Sendable {
             + "-H \"X-Session: $(k session_id)\" -H \"X-Event: $(k hook_event_name)\" -H \"X-Type: $(k notification_type)\" "
             + "-H \"X-Subagent: $(k agent_id)\" -H \"X-App: $__CFBundleIdentifier\" -H \"X-Herdr: ${HERDR_PANE_ID:+1}\" "
             + "-H \"X-Background: ${CLAUDE_JOB_DIR:+1}\" "
-            + (agent == .claude ? "" : "-H 'X-Agent: \(agent.rawValue)' ")
+            + (agent == .claude ? "-H \"X-Pid: $PPID\" " : "-H 'X-Agent: \(agent.rawValue)' ")
             + ">/dev/null 2>&1 || true"
     }
 

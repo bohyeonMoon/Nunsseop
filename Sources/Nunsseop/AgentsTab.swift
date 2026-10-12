@@ -46,13 +46,17 @@ struct AgentRow: Identifiable, Equatable {
 
     var title: String { folder ?? tool }
 
-    /// The state when it is waiting, then the tool (unless it is the title), the mode when it isn't the default (before
+    /// The state when it is waiting or idle, then the tool (unless it is the title), the mode when it isn't the default (before
     /// the model, so a long line cuts that off last), model and context used.
     var details: [String] { detailParts.map(\.text) }
 
     var detailParts: [(text: String, warns: Bool)] {
         var parts: [(text: String, warns: Bool)] = []
-        if state == .waiting { parts.append((finished ? String(localized: "Your turn") : String(localized: "Needs input"), false)) }
+        switch state {
+        case .waiting: parts.append((finished ? String(localized: "Your turn") : String(localized: "Needs input"), false))
+        case .idle: parts.append((String(localized: "Idle"), false))
+        case .working: break
+        }
         if folder != nil { parts.append((tool, false)) }
         if let mode, let label = mode.label { parts.append((label, mode.warns)) }
         if let model { parts.append((AgentTranscript.modelLabel(model), false)) }
@@ -60,8 +64,21 @@ struct AgentRow: Identifiable, Equatable {
         return parts
     }
 
-    var symbol: String { state == .working ? "bolt.fill" : "hand.raised.fill" }
-    var tint: Color { state == .working ? .green : .yellow }
+    var symbol: String {
+        switch state {
+        case .working: "bolt.fill"
+        case .waiting: "hand.raised.fill"
+        case .idle: "moon.zzz.fill"
+        }
+    }
+
+    var tint: Color {
+        switch state {
+        case .working: .green
+        case .waiting: .yellow
+        case .idle: .white.opacity(0.45)
+        }
+    }
 
     /// "Claude Code" and "Codex" for the hooks; herdr's own name for its agent.
     static func toolName(_ raw: String?) -> String {
@@ -103,10 +120,11 @@ struct AgentRow: Identifiable, Equatable {
         }
     }
 
-    /// Waiting first, then working, the most recent change first within each.
+    /// Waiting first, then working, then idle, the most recent change first within each.
     static func sorted(_ rows: [AgentRow]) -> [AgentRow] {
-        rows.sorted { a, b in
-            if a.state != b.state { return a.state == .waiting }
+        let rank = { (row: AgentRow) in row.state == .waiting ? 0 : row.state == .working ? 1 : 2 }
+        return rows.sorted { a, b in
+            if a.state != b.state { return rank(a) < rank(b) }
             let (x, y) = (a.since ?? .distantPast, b.since ?? .distantPast)
             return x != y ? x > y : a.id < b.id
         }
@@ -118,22 +136,32 @@ struct AgentRow: Identifiable, Equatable {
 @MainActor
 final class AgentsTabModel: ObservableObject {
     @Published private(set) var rows: [AgentRow] = []
+    /// Whether Claude Code or Codex is connected, which tells an empty tab from one waiting for a connection.
+    @Published private(set) var connected = false
     var isShowing = false {
-        didSet { if isShowing && !oldValue { refresh() } }
+        didSet {
+            guard isShowing && !oldValue else { return }
+            connected = checkConnected()
+            refresh()
+        }
     }
     /// Transcripts given instead of read, by `Entry.key`: for `--demo-agents`.
     var fixed: [String: AgentTranscript] = [:]
 
     private let board: AgentBoard
     private let home: () -> URL
+    private let isConnected: (() -> Bool)?
     private var transcripts = AgentTranscripts()
     private var loading = false
     private var changedWhileLoading = false
     private var observer: AnyCancellable?
 
-    init(board: AgentBoard, home: @escaping () -> URL = { NotifyIntegration.home }) {
+    /// - isConnected: whether a tool is connected; by default, whether Claude Code's or Codex's settings under `home` say so.
+    init(board: AgentBoard, home: @escaping () -> URL = { NotifyIntegration.home }, isConnected: (() -> Bool)? = nil) {
         self.board = board
         self.home = home
+        self.isConnected = isConnected
+        connected = checkConnected()
         #if DEBUG
         if CommandLine.arguments.contains("--demo-agents") { fixed = AgentBoard.demoTranscripts }
         #endif
@@ -167,6 +195,17 @@ final class AgentsTabModel: ObservableObject {
         }
     }
 
+    private func checkConnected() -> Bool {
+        if let isConnected { return isConnected() }
+        return NotifyIntegration.$homeOverride.withValue(home()) { NotifyIntegration.claudeCode.isInstalled || NotifyIntegration.codex.isInstalled }
+    }
+
+    /// What the tab says when no session is listed.
+    var emptyMessage: String {
+        connected ? String(localized: "No sessions used in the last 3 hours")
+                  : String(localized: "Connect Claude Code and Codex in Settings › Alerts to see their sessions here")
+    }
+
     private func rebuild(_ entries: [AgentBoard.Entry]) {
         let next = AgentRow.sorted(entries.map { entry in
             AgentRow(entry, transcript: fixed[entry.key] ?? AgentRow.transcriptKey(entry.agent).flatMap(transcripts.transcript))
@@ -181,7 +220,7 @@ struct AgentsTab: View {
     var body: some View {
         Group {
             if model.rows.isEmpty {
-                Text("Connect Claude Code and Codex in Settings › Alerts to see their sessions here")
+                Text(verbatim: model.emptyMessage)
                     .font(.system(size: 12)).foregroundStyle(.white.opacity(0.45))
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -208,6 +247,17 @@ private struct AgentRowView: View {
     @State private var hovering = false
 
     var body: some View {
+        content
+            .opacity(row.state == .idle ? 0.6 : 1)
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .surface(RoundedRectangle(cornerRadius: 10), opacity: hovering && row.target != nil ? 0.14 : 0.08)
+            .contentShape(Rectangle())
+            .onTapGesture { row.target?.perform() }
+            .onHover { hovering = $0 }
+            .help(row.path.map { Text(verbatim: $0) } ?? (row.target == nil ? Text(verbatim: "") : Text("Go to where it came from")))
+    }
+
+    private var content: some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: row.symbol)
                 .font(.system(size: 11, weight: .semibold))
@@ -230,11 +280,5 @@ private struct AgentRowView: View {
                 }
             }
         }
-        .padding(.horizontal, 10).padding(.vertical, 6)
-        .surface(RoundedRectangle(cornerRadius: 10), opacity: hovering && row.target != nil ? 0.14 : 0.08)
-        .contentShape(Rectangle())
-        .onTapGesture { row.target?.perform() }
-        .onHover { hovering = $0 }
-        .help(row.path.map { Text(verbatim: $0) } ?? (row.target == nil ? Text(verbatim: "") : Text("Go to where it came from")))
     }
 }

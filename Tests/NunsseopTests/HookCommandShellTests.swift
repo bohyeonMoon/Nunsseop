@@ -89,7 +89,7 @@ struct AgentHookShellTests {
             "-s", "-m", "1", "--connect-timeout", "1", "-X", "POST", "http://127.0.0.1:\(NotifyServer.port)/agent", "-d", "",
             "-H", sent.authArgument, "-H", "X-Session: abc-123", "-H", "X-Event: Stop",
             "-H", "X-Type: permission_prompt", "-H", "X-Subagent: ", "-H", "X-App: com.x",
-            "-H", "X-Herdr: ", "-H", "X-Background: ",
+            "-H", "X-Herdr: ", "-H", "X-Background: ", "-H", "X-Pid: \(getpid())",
         ])
         #expect(sent.curlCalls == 1)
         #expect(sent.stdout.isEmpty)
@@ -104,6 +104,13 @@ struct AgentHookShellTests {
         #expect(background.args.contains("X-Background: 1") && background.args.contains("X-Herdr: "))
         let unset = try run(stdin, environment: [:])
         #expect(unset.args.contains("X-App: "))
+    }
+
+    @Test func sessionStartSendsItsProcessAndPrintsNothing() throws {
+        let sent = try run(json(["session_id": "s", "hook_event_name": "SessionStart", "source": "resume"]))
+        #expect(sent.args.contains("X-Event: SessionStart") && sent.args.contains("X-Pid: \(getpid())"))
+        // SessionStart's stdout goes into Claude's context.
+        #expect(sent.stdout.isEmpty && sent.status == 0)
     }
 
     @Test func aSubagentCallCarriesItsId() throws {

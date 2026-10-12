@@ -358,6 +358,7 @@
 "Agents" = "Agentes";
 "Needs input" = "Espera tu respuesta";
 "Your turn" = "Tu turno";
+"Idle" = "Inactiva";
 "Plan" = "Plan";
 "Auto-accept edits" = "Aceptar ediciones automáticamente";
 "Auto" = "Auto";
@@ -365,6 +366,7 @@
 "Bypass permissions" = "Omitir permisos";
 "Full access" = "Acceso total";
 "Connect Claude Code and Codex in Settings › Alerts to see their sessions here" = "Conecta Claude Code y Codex en Ajustes › Avisos para ver aquí sus sesiones";
+"No sessions used in the last 3 hours" = "Ninguna sesión usada en las últimas 3 horas";
 "The Agents tab lists their sessions with folder, model, context used and permission mode, read from the tools' own session files on this Mac." = "La pestaña Agentes enumera sus sesiones con carpeta, modelo, contexto usado y modo de permisos, leídos de los archivos de sesión de las propias herramientas en este Mac.";
 
 /* Permission prompts */
