@@ -398,3 +398,8 @@
 "for this session" = "für diese Sitzung";
 "1 of %lld" = "1 von %lld";
 "Drag to reorder" = "Zum Umordnen ziehen";
+
+/* Resuming recent conversations */
+"Recent" = "Zuletzt";
+"Resume conversations in" = "Gespräche fortsetzen in";
+"%@ ago" = "vor %@";

@@ -205,5 +205,15 @@ extension AgentBoard {
         "demo|d": AgentTranscript(model: "gpt-5.6", tokens: 19_500),
         "demo|e": AgentTranscript(model: "claude-sonnet-5-5", tokens: 12_400),
     ]
+
+    /// A named Claude Code conversation and a Codex one that is only known by its folder.
+    static func demoRecent(now: Date = .now) -> [RecentConversation] {
+        [
+            RecentConversation(kind: .claude, session: "5f0c2d1e-0000-4000-8000-000000000001", cwd: "/Users/demo/Projects/nunsseop",
+                               modified: now.addingTimeInterval(-3 * 3_600), name: "Resume list"),
+            RecentConversation(kind: .codex, session: "01a130c4-3953-7f71-bc99-b8a6d37a5338", cwd: "/Users/demo/Projects/ios-app",
+                               modified: now.addingTimeInterval(-27 * 3_600)),
+        ]
+    }
 }
 #endif

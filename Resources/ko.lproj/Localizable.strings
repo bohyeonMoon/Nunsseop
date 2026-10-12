@@ -423,3 +423,8 @@
 "for this session" = "이 세션에서만";
 "1 of %lld" = "%lld개 중 1번째";
 "Drag to reorder" = "끌어서 순서 바꾸기";
+
+/* Resuming recent conversations */
+"Recent" = "최근";
+"Resume conversations in" = "대화를 이어서 열 곳";
+"%@ ago" = "%@ 전";
