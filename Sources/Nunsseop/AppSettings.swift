@@ -242,19 +242,16 @@ final class AppSettings: ObservableObject {
         }
     }
 
-    func moveTab(_ tab: NotchTab, by offset: Int) {
-        guard let order = Self.moved(tab, by: offset, in: orderedTabs) else { return }
-        tabOrder = order.map(\.rawValue)
+    func moveTabs(from source: IndexSet, to destination: Int) {
+        tabOrder = Self.moved(from: source, to: destination, in: orderedTabs).map(\.rawValue)
     }
 
-    /// `order` with `tab` swapped with the tab `offset` places away; nil when that is off either end.
-    nonisolated static func moved(_ tab: NotchTab, by offset: Int, in order: [NotchTab]) -> [NotchTab]? {
-        var order = order
-        guard let index = order.firstIndex(of: tab) else { return nil }
-        let target = index + offset
-        guard order.indices.contains(target) else { return nil }
-        order.swapAt(index, target)
-        return order
+    /// `order` with the tabs at `source` dragged to before the tab at `destination` (`order.count` for the end).
+    nonisolated static func moved(from source: IndexSet, to destination: Int, in order: [NotchTab]) -> [NotchTab] {
+        let moving = source.filter(order.indices.contains).map { order[$0] }
+        var rest = order.indices.filter { !source.contains($0) }.map { order[$0] }
+        rest.insert(contentsOf: moving, at: min(destination - source.count { $0 < destination }, rest.count))
+        return rest
     }
 
     func resetSizes() {

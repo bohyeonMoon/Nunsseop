@@ -115,14 +115,42 @@ struct AppSettingsTabOrderTests {
         #expect(order.count == others.count)
     }
 
-    @Test func movingATabSwapsItWithItsNeighbour() {
-        #expect(AppSettings.moved(.timer, by: 1, in: others)?.prefix(3) == [.shelf, .clipboard, .timer])
-        #expect(AppSettings.moved(.timer, by: -1, in: others)?.prefix(2) == [.timer, .shelf])
+    @Test func draggingATabDownPutsItBeforeTheDestination() {
+        let moved = AppSettings.moved(from: [0], to: 3, in: others)
+        #expect(Array(moved.prefix(3)) == [others[1], others[2], others[0]])
+        #expect(Set(moved) == Set(others) && moved.count == others.count)
     }
 
-    @Test func movingPastEitherEndChangesNothing() throws {
-        #expect(AppSettings.moved(try #require(others.first), by: -1, in: others) == nil)
-        #expect(AppSettings.moved(try #require(others.last), by: 1, in: others) == nil)
-        #expect(AppSettings.moved(.home, by: 1, in: others) == nil)
+    @Test func draggingATabUpOrToTheEnd() throws {
+        let last = try #require(others.last)
+        #expect(AppSettings.moved(from: [others.count - 1], to: 0, in: others).first == last)
+        #expect(AppSettings.moved(from: [0], to: others.count, in: others).last == others[0])
+    }
+
+    @Test func droppingATabWhereItIsChangesNothing() {
+        #expect(AppSettings.moved(from: [2], to: 2, in: others) == others)
+        #expect(AppSettings.moved(from: [2], to: 3, in: others) == others)
+    }
+}
+
+@Suite struct TabReorderTests {
+    @Test func aRowLandsOnTheSlotItsMiddleIsOver() {
+        #expect(TabReorder.target(from: 2, offset: 0, rowHeight: 36, count: 8) == 2)
+        #expect(TabReorder.target(from: 2, offset: 17, rowHeight: 36, count: 8) == 2)
+        #expect(TabReorder.target(from: 2, offset: 19, rowHeight: 36, count: 8) == 3)
+        #expect(TabReorder.target(from: 2, offset: -60, rowHeight: 36, count: 8) == 0)
+    }
+
+    @Test func aRowDraggedPastEitherEndStaysInTheList() {
+        #expect(TabReorder.target(from: 1, offset: -500, rowHeight: 36, count: 8) == 0)
+        #expect(TabReorder.target(from: 6, offset: 500, rowHeight: 36, count: 8) == 7)
+    }
+
+    @Test func theRowsPassedStepAsideTowardsWhereItCameFrom() {
+        // Dragged down from 1 to 3: rows 2 and 3 move up one.
+        #expect((0..<6).map { TabReorder.shift($0, from: 1, target: 3) } == [0, 0, -1, -1, 0, 0])
+        // Dragged up from 4 to 2: rows 2 and 3 move down one.
+        #expect((0..<6).map { TabReorder.shift($0, from: 4, target: 2) } == [0, 0, 1, 1, 0, 0])
+        #expect((0..<6).map { TabReorder.shift($0, from: nil, target: nil) } == [0, 0, 0, 0, 0, 0])
     }
 }

@@ -190,8 +190,6 @@
 "Title under the notch when the track changes" = "曲目变化时在刘海下方显示标题";
 "Always show the title while something is playing" = "播放时始终显示标题";
 "Current lyric under the notch while playing" = "播放时在刘海下方显示当前歌词";
-"Move up" = "上移";
-"Move down" = "下移";
 "Volume and brightness" = "音量与亮度";
 "Power and devices" = "电源与设备";
 "Files" = "文件";
@@ -393,3 +391,4 @@
 "everywhere" = "所有位置";
 "for this session" = "仅限本次会话";
 "1 of %lld" = "第 1 个，共 %lld 个";
+"Drag to reorder" = "拖动以调整顺序";

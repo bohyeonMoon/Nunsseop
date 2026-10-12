@@ -215,8 +215,6 @@
 "Title under the notch when the track changes" = "곡이 바뀌면 노치 아래에 제목";
 "Always show the title while something is playing" = "재생 중에는 제목을 항상 표시";
 "Current lyric under the notch while playing" = "재생 중 노치 아래에 현재 가사";
-"Move up" = "위로 이동";
-"Move down" = "아래로 이동";
 "Volume and brightness" = "볼륨과 밝기";
 "Power and devices" = "전원과 기기";
 "Files" = "파일";
@@ -418,3 +416,4 @@
 "everywhere" = "모든 곳에서";
 "for this session" = "이 세션에서만";
 "1 of %lld" = "%lld개 중 1번째";
+"Drag to reorder" = "끌어서 순서 바꾸기";
