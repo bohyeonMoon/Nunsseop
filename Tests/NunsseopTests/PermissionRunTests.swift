@@ -188,64 +188,87 @@ struct PermissionRunTests {
 
     /// For every scalar `escape` shows by itself: a Cyrillic or Greek letter, a full width Latin letter or digit or a Latin letter that ICU takes for an ASCII
     /// one is written out beside an ASCII letter and gives the chip alone, and nothing else gives the chip.
-    @Test func everyForeignLetterIsWrittenOutBesideASCIIAndGivesTheChipAlone() throws {
+    /// What a sweep over the scalars found: the expectations that failed, and how many scalars of each kind it met.
+    private struct Sweep: Sendable {
+        var failures: [String] = []
+        var count = 0
+        var byScript: [String: Int] = [:]
+        var classes: [Character: Int] = [:]
+    }
+
+    @Test func everyForeignLetterIsWrittenOutBesideASCIIAndGivesTheChipAlone() async throws {
         let (lookalike, script) = (try asciiLookalikes(), try scriptNames())
-        var foreign = 0, byScript: [String: Int] = [:]
-        for value in UInt32(0x80)...0x10FFFF {
-            guard let scalar = Unicode.Scalar(value), escaped(String(scalar)) == String(scalar) else { continue }
-            let text = String(scalar), label = "U+" + String(value, radix: 16, uppercase: true)
-            let isForeign = kind(of: scalar, lookalike: lookalike, script: script) == .foreignLetter
-            if isForeign {
-                foreign += 1
-                byScript[script(scalar), default: 0] += 1
-                for around in ["a" + text, text + "a", "a" + text + "b", "7" + text, "~/" + text + "x", "x." + text] {
-                    let expected = around.unicodeScalars.map { $0 == scalar ? hex(value) : String($0) }.joined()
-                    #expect(escaped(around) == expected, "\(label) in \(around)")
-                }
-                // With no ASCII letter or digit in the run, it is shown.
-                for around in [text, text + text, " " + text + " ", "~/" + text, "-" + text, "\"" + text + "\".", "\u{43E}" + text, "\u{AC00}" + text] {
-                    #expect(escaped(around) == around, "\(label) in \(around)")
+        let shownScalars = await ShownScalars.pastASCII()
+        // On a thread of its own (see `offPool`), which reports what failed and leaves the expectations to this task.
+        let sweep = await offPool { [self] in
+            var sweep = Sweep()
+            func expect(_ holds: Bool, _ message: @autoclosure () -> String) { if !holds { sweep.failures.append(message()) } }
+            for scalar in shownScalars {
+                let value = scalar.value, text = String(scalar), label = "U+" + String(value, radix: 16, uppercase: true)
+                let isForeign = kind(of: scalar, lookalike: lookalike, script: script) == .foreignLetter
+                if isForeign {
+                    sweep.count += 1
+                    sweep.byScript[script(scalar), default: 0] += 1
+                    for around in ["a" + text, text + "a", "a" + text + "b", "7" + text, "~/" + text + "x", "x." + text] {
+                        let expected = around.unicodeScalars.map { $0 == scalar ? hex(value) : String($0) }.joined()
+                        expect(escaped(around) == expected, "\(label) in \(around)")
+                    }
+                    // With no ASCII letter or digit in the run, it is shown.
+                    for around in [text, text + text, " " + text + " ", "~/" + text, "-" + text, "\"" + text + "\".", "\u{43E}" + text, "\u{AC00}" + text] {
+                        expect(escaped(around) == around, "\(label) in \(around)")
+                    }
                 }
             }
+            return sweep
         }
+        #expect(sweep.failures.isEmpty, "\(sweep.failures.count): \(sweep.failures.prefix(12))")
+        let (foreign, byScript) = (sweep.count, sweep.byScript)
         #expect(foreign > 400 && byScript["Cyrillic", default: 0] > 200 && byScript["Greek", default: 0] > 100 && byScript["Latin", default: 0] > 50
                 && byScript["Common", default: 0] >= 25, "\(foreign) \(byScript)")
     }
 
     /// For every scalar `escape` shows by itself that stands for one of `- / \\ . : @ ~ | ; & $ < > = * ? #`: the rule of its class, in every neighbourhood.
-    @Test func everyPunctuationLookalikeFollowsTheRuleOfItsClass() throws {
+    @Test func everyPunctuationLookalikeFollowsTheRuleOfItsClass() async throws {
         let (lookalike, script) = (try asciiLookalikes(), try scriptNames())
-        var classes: [Character: Int] = [:]
-        for value in UInt32(0x80)...0x10FFFF {
-            guard let scalar = Unicode.Scalar(value), escaped(String(scalar)) == String(scalar),
-                  case .standsFor(let ascii) = kind(of: scalar, lookalike: lookalike, script: script) else { continue }
-            let text = String(scalar), written = hex(value), label = "U+" + String(value, radix: 16, uppercase: true)
-            classes[ascii, default: 0] += 1
-            // Every class is shown with spaces, a Korean letter or a CJK one about it, and alone.
-            for around in [" " + text + " ", "\u{D55C}" + text + "\u{AE00}", "\u{4E2D}" + text + "\u{6587}", text + text, text + "\u{D55C}", "\u{D55C}" + text] {
-                #expect(escaped(around) == around, "\(label) in \(around)")
+        let shownScalars = await ShownScalars.pastASCII()
+        // On a thread of its own (see `offPool`), which reports what failed and leaves the expectations to this task.
+        let sweep = await offPool { [self] in
+            var sweep = Sweep()
+            func expect(_ holds: Bool, _ message: @autoclosure () -> String) { if !holds { sweep.failures.append(message()) } }
+            for scalar in shownScalars {
+                let value = scalar.value
+                guard case .standsFor(let ascii) = kind(of: scalar, lookalike: lookalike, script: script) else { continue }
+                let text = String(scalar), written = hex(value), label = "U+" + String(value, radix: 16, uppercase: true)
+                sweep.classes[ascii, default: 0] += 1
+                // Every class is shown with spaces, a Korean letter or a CJK one about it, and alone.
+                for around in [" " + text + " ", "\u{D55C}" + text + "\u{AE00}", "\u{4E2D}" + text + "\u{6587}", text + text, text + "\u{D55C}", "\u{D55C}" + text] {
+                    expect(escaped(around) == around, "\(label) in \(around)")
+                }
+                switch ascii {
+                case "-":
+                    // Written out right before an ASCII letter or digit, and nowhere else.
+                    for after in ["a", "Z", "0", "9"] { expect(escaped(text + after) == written + after && escaped("x" + text + after) == "x" + written + after, "\(label) \(after)") }
+                    for around in ["a" + text, "a" + text + " ", "a" + text + "\u{D55C}", "a" + text + ".", "a" + text + "-", "9" + text + "_"] { expect(escaped(around) == around, "\(label) in \(around)") }
+                case ".", ":", "@":
+                    // Written out between two letters or digits of ASCII, Latin, Cyrillic or Greek.
+                    for (before, after) in [("a", "b"), ("1", "2"), ("a", "9"), ("\u{E9}", "x"), ("\u{430}", "\u{431}"), ("\u{3B1}", "\u{3B2}"), ("x", "\u{43F}")] {
+                        expect(escaped(before + text + after) == before + written + after, "\(label) \(before)\(after)")
+                    }
+                    for around in ["a" + text, text + "a", "a" + text + ".", "a" + text + " b", "a" + text + "\u{D55C}", "\u{D55C}" + text + "a", "a" + text + "\u{4E2D}", "a" + text + "-b", "a-" + text + "b"] {
+                        expect(escaped(around) == around, "\(label) in \(around)")
+                    }
+                default:
+                    // Written out beside an ASCII letter, digit or punctuation mark on either side.
+                    for other in ["a", "9", ".", "/", "-", "(", "\"", "~", "$"] {
+                        expect(escaped(text + other) == written + other && escaped(other + text) == other + written && escaped(" " + text + other) == " " + written + other, "\(label) \(other)")
+                    }
+                    for around in [text + " ", " " + text, text + "\u{D55C}", "\u{D55C}" + text, text + "\u{4E2D}", "\u{D55C}" + text + "\u{4E2D}"] { expect(escaped(around) == around, "\(label) in \(around)") }
+                }
             }
-            switch ascii {
-            case "-":
-                // Written out right before an ASCII letter or digit, and nowhere else.
-                for after in ["a", "Z", "0", "9"] { #expect(escaped(text + after) == written + after && escaped("x" + text + after) == "x" + written + after, "\(label) \(after)") }
-                for around in ["a" + text, "a" + text + " ", "a" + text + "\u{D55C}", "a" + text + ".", "a" + text + "-", "9" + text + "_"] { #expect(escaped(around) == around, "\(label) in \(around)") }
-            case ".", ":", "@":
-                // Written out between two letters or digits of ASCII, Latin, Cyrillic or Greek.
-                for (before, after) in [("a", "b"), ("1", "2"), ("a", "9"), ("\u{E9}", "x"), ("\u{430}", "\u{431}"), ("\u{3B1}", "\u{3B2}"), ("x", "\u{43F}")] {
-                    #expect(escaped(before + text + after) == before + written + after, "\(label) \(before)\(after)")
-                }
-                for around in ["a" + text, text + "a", "a" + text + ".", "a" + text + " b", "a" + text + "\u{D55C}", "\u{D55C}" + text + "a", "a" + text + "\u{4E2D}", "a" + text + "-b", "a-" + text + "b"] {
-                    #expect(escaped(around) == around, "\(label) in \(around)")
-                }
-            default:
-                // Written out beside an ASCII letter, digit or punctuation mark on either side.
-                for other in ["a", "9", ".", "/", "-", "(", "\"", "~", "$"] {
-                    #expect(escaped(text + other) == written + other && escaped(other + text) == other + written && escaped(" " + text + other) == " " + written + other, "\(label) \(other)")
-                }
-                for around in [text + " ", " " + text, text + "\u{D55C}", "\u{D55C}" + text, text + "\u{4E2D}", "\u{D55C}" + text + "\u{4E2D}"] { #expect(escaped(around) == around, "\(label) in \(around)") }
-            }
+            return sweep
         }
+        #expect(sweep.failures.isEmpty, "\(sweep.failures.count): \(sweep.failures.prefix(12))")
+        let classes = sweep.classes
         #expect(classes["-", default: 0] >= 8 && classes["."] != nil && classes[":"] != nil && classes["@"] != nil && classes["/"] != nil && classes["\\"] != nil && classes["|"] != nil
                 && classes["&"] != nil && classes["$"] != nil && classes["="] != nil && classes["<"] != nil && classes[">"] != nil && classes["*"] != nil && classes["?"] != nil
                 && classes["#"] != nil && classes[";"] != nil && classes["~"] != nil, "\(classes)")
@@ -288,23 +311,27 @@ struct PermissionRunTests {
 
     /// Every scalar of Unicode, alone and after what could carry it along (a letter, a picture that takes a tone or a selector, a digit for a keycap, a regional
     /// indicator, a joiner): nothing past ASCII is left in what comes out but the brackets of an escape and the tab's arrow.
-    @Test func withoutICUNothingPastASCIIIsLeftInWhatComesOut() {
+    @Test func withoutICUNothingPastASCIIIsLeftInWhatComesOut() async {
         let contexts = ["", "a", "\u{1F44D}", "\u{2764}", "1\u{FE0F}", "\u{1F1E6}", "\u{1F600}\u{200D}"]
         let allowed: Set<UInt32> = [0x27E8, 0x27E9, 0x21E5]
-        var checked = 0
-        for value in UInt32(0x80)...0x10FFFF {
-            guard let scalar = Unicode.Scalar(value), scalar.properties.generalCategory != .unassigned, scalar.properties.generalCategory != .privateUse else { continue }
-            for context in contexts {
-                for text in [context + String(scalar) + "\u{20E3}\u{1F600}"] {
-                    let out = PermissionText.escape(text, multiline: true, failClosed: true)
-                    if let leaked = out.unicodeScalars.first(where: { $0.value > 0x7F && !allowed.contains($0.value) }) {
-                        Issue.record("U+\(String(leaked.value, radix: 16, uppercase: true)) is left in \(name(text))")
-                        return
+        // On a thread of its own (see `offPool`): the first scalar left in is reported, and the sweep stops there.
+        let (checked, leak) = await offPool { [self] () -> (Int, String?) in
+            var checked = 0
+            for value in UInt32(0x80)...0x10FFFF {
+                guard let scalar = Unicode.Scalar(value), scalar.properties.generalCategory != .unassigned, scalar.properties.generalCategory != .privateUse else { continue }
+                for context in contexts {
+                    for text in [context + String(scalar) + "\u{20E3}\u{1F600}"] {
+                        let out = PermissionText.escape(text, multiline: true, failClosed: true)
+                        if let leaked = out.unicodeScalars.first(where: { $0.value > 0x7F && !allowed.contains($0.value) }) {
+                            return (checked, "U+\(String(leaked.value, radix: 16, uppercase: true)) is left in \(name(text))")
+                        }
+                        checked += 1
                     }
-                    checked += 1
                 }
             }
+            return (checked, nil)
         }
+        if let leak { Issue.record(Comment(rawValue: leak)); return }
         #expect(checked > 500_000, "\(checked)")
     }
 

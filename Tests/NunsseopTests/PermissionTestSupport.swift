@@ -70,6 +70,54 @@ func scriptNames() throws -> (Unicode.Scalar) -> String {
     }
 }
 
+private final class Unchecked<Value>: @unchecked Sendable {
+    let value: Value
+    init(_ value: Value) { self.value = value }
+}
+
+/// Runs a CPU-bound `work` on a thread of its own and waits for it without holding a thread of Swift's cooperative pool. The pool has as many
+/// threads as the machine has cores (three on a CI runner), so a test that sweeps all of Unicode in its own body holds one of them for as long as
+/// it takes, and with three such tests every other test that sleeps or awaits resumes only when one lets go, a minute late. `work` reports what it
+/// finds in its result and leaves the expectations to the test, which makes them on its own task: an expectation made on a thread of this kind has no test to belong to.
+func offPool<T: Sendable>(_ work: @escaping () -> T) async -> T {
+    let job = Unchecked(work)
+    return await withCheckedContinuation { continuation in
+        let thread = Thread { continuation.resume(returning: job.value()) }
+        // A sweep is not what anyone is waiting for at a keystroke: the tests that sleep for a few hundred milliseconds go first.
+        thread.qualityOfService = .utility
+        thread.stackSize = 16 << 20
+        thread.start()
+    }
+}
+
+/// The scalars `PermissionText.escape` leaves alone when each stands by itself. Finding them takes a pass over all of Unicode (a few seconds each), and
+/// several tests build on them: it is made once for the whole run, on a thread of its own, and the tests that need it wait for it without holding a thread.
+enum ShownScalars {
+    /// Past ASCII, as the card shows it in a detail (a line break stays one): what the chip and run tests sweep.
+    static func pastASCII() async -> [Unicode.Scalar] { await pastASCIITask.value }
+
+    /// Of every scalar, as the card shows it in a title (a line break is written out): what the allowlist test draws.
+    static func alone() async -> [Unicode.Scalar] { await aloneTask.value }
+
+    private static let pastASCIITask = Task { () -> [Unicode.Scalar] in
+        await offPool {
+            (UInt32(0x80)...0x10FFFF).compactMap { value -> Unicode.Scalar? in
+                guard let scalar = Unicode.Scalar(value), PermissionText.escape(String(scalar), multiline: true) == String(scalar) else { return nil }
+                return scalar
+            }
+        }
+    }
+
+    private static let aloneTask = Task { () -> [Unicode.Scalar] in
+        await offPool {
+            (UInt32(0)...0x10FFFF).compactMap { Unicode.Scalar($0) }.filter {
+                let text = String($0)
+                return text.unicodeScalars.elementsEqual(PermissionText.escape(text, multiline: false).unicodeScalars)
+            }
+        }
+    }
+}
+
 /// Waits for `condition`, stopping as soon as it holds; the cap only matters on a slow or busy machine.
 /// It runs on the caller's actor, so a condition may read what that actor owns.
 func eventually(isolation: isolated (any Actor)? = #isolation, _ condition: () -> Bool) async {

@@ -174,29 +174,42 @@ struct PermissionChipTests {
 
     private func isDashLetter(_ scalar: Unicode.Scalar) -> Bool { Self.dashLetters.contains(scalar) }
 
-    @Test func everyScalarTheCardShowsRaisesTheChipIffItIsNotALetterOfCJKTextOrAPicture() throws {
-        let mappable = try asciiMappable()
+    private struct Sweep: Sendable {
+        var failures: [String] = []
         var raised = 0, quiet = 0, letters = 0, pictures = 0
-        for value in UInt32(0x80)...0x10FFFF {
-            guard let scalar = Unicode.Scalar(value), escaped(String(scalar)) == String(scalar) else { continue }
-            let text = String(scalar), letter = isLetter(scalar), picture = isQuietPicture(scalar, mappable), dash = isDashLetter(scalar)
-            let expected = !(letter || picture)
-            // Alone and among spaces, no dash-shaped letter has a letter beside it.
-            #expect(PermissionText.hasUnusualCharacters(text) == expected && PermissionText.hasUnusualCharacters("x " + text + " y") == expected, "\(name(text))")
-            // What is beside it changes nothing: not an ASCII letter, a digit, punctuation, a quote, nor a letter of CJK text.
-            if !dash {
-                for place: (String) -> String in [{ "a" + $0 }, { $0 + "b" }, { "~/" + $0 + "/z" }, { "(" + $0 + "\"" }, { "1" + $0 + "2" }, { "命" + $0 + "b" }, { "a" + $0 + "命" }, { $0 + $0 }] {
-                    let other = place(text), shown = escaped(other)
-                    // Where a scalar was written out, the rules of the escape have had their say.
-                    guard shown == other else { continue }
-                    #expect(PermissionText.hasUnusualCharacters(shown) == expected, "\(name(other))")
+    }
+
+    @Test func everyScalarTheCardShowsRaisesTheChipIffItIsNotALetterOfCJKTextOrAPicture() async throws {
+        let mappable = try asciiMappable()
+        let shownScalars = await ShownScalars.pastASCII()
+        // On a thread of its own (see `offPool`), which reports the scalars that fail and leaves the expectation to this task.
+        let sweep = await offPool { [self] in
+            var sweep = Sweep()
+            for scalar in shownScalars {
+                let text = String(scalar), letter = isLetter(scalar), picture = isQuietPicture(scalar, mappable), dash = isDashLetter(scalar)
+                let expected = !(letter || picture)
+                // Alone and among spaces, no dash-shaped letter has a letter beside it.
+                if !(PermissionText.hasUnusualCharacters(text) == expected && PermissionText.hasUnusualCharacters("x " + text + " y") == expected) {
+                    sweep.failures.append("\(name(text))")
                 }
+                // What is beside it changes nothing: not an ASCII letter, a digit, punctuation, a quote, nor a letter of CJK text.
+                if !dash {
+                    for place: (String) -> String in [{ "a" + $0 }, { $0 + "b" }, { "~/" + $0 + "/z" }, { "(" + $0 + "\"" }, { "1" + $0 + "2" }, { "命" + $0 + "b" }, { "a" + $0 + "命" }, { $0 + $0 }] {
+                        let other = place(text), shown = escaped(other)
+                        // Where a scalar was written out, the rules of the escape have had their say.
+                        guard shown == other else { continue }
+                        if PermissionText.hasUnusualCharacters(shown) != expected { sweep.failures.append("\(name(other))") }
+                    }
+                }
+                if expected { sweep.raised += 1 } else { sweep.quiet += 1 }
+                if letter { sweep.letters += 1 }
+                if picture { sweep.pictures += 1 }
             }
-            if expected { raised += 1 } else { quiet += 1 }
-            if letter { letters += 1 }
-            if picture { pictures += 1 }
+            return sweep
         }
-        #expect(raised > 1_500 && quiet > 30_000 && letters > 30_000 && pictures > 500, "\(raised) \(quiet) \(letters) \(pictures)")
+        #expect(sweep.failures.isEmpty, "\(sweep.failures.count): \(sweep.failures.prefix(12))")
+        #expect(sweep.raised > 1_500 && sweep.quiet > 30_000 && sweep.letters > 30_000 && sweep.pictures > 500,
+                "\(sweep.raised) \(sweep.quiet) \(sweep.letters) \(sweep.pictures)")
     }
 
     /// The letters are letters: a cross-check of the list above against the Unicode general category.

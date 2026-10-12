@@ -90,12 +90,22 @@ struct PermissionAllowlistTests {
             context.textPosition = CGPoint(x: 4, y: 14 + face.below)
             CTLineDraw(line, context)
             let rowBottom = 28, rowTop = 56, stride = width * 2 * 4
+            // Plain counters: a debug build runs a `for` over a range through generic iterators, which is most of the time this test takes.
             return pixels.withUnsafeBufferPointer { buffer in
-                var worst = 0
-                for y in 0..<84 where y < rowBottom || y >= rowTop {
-                    let distance = y < rowBottom ? rowBottom - y : y - rowTop + 1
-                    guard distance > worst else { continue }
-                    for x in 0..<(used * 2) where buffer[y * stride + x * 4 + 3] >= 48 { worst = distance; break }
+                var worst = 0, y = 0
+                while y < 84 {
+                    if y < rowBottom || y >= rowTop {
+                        let distance = y < rowBottom ? rowBottom - y : y - rowTop + 1
+                        if distance > worst {
+                            var index = y * stride + 3
+                            let end = index + used * 2 * 4
+                            while index < end {
+                                if buffer[index] >= 48 { worst = distance; break }
+                                index += 4
+                            }
+                        }
+                    }
+                    y += 1
                 }
                 return worst
             }
@@ -132,21 +142,22 @@ struct PermissionAllowlistTests {
             let leftEdge = margin * scale, rightEdge = Int(((Double(margin) + advance) * Double(scale)).rounded()), usedPixels = used * scale
             return pixels.withUnsafeBufferPointer { buffer in
                 func inked(_ x: Int) -> Bool {
-                    for y in 0..<rows where buffer[y * stride + x * 4 + 3] >= 48 { return true }
+                    var index = x * 4 + 3
+                    let end = rows * stride
+                    while index < end {
+                        if buffer[index] >= 48 { return true }
+                        index += stride
+                    }
                     return false
                 }
                 var past = 0
-                if let x = (0..<leftEdge).first(where: inked) { past = leftEdge - x }
-                if let x = (rightEdge..<usedPixels).last(where: inked) { past = max(past, x + 1 - rightEdge) }
+                var x = 0
+                while x < leftEdge { if inked(x) { past = leftEdge - x; break }; x += 1 }
+                x = usedPixels - 1
+                while x >= rightEdge { if inked(x) { past = max(past, x + 1 - rightEdge); break }; x -= 1 }
                 return CGFloat(past) / CGFloat(scale)
             }
         }
-    }
-
-    /// Every scalar that `escape` leaves alone when it stands by itself.
-    private static let shownScalars: [Unicode.Scalar] = (UInt32(0)...0x10FFFF).compactMap { Unicode.Scalar($0) }.filter {
-        let text = String($0)
-        return text.unicodeScalars.elementsEqual(PermissionText.escape(text, multiline: false).unicodeScalars)
     }
 
     private typealias CharDirection = @convention(c) (Int32) -> Int32
@@ -154,7 +165,13 @@ struct PermissionAllowlistTests {
 
     // MARK: Single scalars
 
-    @Test func everyScalarShownAsItIsDrawsInsideItsRowInEveryFontTheCardUses() throws {
+    private struct Sweep: Sendable {
+        var problems: [String] = []
+        var lookalikes = 0
+    }
+
+    /// Every scalar `escape` leaves alone by itself is asked in all three fonts. The sweep runs on a thread of its own (see `offPool`).
+    @Test func everyScalarShownAsItIsDrawsInsideItsRowInEveryFontTheCardUses() async throws {
         let library = try #require(dlopen("/usr/lib/libicucore.dylib", RTLD_NOW))
         let direction = unsafeBitCast(try #require(dlsym(library, "u_charDirection")), to: CharDirection.self)
         let hasProperty = unsafeBitCast(try #require(dlsym(library, "u_hasBinaryProperty")), to: HasBinaryProperty.self)
@@ -164,28 +181,33 @@ struct PermissionAllowlistTests {
         let refused: Set<Int32> = [1, 5, 13, 11, 12, 14, 15, 16, 19, 20, 21, 22, 7, 8, 18]
         let lookalike = try asciiLookalikes()
         #expect(lookalike("\u{2010}") == "-" && lookalike("\u{FF41}") == "a" && lookalike("\u{4E2D}") == nil && lookalike("a") == nil)
-        let raster = Raster(), sidewaysRaster = SidewaysRaster()
-        var problems: [String] = [], lookalikes = 0
-        // By itself a scalar that reads as ASCII has nothing beside it that makes it certain, and is shown.
-        for scalar in Self.shownScalars {
-            let text = String(scalar)
-            if lookalike(scalar) != nil { lookalikes += 1 }
-            if let why = problem(text, raster: sidewaysRaster) { problems.append("\(name(text)) \(why)") }
-            // A pixel of anti-aliasing at the row's edge is not paint in the next row: colour emoji reach the very edge.
-            else if raster.overflow(text, in: faces[0]) > 1 { problems.append("\(name(text)) paints past the row") }
-            if !stable(text) { problems.append("\(name(text)) is changed by normalization") }
-            if refused.contains(direction(Int32(scalar.value))) { problems.append("\(name(text)) is not left to right") }
-            if scalar.value > 0x7F, scalar.properties.generalCategory == .unassigned { problems.append("\(name(text)) is unassigned") }
-            if scalar.properties.isEmoji, scalar.value > 0xFF, hasProperty(Int32(scalar.value), extendedPictographic) == 0 {
-                problems.append("\(name(text)) is not an extended pictograph")
+        let shownScalars = await ShownScalars.alone()
+        let sweep = await offPool { [self] in
+            let raster = Raster(), sidewaysRaster = SidewaysRaster()
+            var sweep = Sweep()
+            // By itself a scalar that reads as ASCII has nothing beside it that makes it certain, and is shown.
+            for scalar in shownScalars {
+                let text = String(scalar)
+                if lookalike(scalar) != nil { sweep.lookalikes += 1 }
+                if let why = problem(text, raster: sidewaysRaster) { sweep.problems.append("\(name(text)) \(why)") }
+                // A pixel of anti-aliasing at the row's edge is not paint in the next row: colour emoji reach the very edge.
+                else if raster.overflow(text, in: faces[0]) > 1 { sweep.problems.append("\(name(text)) paints past the row") }
+                if !stable(text) { sweep.problems.append("\(name(text)) is changed by normalization") }
+                if refused.contains(direction(Int32(scalar.value))) { sweep.problems.append("\(name(text)) is not left to right") }
+                if scalar.value > 0x7F, scalar.properties.generalCategory == .unassigned { sweep.problems.append("\(name(text)) is unassigned") }
+                if scalar.properties.isEmoji, scalar.value > 0xFF, hasProperty(Int32(scalar.value), extendedPictographic) == 0 {
+                    sweep.problems.append("\(name(text)) is not an extended pictograph")
+                }
             }
+            return sweep
         }
-        #expect(problems.isEmpty, "\(problems.count): \(problems.prefix(12))")
-        #expect(Self.shownScalars.count > 42_000 && Self.shownScalars.count < 43_500 && lookalikes > 300, "\(Self.shownScalars.count) \(lookalikes)")
+        #expect(sweep.problems.isEmpty, "\(sweep.problems.count): \(sweep.problems.prefix(12))")
+        #expect(shownScalars.count > 42_000 && shownScalars.count < 43_500 && sweep.lookalikes > 300, "\(shownScalars.count) \(sweep.lookalikes)")
     }
 
-    @Test func theScalarsShownAreTheOnesTheAllowlistNamesAndNoOthers() {
-        let all = Set(Self.shownScalars.map(\.value))
+    @Test func theScalarsShownAreTheOnesTheAllowlistNamesAndNoOthers() async {
+        let shownScalars = await ShownScalars.alone()
+        let all = Set(shownScalars.map(\.value))
         let ranges: [ClosedRange<UInt32>] = [0x20...0x7E, 0xA1...0x24F, 0x1E00...0x1EFF, 0x370...0x4FF, 0x2010...0x2027, 0x2030...0x205E, 0x20A0...0x20C0,
                                              0x2100...0x214F, 0x2190...0x22FF, 0x2303...0x2303, 0x2318...0x2318, 0x2325...0x2325, 0x23CE...0x23CE,
                                              0x2500...0x257F, 0x25A0...0x25FF, 0x3001...0x303F, 0x3041...0x30FF, 0x3131...0x318E,
@@ -372,8 +394,9 @@ struct PermissionAllowlistTests {
         return (CTLineGetGlyphCount(line), fallback(line) != nil)
     }
 
-    @Test func everyEmojiSequenceTheCardShowsDrawsInsideItsRow() {
-        let pictures = Self.shownScalars.filter { $0.value >= 0x1F000 || (0x2600...0x27BF).contains($0.value) }
+    @Test func everyEmojiSequenceTheCardShowsDrawsInsideItsRow() async {
+        let shownScalars = await ShownScalars.alone()
+        let pictures = shownScalars.filter { $0.value >= 0x1F000 || (0x2600...0x27BF).contains($0.value) }
         #expect(pictures.count > 1_300)
         let joiner = "\u{200D}", selector = "\u{FE0F}", tones = (0x1F3FB...0x1F3FF).map { String(Unicode.Scalar($0)!) }
         let woman = "\u{1F469}"
@@ -408,8 +431,9 @@ struct PermissionAllowlistTests {
         }
     }
 
-    @Test func theColourSelectorIsWrittenOutAfterAPictureThatIsInColourAlready() {
-        let pictures = Self.shownScalars.filter {
+    @Test func theColourSelectorIsWrittenOutAfterAPictureThatIsInColourAlready() async {
+        let shownScalars = await ShownScalars.alone()
+        let pictures = shownScalars.filter {
             $0.properties.isEmoji && ($0.value >= 0x1F000 || (0x2600...0x27BF).contains($0.value)) && !(0x1F3FB...0x1F3FF).contains($0.value)
                 && !(0x1F1E6...0x1F1FF).contains($0.value)
         }
@@ -427,7 +451,8 @@ struct PermissionAllowlistTests {
         #expect(escaped("1\u{FE0F}\u{20E3}") == "1\u{FE0F}\u{20E3}")
     }
 
-    @Test func aJoinerStaysOnlyWhereTheWholeSequenceIsDrawnAsOneGlyph() {
+    @Test func aJoinerStaysOnlyWhereTheWholeSequenceIsDrawnAsOneGlyph() async {
+        let shownScalars = await ShownScalars.alone()
         let joiner = "\u{200D}"
         // The pictures made of several, and the ones from the reviews, are shown whole; a joiner between two that never make one is written out.
         for text in ["\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}", "\u{2764}\u{FE0F}\u{200D}\u{1F525}", "\u{1F3F3}\u{200D}\u{1F308}"] {
@@ -473,7 +498,7 @@ struct PermissionAllowlistTests {
         }
         #expect(drawn > 150 && split > 10 && useless > 4 && selectors > 5, "\(drawn) \(split) \(useless) \(selectors)")
         // Pairs of any two pictures: the same, whatever the font makes of them.
-        let pictures = Self.shownScalars.filter { $0.properties.isEmoji && $0.properties.isEmojiPresentation && $0.value >= 0x1F300 }
+        let pictures = shownScalars.filter { $0.properties.isEmoji && $0.properties.isEmojiPresentation && $0.value >= 0x1F300 }
         for (offset, first) in pictures.enumerated() where offset % 7 == 0 {
             let second = pictures[(offset * 13 + 5) % pictures.count]
             let text = String(first) + joiner + String(second), one = glyphs(text)
