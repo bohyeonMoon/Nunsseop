@@ -190,8 +190,6 @@
 "Title under the notch when the track changes" = "曲が変わったらノッチの下にタイトル";
 "Always show the title while something is playing" = "再生中は常にタイトルを表示";
 "Current lyric under the notch while playing" = "再生中はノッチの下に現在の歌詞";
-"Move up" = "上へ移動";
-"Move down" = "下へ移動";
 "Volume and brightness" = "音量と明るさ";
 "Power and devices" = "電源とデバイス";
 "Files" = "ファイル";
@@ -391,3 +389,4 @@
 "everywhere" = "すべての場所で";
 "for this session" = "このセッションのみ";
 "1 of %lld" = "%lld 件中 1 件目";
+"Drag to reorder" = "ドラッグで並べ替え";
