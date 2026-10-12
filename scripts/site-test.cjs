@@ -398,7 +398,12 @@ const pickLang = async (page, lang) => {
 
     // Install tabs: the underline lands under the selected tab, and the panel changes.
     await mp.click('[data-tab="src"]');
-    await sleep(450);
+    const inkSettled = () => {
+      const on = document.querySelector('.tabs [aria-selected="true"]'), i = document.querySelector('.tabs-ink');
+      const ir = i.getBoundingClientRect(), br = on.getBoundingClientRect();
+      return !i.getAnimations().some(a => a.playState === 'running') && Math.abs(ir.left - br.left) < 1 && Math.abs(ir.width - br.width) < 1;
+    };
+    await mp.waitForFunction(inkSettled, null, { timeout: 30000 }).catch(() => {});
     const ink = await mp.evaluate(() => {
       const on = document.querySelector('.tabs [aria-selected="true"]'), i = document.querySelector('.tabs-ink');
       const ir = i.getBoundingClientRect(), br = on.getBoundingClientRect();
@@ -406,7 +411,7 @@ const pickLang = async (page, lang) => {
     });
     check(ink.dx < 1 && ink.dw < 1 && ink.panel === 'src', `motion: tab underline is off by ${ink.dx}/${ink.dw}px or panel is ${ink.panel}`);
     await pickLang(mp, 'de');
-    await sleep(100);
+    await mp.waitForFunction(inkSettled, null, { timeout: 30000 }).catch(() => {});
     const inkDe = await mp.evaluate(() => {
       const on = document.querySelector('.tabs [aria-selected="true"]'), i = document.querySelector('.tabs-ink');
       return Math.abs(i.getBoundingClientRect().width - on.getBoundingClientRect().width);
