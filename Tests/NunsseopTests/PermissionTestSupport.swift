@@ -1,9 +1,17 @@
 import AppKit
 import CoreText
 import Foundation
+import Testing
 @testable import Nunsseop
 
 struct ICUUnavailable: Error {}
+
+extension Tag {
+    /// A sweep of all of Unicode, or of thousands of glyphs: seconds of CPU on every core, which starves the tests that wait for a real event
+    /// with a deadline. `scripts/test.sh` and CI run these in a pass of their own, after the rest. `swift test` can't select by tag, so a test with
+    /// this tag also has `exhaustive` at the start of its name (`--filter /exhaustive`), which `ExhaustiveTagTests` keeps true.
+    @Tag static var exhaustive: Self
+}
 
 /// What ICU's spoof checker makes of a scalar (asked for UTF-16 here, where the card asks for UTF-8) and its compatibility form,
 /// whichever is ASCII and not the scalar: the character it can be mistaken for, nil when there is none.

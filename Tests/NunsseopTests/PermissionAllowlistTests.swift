@@ -171,7 +171,7 @@ struct PermissionAllowlistTests {
     }
 
     /// Every scalar `escape` leaves alone by itself is asked in all three fonts. The sweep runs on a thread of its own (see `offPool`).
-    @Test func everyScalarShownAsItIsDrawsInsideItsRowInEveryFontTheCardUses() async throws {
+    @Test(.tags(.exhaustive)) func exhaustiveEveryScalarShownAsItIsDrawsInsideItsRowInEveryFontTheCardUses() async throws {
         let library = try #require(dlopen("/usr/lib/libicucore.dylib", RTLD_NOW))
         let direction = unsafeBitCast(try #require(dlsym(library, "u_charDirection")), to: CharDirection.self)
         let hasProperty = unsafeBitCast(try #require(dlsym(library, "u_hasBinaryProperty")), to: HasBinaryProperty.self)
@@ -205,7 +205,7 @@ struct PermissionAllowlistTests {
         #expect(shownScalars.count > 42_000 && shownScalars.count < 43_500 && sweep.lookalikes > 300, "\(shownScalars.count) \(sweep.lookalikes)")
     }
 
-    @Test func theScalarsShownAreTheOnesTheAllowlistNamesAndNoOthers() async {
+    @Test(.tags(.exhaustive)) func exhaustiveTheScalarsShownAreTheOnesTheAllowlistNamesAndNoOthers() async {
         let shownScalars = await ShownScalars.alone()
         let all = Set(shownScalars.map(\.value))
         let ranges: [ClosedRange<UInt32>] = [0x20...0x7E, 0xA1...0x24F, 0x1E00...0x1EFF, 0x370...0x4FF, 0x2010...0x2027, 0x2030...0x205E, 0x20A0...0x20C0,
@@ -232,7 +232,7 @@ struct PermissionAllowlistTests {
         }
     }
 
-    @Test func aScalarThatNormalizationChangesIsWrittenOutBeforeItCanBeChanged() {
+    @Test(.tags(.exhaustive)) func exhaustiveAScalarThatNormalizationChangesIsWrittenOutBeforeItCanBeChanged() {
         var checked = 0
         for scalar in (UInt32(0)...0x10FFFF).compactMap({ Unicode.Scalar($0) }) where !stable(String(scalar)) {
             checked += 1
@@ -394,7 +394,7 @@ struct PermissionAllowlistTests {
         return (CTLineGetGlyphCount(line), fallback(line) != nil)
     }
 
-    @Test func everyEmojiSequenceTheCardShowsDrawsInsideItsRow() async {
+    @Test(.tags(.exhaustive)) func exhaustiveEveryEmojiSequenceTheCardShowsDrawsInsideItsRow() async {
         let shownScalars = await ShownScalars.alone()
         let pictures = shownScalars.filter { $0.value >= 0x1F000 || (0x2600...0x27BF).contains($0.value) }
         #expect(pictures.count > 1_300)
@@ -431,7 +431,7 @@ struct PermissionAllowlistTests {
         }
     }
 
-    @Test func theColourSelectorIsWrittenOutAfterAPictureThatIsInColourAlready() async {
+    @Test(.tags(.exhaustive)) func exhaustiveTheColourSelectorIsWrittenOutAfterAPictureThatIsInColourAlready() async {
         let shownScalars = await ShownScalars.alone()
         let pictures = shownScalars.filter {
             $0.properties.isEmoji && ($0.value >= 0x1F000 || (0x2600...0x27BF).contains($0.value)) && !(0x1F3FB...0x1F3FF).contains($0.value)
@@ -451,7 +451,7 @@ struct PermissionAllowlistTests {
         #expect(escaped("1\u{FE0F}\u{20E3}") == "1\u{FE0F}\u{20E3}")
     }
 
-    @Test func aJoinerStaysOnlyWhereTheWholeSequenceIsDrawnAsOneGlyph() async {
+    @Test(.tags(.exhaustive)) func exhaustiveAJoinerStaysOnlyWhereTheWholeSequenceIsDrawnAsOneGlyph() async {
         let shownScalars = await ShownScalars.alone()
         let joiner = "\u{200D}"
         // The pictures made of several, and the ones from the reviews, are shown whole; a joiner between two that never make one is written out.

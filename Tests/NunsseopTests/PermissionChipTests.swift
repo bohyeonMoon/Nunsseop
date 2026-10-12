@@ -179,7 +179,7 @@ struct PermissionChipTests {
         var raised = 0, quiet = 0, letters = 0, pictures = 0
     }
 
-    @Test func everyScalarTheCardShowsRaisesTheChipIffItIsNotALetterOfCJKTextOrAPicture() async throws {
+    @Test(.tags(.exhaustive)) func exhaustiveEveryScalarTheCardShowsRaisesTheChipIffItIsNotALetterOfCJKTextOrAPicture() async throws {
         let mappable = try asciiMappable()
         let shownScalars = await ShownScalars.pastASCII()
         // On a thread of its own (see `offPool`), which reports the scalars that fail and leaves the expectation to this task.
