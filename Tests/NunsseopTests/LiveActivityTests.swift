@@ -50,9 +50,8 @@ struct LiveActivityPrecedenceTests {
 }
 
 struct EarWidthTests {
-    private func ear(height: CGFloat = 32, compact: Bool = false, call: Bool = false, muted: Bool = false,
-                     text: Bool = false) -> CGFloat {
-        NotchViewModel.earWidth(height: height, compact: compact, inCall: call, muted: muted, needsText: text)
+    private func ear(height: CGFloat = 32, compact: Bool = false) -> CGFloat {
+        NotchViewModel.earWidth(height: height, compact: compact)
     }
 
     @Test func theEarIsThePanelHeightPlusSix() {
@@ -63,19 +62,6 @@ struct EarWidthTests {
     @Test func theCompactEarIsSeventyPercentOfTheHeight() {
         #expect(abs(ear(height: 32, compact: true) - 22.4) < 0.001)
         #expect(abs(ear(height: 18, compact: true) - 12.6) < 0.001)
-    }
-
-    @Test func aTimerRecordingOrDownloadNeedsRoomForItsText() {
-        #expect(ear(text: true) == 50)
-        #expect(ear(compact: true, text: true) == 50)
-        // A taller ear is not made smaller.
-        #expect(ear(height: 60, text: true) == 66)
-    }
-
-    @Test func aCallNeedsRoomForItsClockAndAMuteIcon() {
-        #expect(ear(call: true) == 60)
-        #expect(ear(call: true, muted: true) == 74)
-        #expect(ear(compact: true, call: true, text: true) == 60)
     }
 }
 

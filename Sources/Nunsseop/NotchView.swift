@@ -5,6 +5,9 @@ struct NotchView: View {
     @ObservedObject var nowPlaying: NowPlayingController
     @State private var isDropTargeted = false
     @State private var isAirDropTargeted = false
+    /// The ears as they were drawn last, to tell which way they move next. Read while drawing and written after, so it
+    /// is not state the view redraws for.
+    @State private var earsMemory = EarsMemory()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(model: NotchViewModel) {
@@ -22,6 +25,8 @@ struct NotchView: View {
         // With the left ear hidden, the collapsed shape grows right only and its top row starts past the camera.
         let shift = model.isExpanded ? 0 : model.collapsedShift
         let earLead = shift > 0 ? model.geometry.collapsedSize.width - 6 : 0
+
+        let ears = earsMotion
 
         VStack(spacing: 0) {
             ZStack(alignment: .top) {
@@ -108,10 +113,11 @@ struct NotchView: View {
                                 CollapsedActivity(nowPlaying: nowPlaying, timer: model.timer, recorder: model.recorder, downloads: model.downloads,
                                                   privacy: model.settings.privacyIndicator ? model.privacy : nil, call: model.calls.call,
                                                   callMuted: model.callControls.state?.mic == .off,
-                                                  height: notchHeight, earWidth: model.earWidth,
+                                                  height: notchHeight,
                                                   showsMusic: model.settings.collapsedMusic, showsTimer: model.settings.collapsedTimer,
                                                   showsDownloads: model.settings.collapsedDownloads)
-                                .padding(.leading, earLead)
+                                // Sides of different widths shift the shape without hiding the left one.
+                                .padding(.leading, model.hidesLeftEar ? earLead : 0)
                             } else if model.showsIdleEars && !model.sneakPeekInline {
                                 IdleEars(model: model, height: notchHeight)
                                     .padding(.leading, model.idleFits
@@ -172,7 +178,11 @@ struct NotchView: View {
         // Each animation is picked by the state being entered: growing springs overshoot a little, shrinking ones don't.
         .animation(model.isExpanded ? motion.open : motion.close, value: model.isExpanded)
         .animation(model.showsLiveActivity ? motion.earsGrow : motion.earsShrink, value: model.showsLiveActivity)
-        .animation(model.showsSneakPeek ? motion.earsGrow : motion.earsShrink, value: model.showsSneakPeek)
+        // A clock gaining a digit, a download its percent, the activity changing what a side holds, or a peek coming and
+        // going. These change together (a peek ending evens out the sides no more), so one animation is picked by the
+        // direction the shape's size takes rather than by whichever of several modifiers applies last.
+        .animation(ears.grows ? motion.earsGrow : motion.earsShrink, value: ears.frame.key)
+        .onChange(of: ears.frame, initial: true) { _, frame in earsMemory.last = frame }
         .animation(model.showsIdleEars ? motion.earsGrow : motion.earsShrink, value: model.showsIdleEars)
         .animation(motion.earsGrow, value: model.inlinePeekWidth)
         .animation(model.hud.event != nil ? motion.earsGrow : motion.earsShrink, value: model.hud.event)
@@ -182,6 +192,12 @@ struct NotchView: View {
     }
 
     private var motion: NotchMotion { NotchMotion(reduceMotion: reduceMotion) }
+
+    /// The ears' frame now, and whether they grow or shrink from the one drawn last.
+    private var earsMotion: (frame: NotchViewModel.EarsFrame, grows: Bool) {
+        let frame = NotchViewModel.EarsFrame(size: model.collapsedSize, sides: model.liveEarSides, peek: model.showsSneakPeek)
+        return (frame, earsMemory.last.map { NotchViewModel.earsGrow(from: $0, to: frame) } ?? true)
+    }
 
     /// The call that is starting, or the track or its sung line.
     @ViewBuilder private var peekLine: some View {
@@ -197,6 +213,11 @@ struct NotchView: View {
             SneakPeekLine(track: track, lyrics: model.settings.lyricsEnabled ? model.lyrics : nil)
         }
     }
+}
+
+/// The ears as last drawn; a reference so that writing it doesn't redraw the notch.
+private final class EarsMemory {
+    var last: NotchViewModel.EarsFrame?
 }
 
 /// How the notch opens, closes and grows its ears. The shape's size and corner radii move together on one spring;

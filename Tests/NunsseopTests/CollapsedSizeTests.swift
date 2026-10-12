@@ -11,7 +11,7 @@ struct CollapsedSizeTests {
                       live: Bool = false, ear: CGFloat = 38, idle: CGFloat? = nil, peek: Bool = false,
                       inline: CGFloat = 240) -> CGSize {
         NotchViewModel.collapsedSize(base: base ?? (hasNotch ? notch : brow), hasNotch: hasNotch, screenWidth: screen,
-                                     event: event, showsLiveActivity: live, earWidth: ear, idleGrowth: idle,
+                                     event: event, showsLiveActivity: live, liveSides: LiveEars.Sides(left: ear, right: ear), idleGrowth: idle,
                                      showsSneakPeek: peek, inlinePeekWidth: inline)
     }
 
@@ -132,7 +132,7 @@ struct CollapsedSizeTests {
     @Test func theInlineLineIsOnlyMeasuredWhenItIsUsed() {
         var measured = false
         _ = NotchViewModel.collapsedSize(base: notch, hasNotch: true, screenWidth: 1440, event: nil, showsLiveActivity: false,
-                                         earWidth: 38, idleGrowth: nil, showsSneakPeek: true,
+                                         liveSides: LiveEars.Sides(left: 38, right: 38), idleGrowth: nil, showsSneakPeek: true,
                                          inlinePeekWidth: { measured = true; return 999 }())
         #expect(!measured)
     }

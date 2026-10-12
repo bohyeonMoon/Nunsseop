@@ -126,7 +126,6 @@ struct CollapsedActivity: View {
     /// Known to be muted; unknown states show nothing.
     var callMuted = false
     let height: CGFloat
-    let earWidth: CGFloat
     let showsMusic: Bool
     let showsTimer: Bool
     let showsDownloads: Bool
@@ -159,102 +158,171 @@ struct CollapsedActivity: View {
         return .bars
     }
 
-    var body: some View {
-        let art = min(height - 14, 32)
+    /// A clock the right side shows.
+    struct Clock {
+        /// What it reads at a date, in seconds.
+        var seconds: @MainActor (Date) -> TimeInterval
+        /// A countdown's starting length, which sizes it; nil for a clock counting up.
+        var fixedLength: TimeInterval?
+    }
+
+    /// Everything the live activity draws, settled from the models. The notch sizes its sides from the same value.
+    struct Content {
+        var left: LeftIcon
+        var right: RightContent
+        var artwork: NSImage?
+        var tint: Color = .white
+        var playing = false
+        var callIcon: NSImage?
+        var camera = false
+        var mic = false
+        var muted = false
+        /// A download's percent, nil until the browser knows the size.
+        var percent: Int?
+        var timerSymbol = "timer"
+        var timerTint: Color = .orange
+        var clock: Clock?
+    }
+
+    static func content(nowPlaying: NowPlayingController, timer: TimerModel, recorder: ScreenRecorder,
+                        downloads: DownloadWatcher, privacy: PrivacyMonitor?, call: CallMonitor.Call?, callMuted: Bool,
+                        showsMusic: Bool, showsTimer: Bool, showsDownloads: Bool) -> Content {
         let playing = showsMusic && nowPlaying.track?.isPlaying == true
         // A download takes the timer's place, after it: a timer someone set outranks a download.
         let timerShown = showsTimer && timer.isRunning
         let download = showsDownloads && !timerShown ? downloads.status : nil
         let privacyActive = privacy.map { $0.cameraInUse || $0.micInUse } ?? false
-        HStack {
-            switch Self.leftIcon(inCall: call != nil, playing: playing, recording: recorder.isRecording,
-                                 privacyActive: privacyActive, downloading: download != nil) {
+        let left = leftIcon(inCall: call != nil, playing: playing, recording: recorder.isRecording,
+                            privacyActive: privacyActive, downloading: download != nil)
+        let right = rightContent(recording: recorder.isRecording, inCall: call != nil, privacyActive: privacyActive,
+                                 timerShown: timerShown, playing: playing, downloading: download != nil)
+        var content = Content(left: left, right: right, artwork: nowPlaying.artwork, tint: nowPlaying.tint, playing: playing,
+                              callIcon: call?.icon, camera: privacy?.cameraInUse ?? false, mic: privacy?.micInUse ?? false,
+                              muted: callMuted, percent: download?.percent,
+                              timerSymbol: timer.mode == .stopwatch ? "stopwatch.fill" : "timer",
+                              timerTint: timer.mode == .pomodoro && timer.phase == .rest ? .green : .orange)
+        switch right {
+        case .recording:
+            content.clock = recorder.startedAt.map { started in Clock(seconds: { $0.timeIntervalSince(started) }) }
+        case .call:
+            content.clock = call.map { call in Clock(seconds: { $0.timeIntervalSince(call.startedAt) }) }
+        case .timer:
+            content.clock = Clock(seconds: { [timer] in timer.value(at: $0) },
+                                  fixedLength: timer.mode == .stopwatch ? nil : timer.fullLength)
+        case .privacyDots, .download, .bars:
+            break
+        }
+        return content
+    }
+
+    var body: some View {
+        LiveRow(content: Self.content(nowPlaying: nowPlaying, timer: timer, recorder: recorder, downloads: downloads,
+                                      privacy: privacy, call: call, callMuted: callMuted, showsMusic: showsMusic,
+                                      showsTimer: showsTimer, showsDownloads: showsDownloads),
+                height: height)
+    }
+}
+
+/// The live activity's row: what one side holds at the leading edge, what the other holds at the trailing edge.
+/// `date` draws the clocks at that moment instead of following the time.
+struct LiveRow: View {
+    let content: CollapsedActivity.Content
+    let height: CGFloat
+    var date: Date?
+
+    init(content: CollapsedActivity.Content, height: CGFloat, at date: Date? = nil) {
+        self.content = content
+        self.height = height
+        self.date = date
+    }
+
+    var body: some View {
+        let art = LiveEars.art(height: height)
+        // No spacing or spacer minimum: each side is given exactly its own width, and anything more pushes the row
+        // wider than the shape.
+        HStack(spacing: 0) {
+            switch content.left {
             case .call:
-                if let call {
-                    Image(nsImage: call.icon)
+                if let icon = content.callIcon {
+                    Image(nsImage: icon)
                         .resizable()
                         .frame(width: art, height: art)
                 }
             case .music:
-                ArtworkView(image: nowPlaying.artwork, cornerRadius: art > 16 ? 5 : 3, style: .circular)
+                ArtworkView(image: content.artwork, cornerRadius: art > 16 ? 5 : 3, style: .circular)
                     .frame(width: art, height: art)
             case .recording:
                 Circle().fill(.red).frame(width: 8, height: 8)
             case .privacy:
-                if let privacy {
-                    HStack(spacing: 3) {
-                        if privacy.cameraInUse { Image(systemName: "video.fill").foregroundStyle(.green) }
-                        if privacy.micInUse { Image(systemName: "mic.fill").foregroundStyle(.orange) }
-                    }
-                    .font(.system(size: 10, weight: .semibold))
+                HStack(spacing: 3) {
+                    if content.camera { Image(systemName: "video.fill").foregroundStyle(.green) }
+                    if content.mic { Image(systemName: "mic.fill").foregroundStyle(.orange) }
                 }
+                .font(.system(size: 10, weight: .semibold))
             case .download:
                 Image(systemName: "arrow.down.circle.fill")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.blue)
             case .timer:
-                Image(systemName: timer.mode == .stopwatch ? "stopwatch.fill" : "timer")
+                Image(systemName: content.timerSymbol)
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(timer.mode == .pomodoro && timer.phase == .rest ? .green : .orange)
+                    .foregroundStyle(content.timerTint)
             }
-            Spacer()
-            switch Self.rightContent(recording: recorder.isRecording, inCall: call != nil, privacyActive: privacyActive,
-                                     timerShown: timerShown, playing: playing, downloading: download != nil) {
+            Spacer(minLength: 0)
+            switch content.right {
             case .recording:
-                if let started = recorder.startedAt {
-                    TimelineView(.periodic(from: .now, by: 1)) { context in
-                        Text(TimerModel.format(context.date.timeIntervalSince(started)))
-                            .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                clock(.red)
+            case .call:
+                HStack(spacing: 3) {
+                    if content.muted {
+                        Image(systemName: "mic.slash.fill")
+                            .font(.system(size: 9, weight: .semibold))
                             .foregroundStyle(.red)
                     }
-                }
-            case .call:
-                if let call {
-                    HStack(spacing: 3) {
-                        if callMuted {
-                            Image(systemName: "mic.slash.fill")
-                                .font(.system(size: 9, weight: .semibold))
-                                .foregroundStyle(.red)
-                        }
-                        TimelineView(.periodic(from: .now, by: 1)) { context in
-                            Text(TimerModel.format(context.date.timeIntervalSince(call.startedAt)))
-                                .font(.system(size: 11, weight: .semibold).monospacedDigit())
-                                .foregroundStyle(.green)
-                        }
-                    }
+                    clock(.green)
                 }
             case .privacyDots:
-                if let privacy {
-                    HStack(spacing: 3) {
-                        if privacy.cameraInUse { Circle().fill(.green).frame(width: 6, height: 6) }
-                        if privacy.micInUse { Circle().fill(.orange).frame(width: 6, height: 6) }
-                    }
+                HStack(spacing: 3) {
+                    if content.camera { Circle().fill(.green).frame(width: 6, height: 6) }
+                    if content.mic { Circle().fill(.orange).frame(width: 6, height: 6) }
                 }
             case .timer:
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    Text(TimerModel.format(timer.value(at: context.date)))
-                        .font(.system(size: 11, weight: .semibold).monospacedDigit())
-                        .foregroundStyle(.orange)
-                }
+                clock(.orange)
             case .download:
-                if let download {
-                    Group {
-                        if let percent = download.percent {
-                            Text("\(percent)%")
-                        } else {
-                            // Until the browser knows the size.
-                            Image(systemName: "ellipsis")
-                        }
+                Group {
+                    if let percent = content.percent {
+                        Text("\(percent)%")
+                    } else {
+                        // Until the browser knows the size.
+                        Image(systemName: "ellipsis")
                     }
-                    .font(.system(size: 11, weight: .semibold).monospacedDigit())
-                    .foregroundStyle(.blue)
                 }
+                .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                .foregroundStyle(.blue)
             case .bars:
-                SpectrumBars(isPlaying: playing, tint: nowPlaying.tint)
+                SpectrumBars(isPlaying: content.playing, tint: content.tint)
                     .frame(width: art - 2, height: max(8, art - 6))
             }
         }
         .frame(height: height)
+    }
+
+    @ViewBuilder private func clock(_ color: Color) -> some View {
+        if let clock = content.clock {
+            if let date {
+                text(clock, at: date, color: color)
+            } else {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    text(clock, at: context.date, color: color)
+                }
+            }
+        }
+    }
+
+    private func text(_ clock: CollapsedActivity.Clock, at date: Date, color: Color) -> some View {
+        Text(TimerModel.format(clock.seconds(date)))
+            .font(.system(size: 11, weight: .semibold).monospacedDigit())
+            .foregroundStyle(color)
     }
 }
 

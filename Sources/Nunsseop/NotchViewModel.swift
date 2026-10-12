@@ -156,6 +156,8 @@ final class NotchViewModel: ObservableObject {
     private var sneakPeekWork: DispatchWorkItem?
     private var peekFilter = SneakPeekFilter(launchedAt: .now)
     private var callPeekWork: DispatchWorkItem?
+    private var clockChangeWork: DispatchWorkItem?
+    private var clockChangeDue: Date?
 
     static let sneakPeekHeight: CGFloat = 24
 
@@ -197,10 +199,24 @@ final class NotchViewModel: ObservableObject {
         recorder.objectWillChange
             .sink { [weak self] in self?.objectWillChange.send() }
             .store(in: &cancellables)
-        // The ears widen for a download's percent even when another live activity already shows.
-        downloads.$status.map { $0 != nil }.removeDuplicates()
+        // The right ear is as wide as a download's percent, which gains a digit at 10 and at 100, even when another live
+        // activity already shows.
+        downloads.$status.map { $0.map { $0.percent.map { String($0).count } ?? 0 } }.removeDuplicates()
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
+        // A clock counting up needs a longer format at the hour; nothing else tells the notch when that is.
+        objectWillChange
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in self?.scheduleClockChange() }
+            .store(in: &cancellables)
+        // The timer above doesn't count the time the Mac sleeps, and a clock set by hand jumps; either can pass an
+        // hour mark unseen, so the due time is worked out again and the notch measured again.
+        for (center, name) in LiveEars.clockJumpNotifications {
+            center.publisher(for: name)
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in self?.resyncClockChange() }
+                .store(in: &cancellables)
+        }
         privacy.objectWillChange
             .sink { [weak self] in self?.objectWillChange.send() }
             .store(in: &cancellables)
@@ -430,7 +446,7 @@ final class NotchViewModel: ObservableObject {
 
     var collapsedSize: CGSize {
         Self.collapsedSize(base: geometry.collapsedSize, hasNotch: geometry.hasNotch, screenWidth: geometry.screenFrame.width,
-                           event: hud.event, showsLiveActivity: showsLiveActivity, earWidth: earWidth,
+                           event: hud.event, showsLiveActivity: showsLiveActivity, liveSides: liveEarSides,
                            idleGrowth: showsIdleEars ? (idleFittedSides.map { $0.left + $0.right } ?? 2 * Self.idleEarWidth) : nil,
                            showsSneakPeek: showsSneakPeek, inlinePeekWidth: inlinePeekWidth)
     }
@@ -438,7 +454,7 @@ final class NotchViewModel: ObservableObject {
     /// The closed shape's size from the display's own (`base`) and what the notch shows. `idleGrowth` is how much the
     /// idle values add, nil when there are none.
     static func collapsedSize(base: CGSize, hasNotch: Bool, screenWidth: CGFloat, event: HUDEvent?,
-                              showsLiveActivity: Bool, earWidth: @autoclosure () -> CGFloat,
+                              showsLiveActivity: Bool, liveSides: @autoclosure () -> LiveEars.Sides,
                               idleGrowth: @autoclosure () -> CGFloat?, showsSneakPeek: Bool,
                               inlinePeekWidth: @autoclosure () -> CGFloat) -> CGSize {
         var size = base
@@ -464,12 +480,13 @@ final class NotchViewModel: ObservableObject {
         }
         let sneakPeekInline = !hasNotch && showsSneakPeek
         if showsLiveActivity {
-            size.width += 2 * earWidth()
+            let sides = liveSides()
+            size.width += sides.left + sides.right
         } else if !sneakPeekInline, let growth = idleGrowth() {
             size.width += growth
         }
         if sneakPeekInline {
-            size.width = max(size.width, (showsLiveActivity ? 2 * earWidth() : 0) + inlinePeekWidth() + 2 * 13)
+            size.width = max(size.width, (showsLiveActivity ? 2 * max(liveSides().left, liveSides().right) : 0) + inlinePeekWidth() + 2 * 13)
         } else if showsSneakPeek {
             size.width = max(size.width, 300)
             size.height += sneakPeekHeight
@@ -493,8 +510,8 @@ final class NotchViewModel: ObservableObject {
         #if DEBUG
         if Self.forcesLeftEarHidden { return true }
         #endif
-        // Fitted idle values may grow the left side by less than half; growing right only takes all of it.
-        let ear = idleFittedSides?.left ?? (width - notch) / 2
+        // Fitted sides may grow the left side by less than half; growing right only takes all of it.
+        let ear = fittedSides?.left ?? (width - notch) / 2
         return Self.menusReachLeftEar(menus: appMenus.frames, screen: geometry.screenFrame, notch: notch, width: width, ear: ear)
     }
 
@@ -528,6 +545,15 @@ final class NotchViewModel: ObservableObject {
         return Self.idleFittedSides(left: idleValue(settings.idleLeft), right: idleValue(settings.idleRight))
     }
 
+    /// The widths the two sides are fitted to: the live activity's while it shows, otherwise the idle values'.
+    private var fittedSides: (left: CGFloat, right: CGFloat)? {
+        if showsLiveActivity && hud.event == nil {
+            let sides = liveEarSides
+            return (sides.left, sides.right)
+        }
+        return idleFittedSides
+    }
+
     /// How far fitted idle values grow the shape on each side: each by its own value, nothing where there is none.
     /// The shape then moves sideways so the eyebrow stays over the camera (see `collapsedShift`).
     nonisolated static func idleFittedSides(left: IdleValue?, right: IdleValue?) -> (left: CGFloat, right: CGFloat)? {
@@ -548,9 +574,9 @@ final class NotchViewModel: ObservableObject {
     }
 
     /// How far right the collapsed shape moves: so its left edge stays at the camera's when the left ear is hidden, or
-    /// so the eyebrow stays over the camera when fitted idle values grow the two sides by different amounts.
+    /// so the camera area stays over the camera when fitted sides grow the two by different amounts.
     var collapsedShift: CGFloat {
-        Self.collapsedShift(fitted: idleFittedSides, hidesLeftEar: hidesLeftEar,
+        Self.collapsedShift(fitted: fittedSides, hidesLeftEar: hidesLeftEar,
                             width: collapsedSize.width, notch: geometry.collapsedSize.width)
     }
 
@@ -615,6 +641,46 @@ final class NotchViewModel: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + settings.sneakPeekDuration, execute: work)
     }
 
+    /// Where each clock counting up began, so that it has read the same for as long as the clock has.
+    private var clockStarts: [Date] {
+        var starts: [Date] = []
+        if timer.mode == .stopwatch, let anchor = timer.anchor { starts.append(anchor.addingTimeInterval(-(timer.pausedValue ?? 0))) }
+        if let started = recorder.startedAt { starts.append(started) }
+        if let call = calls.call { starts.append(call.startedAt) }
+        return starts
+    }
+
+    /// Has the notch measure itself again when the next clock outgrows its format. The widths are fitted to the clock's
+    /// format, not its value, so this happens at most twice in a run (an hour in, and ten).
+    private func scheduleClockChange() {
+        let due = LiveEars.nextClockChange(after: .now, startingAt: clockStarts)
+        guard due != clockChangeDue else { return }
+        clockChangeWork?.cancel()
+        clockChangeWork = nil
+        clockChangeDue = due
+        guard let due else { return }
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.clockChangeWork = nil
+                self.clockChangeDue = nil
+                self.objectWillChange.send()
+            }
+        }
+        clockChangeWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + LiveEars.clockChangeDelay(until: due, now: .now), execute: work)
+    }
+
+    /// After a sleep or a jump of the clock: drops the pending change, which was timed on a clock that stopped, and
+    /// measures the notch again (a mark passed meanwhile is then seen at once) before timing the next one.
+    private func resyncClockChange() {
+        clockChangeWork?.cancel()
+        clockChangeWork = nil
+        clockChangeDue = nil
+        objectWillChange.send()
+        scheduleClockChange()
+    }
+
     private func triggerCallPeek() {
         callPeekWork?.cancel()
         callPeekPending = true
@@ -625,18 +691,49 @@ final class NotchViewModel: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + settings.sneakPeekDuration, execute: work)
     }
 
-    var earWidth: CGFloat {
-        let needsText = (timer.isRunning && settings.collapsedTimer) || recorder.isRecording
-            || (downloads.status != nil && settings.collapsedDownloads)
-        return Self.earWidth(height: geometry.collapsedSize.height, compact: settings.compactLiveActivity,
-                             inCall: calls.call != nil, muted: callControls.state?.mic == .off, needsText: needsText)
+    /// The two sides' widths while a live activity shows, each fitted to what it holds; nothing without one.
+    var liveEarSides: LiveEars.Sides {
+        guard showsLiveActivity else { return .zero }
+        let height = geometry.collapsedSize.height
+        let content = CollapsedActivity.content(
+            nowPlaying: nowPlaying, timer: timer, recorder: recorder, downloads: downloads,
+            privacy: settings.privacyIndicator ? privacy : nil, call: calls.call, callMuted: callControls.state?.mic == .off,
+            showsMusic: settings.collapsedMusic, showsTimer: settings.collapsedTimer, showsDownloads: settings.collapsedDownloads)
+        // The line under the notch (or between the sides, without one) is centred, so it wants equal sides.
+        return LiveEars.sides(for: content, art: LiveEars.art(height: height),
+                              base: Self.earWidth(height: height, compact: settings.compactLiveActivity), at: .now,
+                              symmetric: showsSneakPeek)
     }
 
-    nonisolated static func earWidth(height: CGFloat, compact: Bool, inCall: Bool, muted: Bool, needsText: Bool) -> CGFloat {
-        let base = compact ? height * 0.7 : height + 6
-        // Room for "1:23:45" during a call, plus a mic-slash while muted, and "12:34" when a timer is running or "100%" for a download.
-        if inCall { return max(base, muted ? 74 : 60) }
-        return needsText ? max(base, 50) : base
+    /// What decides how the closed shape's ears move: the shape's size, what each side holds, and whether a peek shows.
+    struct EarsFrame: Equatable {
+        var size: CGSize
+        var sides: LiveEars.Sides
+        var peek: Bool
+
+        /// What the ears animate on. The size isn't part of it; it only says which way they move.
+        struct Key: Equatable {
+            var sides: LiveEars.Sides
+            var peek: Bool
+        }
+        var key: Key { Key(sides: sides, peek: peek) }
+    }
+
+    /// Whether the ears move as growing (a spring with a little overshoot) rather than shrinking, going from one frame
+    /// to the next. Decided by the direction the shape's size takes, so a peek ending (the sides stop being equal and
+    /// the line below goes) is one shrink however many of the values change together. When the size stays put, a peek
+    /// showing or hiding decides, and otherwise the activity's sides do.
+    nonisolated static func earsGrow(from old: EarsFrame, to new: EarsFrame) -> Bool {
+        let grew = new.size.width > old.size.width || new.size.height > old.size.height
+        let shrank = new.size.width < old.size.width || new.size.height < old.size.height
+        if grew || shrank { return grew }
+        if new.peek != old.peek { return new.peek }
+        return new.sides != .zero
+    }
+
+    /// The ear artwork and the visualizer share: the panel's height plus 6, or 70% of it when compact.
+    nonisolated static func earWidth(height: CGFloat, compact: Bool) -> CGFloat {
+        compact ? height * 0.7 : height + 6
     }
 
     var currentSize: CGSize {
