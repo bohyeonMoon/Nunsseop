@@ -26,6 +26,7 @@ struct AgentRow: Identifiable, Equatable {
     let model: String?
     let tokens: Int?
     let mode: AgentMode?
+    let name: String?
     let target: Target?
 
     init(_ entry: AgentBoard.Entry, transcript: AgentTranscript?) {
@@ -39,15 +40,18 @@ struct AgentRow: Identifiable, Equatable {
         model = transcript?.model
         tokens = transcript?.tokens
         mode = transcript?.mode
+        name = transcript?.name
         target = Self.target(for: agent)
     }
 
     var folder: String? { path.map { ($0 as NSString).lastPathComponent } }
 
-    var title: String { folder ?? tool }
+    /// The session's name, else its folder, else the tool.
+    var title: String { name ?? folder ?? tool }
 
-    /// The state when it is waiting or idle, then the tool (unless it is the title), the mode when it isn't the default (before
-    /// the model, so a long line cuts that off last), model and context used.
+    /// The state when it is waiting or idle, then the folder when a name is the title (unless it says the same), the tool
+    /// (unless it is the title), the mode when it isn't the default (before the model, so a long line cuts that off
+    /// last), model and context used.
     var details: [String] { detailParts.map(\.text) }
 
     var detailParts: [(text: String, warns: Bool)] {
@@ -57,7 +61,8 @@ struct AgentRow: Identifiable, Equatable {
         case .idle: parts.append((String(localized: "Idle"), false))
         case .working: break
         }
-        if folder != nil { parts.append((tool, false)) }
+        if let name, let folder, folder.caseInsensitiveCompare(name) != .orderedSame { parts.append((folder, false)) }
+        if name != nil || folder != nil { parts.append((tool, false)) }
         if let mode, let label = mode.label { parts.append((label, mode.warns)) }
         if let model { parts.append((AgentTranscript.modelLabel(model), false)) }
         if let tokens { parts.append((AgentTranscript.tokensLabel(tokens), false)) }

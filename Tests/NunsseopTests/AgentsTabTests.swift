@@ -23,6 +23,36 @@ struct AgentsTabTests {
         #expect(row.symbol == "bolt.fill")
     }
 
+    @Test func aNameIsTheTitleAndTheFolderMovesIntoTheDetails() {
+        let transcript = AgentTranscript(cwd: "/Users/me/Projects/nunsseop", model: "claude-opus-5-5", tokens: 84_300, mode: .plan, name: "Agents tab")
+        let row = rowFor(AgentBoard.Agent(state: .working, tool: "claude"), transcript)
+        #expect(row.title == "Agents tab" && row.name == "Agents tab")
+        #expect(row.details == ["nunsseop", "Claude Code", "Plan", "Opus 5.5", "84k"])
+        // The state still comes first, and the tooltip's path is still the full one.
+        let waiting = rowFor(AgentBoard.Agent(state: .waiting, tool: "claude"), transcript)
+        #expect(waiting.details == ["Needs input", "nunsseop", "Claude Code", "Plan", "Opus 5.5", "84k"])
+        #expect(waiting.path == "/Users/me/Projects/nunsseop")
+        #expect(rowFor(AgentBoard.Agent(state: .idle, tool: "claude"), transcript).details.first == "Idle")
+    }
+
+    @Test func aNameWithoutAFolderStillSaysTheTool() {
+        let row = rowFor(AgentBoard.Agent(state: .working, tool: "codex"), AgentTranscript(name: "refactor"))
+        #expect(row.title == "refactor" && row.details == ["Codex"])
+        // Without a name the title is as it was.
+        let plain = rowFor(AgentBoard.Agent(state: .working, tool: "claude"), AgentTranscript(cwd: "/a/nunsseop", name: nil))
+        #expect(plain.title == "nunsseop" && plain.details == ["Claude Code"])
+    }
+
+    @Test func aNameThatIsTheFolderIsNotSaidTwice() {
+        let row = rowFor(AgentBoard.Agent(state: .working, tool: "claude"), AgentTranscript(cwd: "/Users/me/Nunsseop", name: "nunsseop"))
+        #expect(row.title == "nunsseop" && row.details == ["Claude Code"])
+    }
+
+    @Test func theDemoShowsBothANamedAndAnUnnamedRow() {
+        #expect(AgentBoard.demoTranscripts["demo|a"]?.name == "Agents tab")
+        #expect(AgentBoard.demoTranscripts["demo|b"]?.name == nil)
+    }
+
     @Test func theModeIsShownAfterTheToolOnlyWhenItIsNotTheDefault() {
         let agent = AgentBoard.Agent(state: .working, tool: "claude", cwd: "/a/b")
         let details = { (mode: AgentMode?) in rowFor(agent, AgentTranscript(model: "claude-opus-5-5", tokens: 84_300, mode: mode)).details }
@@ -246,11 +276,12 @@ struct AgentsTabModelTests {
         model.refresh()
         #expect(board.counts == AgentBoard.Counts(working: 3, waiting: 1))
         // Waiting first, then the rest by most recent change.
-        #expect(model.rows.map(\.title) == ["api-server", "site", "nunsseop", "ios-app", "docs"])
+        #expect(model.rows.map(\.title) == ["api-server", "site", "Agents tab", "ios-app", "docs"])
         #expect(model.rows.map(\.state) == [.waiting, .working, .working, .working, .idle])
         #expect(model.rows.filter { $0.tool == "Codex" }.count == 1)
         #expect(model.rows[0].details == ["Needs input", "Claude Code", "Opus 5.5", "142k"])
         #expect(model.rows[1].details == ["Claude Code", "Plan", "Sonnet 5.5", "32k"])
+        #expect(model.rows[2].details == ["nunsseop", "Claude Code", "Opus 5.5", "84k"])
         #expect(model.rows.filter { $0.mode != nil }.count == 1)
         #expect(model.rows[3].details == ["Codex", "gpt-5.6", "20k"])
         // The idle one is listed last and isn't counted.
