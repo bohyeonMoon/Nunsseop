@@ -41,7 +41,7 @@ struct PermissionRunTests {
             ("g\u{456}t status", "g" + hex(0x456) + "t status"),
             ("/etc/pa\u{455}\u{455}wd", "/etc/pa" + hex(0x455, 0x455) + "wd"),
             ("curl apple.\u{441}\u{43E}\u{43C}", "curl apple." + hex(0x441, 0x43E, 0x43C)),
-            ("\u{FF52}m -rf", hex(0xFF52) + "m -rf"), ("r\u{FF4D}", "r" + hex(0xFF4D)), ("\u{FF15}5", hex(0xFF15) + "5"),
+            ("\u{FF52}m -rf", hex(0xFF52) + "m -rf"), ("r\u{FF4D}", "r" + hex(0xFF4D)), ("\u{FF15}a", hex(0xFF15) + "a"),
             // Greek and Cyrillic letters that are no look-alikes at all go the same way: the script is what is judged.
             ("\u{39B}pm \u{452}pm \u{45B}pm \u{44F}x", hex(0x39B) + "pm " + hex(0x452) + "pm " + hex(0x45B) + "pm " + hex(0x44F) + "x"),
             // A Latin letter the checker calls a look-alike: the dotless i, the ordinal indicators, the long s, the thorn.
@@ -145,24 +145,30 @@ struct PermissionRunTests {
         }
     }
 
-    private func isFullWidthLatin(_ scalar: Unicode.Scalar) -> Bool {
-        (0xFF10...0xFF19).contains(scalar.value) || (0xFF21...0xFF3A).contains(scalar.value) || (0xFF41...0xFF5A).contains(scalar.value)
+    private func isFullWidthLetter(_ scalar: Unicode.Scalar) -> Bool {
+        (0xFF21...0xFF3A).contains(scalar.value) || (0xFF41...0xFF5A).contains(scalar.value)
     }
 
+    private func isFullWidthDigit(_ scalar: Unicode.Scalar) -> Bool { (0xFF10...0xFF19).contains(scalar.value) }
+
     /// What the rules say of a scalar that `escape` shows by itself, worked out here from ICU's skeleton, compatibility form and script and the lead's list.
+    /// The full width digits are judged by their run, so they are plain here; the signs of ordinary text whose form is an ASCII letter or digit are plain too.
     private enum Kind: Equatable { case foreignLetter, standsFor(Character), plain }
 
     private func kind(of scalar: Unicode.Scalar, lookalike: (Unicode.Scalar) -> String?, script: (Unicode.Scalar) -> String) -> Kind {
         let extras: [UInt32: Character] = [0x3161: "-", 0x4E00: "-", 0x30FC: "-", 0xFF70: "-", 0x2014: "-", 0x2015: "-", 0x3163: "|", 0x4E28: "|", 0x3021: "|", 0x2758: "|",
                                            0x3002: ".", 0xFF61: "."]
         let name = script(scalar), form = lookalike(scalar)
+        if isFullWidthDigit(scalar) { return .plain }
         if isLetterOrDigit(scalar) {
-            if isFullWidthLatin(scalar) || ((name == "Cyrillic" || name == "Greek") && scalar.properties.generalCategory != .otherNumber) { return .foreignLetter }
+            if isFullWidthLetter(scalar) || ((name == "Cyrillic" || name == "Greek") && scalar.properties.generalCategory != .otherNumber) { return .foreignLetter }
             if name == "Latin", let form, !form.hasPrefix("no skeleton") {
                 return form.unicodeScalars.filter { $0.properties.isAlphabetic && $0.value < 0x80 }.count >= 2 ? .plain : .foreignLetter
             }
             if name == "Latin", form != nil { return .foreignLetter }
         }
+        // Of any script or category: a form of one ASCII letter or digit, but for the signs of ordinary text.
+        if let form, form.count == 1, form.first!.isASCII, form.first!.isLetter || form.first!.isNumber, ![0xD7, 0xB2, 0xB3, 0xB9].contains(scalar.value) { return .foreignLetter }
         if let extra = extras[scalar.value] { return .standsFor(extra) }
         if scalar.value == 0x3008 || scalar.value == 0x3009 { return .plain }
         if let form, form.count == 1, "-/\\.:@~|;&$<>=*?#".contains(form.first!) { return .standsFor(form.first!) }
@@ -192,7 +198,8 @@ struct PermissionRunTests {
                 }
             }
         }
-        #expect(foreign > 400 && byScript["Cyrillic", default: 0] > 200 && byScript["Greek", default: 0] > 100 && byScript["Latin", default: 0] > 50, "\(foreign) \(byScript)")
+        #expect(foreign > 400 && byScript["Cyrillic", default: 0] > 200 && byScript["Greek", default: 0] > 100 && byScript["Latin", default: 0] > 50
+                && byScript["Common", default: 0] >= 25, "\(foreign) \(byScript)")
     }
 
     /// For every scalar `escape` shows by itself that stands for one of `- / \\ . : @ ~ | ; & $ < > = * ? #`: the rule of its class, in every neighbourhood.
@@ -242,8 +249,8 @@ struct PermissionRunTests {
             ("k\u{131}sa", "k" + hex(0x131) + "sa"), ("1\u{BA} piso, N\u{BA} 5, 2\u{AA}", "1" + hex(0xBA) + " piso, N" + hex(0xBA) + " 5, 2" + hex(0xAA)), ("\u{FE}etta", hex(0xFE) + "etta"),
             ("10\u{2013}20", "10" + hex(0x2013) + "20"), ("end\u{2014}start", "end" + hex(0x2014) + "start"), ("10-\u{445}", "10-" + hex(0x445)),
             ("~/\u{30CE}\u{30FC}\u{30C8}", "~/" + hex(0x30CE) + "\u{30FC}\u{30C8}"),
-            // A letter ICU takes for an ASCII one that is of no script the rules judge is shown.
-            ("\u{2113}s", "\u{2113}s"), ("x \u{211D}", "x \u{211D}"),
+            // A letter of no script the rules judge that ICU takes for an ASCII one is written out all the same; apart, it is shown.
+            ("\u{2113}s", hex(0x2113) + "s"), ("x \u{211D}", "x \u{211D}"),
         ])
     }
 
@@ -306,7 +313,7 @@ struct PermissionRunTests {
 
     @Test func theChipIsNotOnTheCardWhenNothingThatLooksLatinIsShown() throws {
         let quiet = ["echo \u{C548}\u{B155}\u{D558}\u{C138}\u{C694}", "\u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{3067}npm\u{3092}\u{5B9F}\u{884C}", "\u{8BF7}\u{8FD0}\u{884C}npm install\u{547D}\u{4EE4}\u{FF0C}\u{7136}\u{540E}\u{5B8C}\u{6210}\u{3002}",
-                     "C\u{2019}est l\u{2019}\u{E9}t\u{E9}, \u{153}uvre, m\u{B2} \u{E7}a marche\u{2026}", "Tiếng Việt Ứng dụng", "\u{201C}hello\u{201D} Don\u{2019}t", "echo 😀 ❤️‍🔥 👍🏽", "npm test",
+                     "C\u{2019}est l\u{2019}\u{E9}t\u{E9}, \u{153}uvre, m\u{B2} \u{E7}a marche\u{2026}", "echo \"Tiếng Việt Ứng dụng\"", "\u{201C}hello\u{201D} Don\u{2019}t", "echo 😀 ❤️‍🔥 👍🏽", "npm test",
                      "echo \u{D55C}\u{AE00}\u{3131}", "rm \u{2010}rf /", "\u{43F}pm install", "g\u{131}t status", "\u{FF52}m", "echo a\u{FF0F}b", "\u{3042}\u{30A2}\u{4E2D}\u{FF01}"]
         for command in quiet {
             #expect(!hasChip(try prompt(command)), "\(name(command))")

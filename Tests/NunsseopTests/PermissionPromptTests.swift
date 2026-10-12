@@ -359,7 +359,8 @@ struct PermissionPromptParseTests {
             let text = String(Unicode.Scalar(symbol)!)
             #expect(PermissionText.escape(text + "\u{FE0F}", multiline: true) == text + hex(0xFE0F), "U+\(String(symbol, radix: 16))")
             #expect(PermissionText.escape("😀\u{200D}" + text, multiline: true) == "😀" + hex(0x200D) + text, "U+\(String(symbol, radix: 16))")
-            #expect(PermissionText.escape("a" + text, multiline: true) == "a" + text, "U+\(String(symbol, radix: 16))")
+            // The information source is the letter i of the letterlike block, a look-alike written out beside an ASCII letter.
+            #expect(PermissionText.escape("a" + text, multiline: true) == "a" + (symbol == 0x2139 ? hex(symbol) : text), "U+\(String(symbol, radix: 16))")
         }
         // Neither a flag letter, a skin tone nor a digit takes a joiner.
         #expect(PermissionText.escape("😀\u{200D}🇫", multiline: true) == "😀" + hex(0x200D) + hex(0x1F1EB))
@@ -605,10 +606,11 @@ struct PermissionPromptParseTests {
     @Test func theLimitCountsScalarsNotCharacters() {
         // A letter with a mark is one character and two scalars.
         func command(letters: Int, plain: Int) -> String { String(repeating: "x\u{323}", count: letters) + String(repeating: "b", count: plain) }
-        let exact = command(letters: 100, plain: PermissionPrompt.detailLimit - 200)
+        // Not the first word of the command, which would raise the chip and count against the limit.
+        let exact = "echo " + command(letters: 100, plain: PermissionPrompt.detailLimit - 205)
         #expect(exact.unicodeScalars.count == PermissionPrompt.detailLimit && exact.count == PermissionPrompt.detailLimit - 100)
         #expect(parse("Bash", ["command": exact]) != nil)
-        let over = command(letters: 100, plain: PermissionPrompt.detailLimit - 199)
+        let over = "echo " + command(letters: 100, plain: PermissionPrompt.detailLimit - 204)
         #expect(over.unicodeScalars.count == PermissionPrompt.detailLimit + 1 && over.count < PermissionPrompt.detailLimit)
         #expect(parse("Bash", ["command": over]) == nil)
         // A second mark is written out, eight scalars, and counts as such.

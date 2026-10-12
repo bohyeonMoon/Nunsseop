@@ -103,15 +103,28 @@ enum PermissionText {
     /// loaded: nothing past ASCII is shown then.
     private struct Confusables {
         /// Letters and digits that pass for ASCII ones in the middle of a word: every letter of Cyrillic and of Greek, the full
-        /// width Latin letters and digits, and the letters of Latin that ICU's spoof checker calls look-alikes (its skeleton, or
-        /// the compatibility form, is ASCII), but not the ligatures whose form is two letters or more (`œ`, `æ`, `ĳ`).
+        /// width Latin letters, and the letters of Latin that ICU's spoof checker calls look-alikes (its skeleton, or the
+        /// compatibility form, is ASCII), but not the ligatures whose form is two letters or more (`œ`, `æ`, `ĳ`). Of any other
+        /// script or category as well, when its skeleton or compatibility form is one ASCII letter or digit (`ℓ`, `ℯ`, `ℝ`, `∣`,
+        /// `∨`, `∪`, `⊤`, `╳`, `〇`), except `readAsText`. Not the full width digits, which `hideConfusables` judges by their run.
         let foreign: Set<UInt32>
         /// The letters and digits of Latin, Greek and Cyrillic past ASCII, and the full width ones.
         let letters: Set<UInt32>
         /// The one ASCII character of `-/\\.:@~|;&$<>=*?#` that a punctuation mark or symbol stands for: by the skeleton, by the
         /// compatibility form, or by `drawnLike`.
         let stands: [UInt32: UInt8]
+        /// The quotes and backticks a shell would not take for its own: the scalars whose skeleton is made of `'`, `"` and `` ` ``
+        /// alone (`‘ ’ “ ” ′ ″ ‵ ‶ ＂ ＇`) and the listed ones.
+        let quotes: Set<UInt32>
     }
+
+    /// Scalars whose skeleton or compatibility form is an ASCII letter or digit and that are ordinary text nonetheless: the
+    /// multiplication sign and the superscript digits of units and notes (`m²`, `cm³`, `¹`). Not the trademark and service mark
+    /// signs, nor the infinity sign: their forms are two letters (`TM`, `SM`, `oo`).
+    private static let readAsText: Set<UInt32> = [0xD7, 0xB2, 0xB3, 0xB9]
+    private static let listedQuotes: Set<UInt32> = [0x2018, 0x2019, 0x201C, 0x201D, 0x2032, 0x2033, 0x2035, 0x2036, 0xFF02, 0xFF07]
+
+    private static func isFullWidthDigit(_ value: UInt32) -> Bool { (0xFF10...0xFF19).contains(value) }
 
     /// ICU's codes of the scripts that are judged.
     private static let latinScript: Int32 = 25, greekScript: Int32 = 14, cyrillicScript: Int32 = 8
@@ -138,7 +151,8 @@ enum PermissionText {
         let skeletonOf = unsafeBitCast(skeleton, to: Skeleton.self), scriptOf = unsafeBitCast(script, to: Script.self)
         let targets = Set("-/\\.:@~|;&$<>=*?#".unicodeScalars.map(\.value))
         func isASCII(_ bytes: [UInt8]) -> Bool { !bytes.isEmpty && bytes.allSatisfy { $0 < 0x80 } }
-        var foreign = Set<UInt32>(), letters = Set<UInt32>(), stands = [UInt32: UInt8]()
+        func isASCIIAlnum(_ byte: UInt8) -> Bool { (0x30...0x39).contains(byte) || (0x41...0x5A).contains(byte) || (0x61...0x7A).contains(byte) }
+        var foreign = Set<UInt32>(), letters = Set<UInt32>(), stands = [UInt32: UInt8](), quotes = Set<UInt32>()
         var out = [UInt8](repeating: 0, count: 64)
         for value in (shown + pictures + marks).lazy.flatMap({ $0 }) where value >= 0x80 {
             guard let scalar = Unicode.Scalar(value) else { continue }
@@ -151,12 +165,12 @@ enum PermissionText {
             case .uppercaseLetter, .lowercaseLetter, .titlecaseLetter, .modifierLetter, .otherLetter,
                  .decimalNumber, .letterNumber, .otherNumber:
                 var code: Int32 = 0
-                let fullWidth = (0xFF10...0xFF19).contains(value) || (0xFF21...0xFF3A).contains(value) || (0xFF41...0xFF5A).contains(value)
+                let fullWidth = isFullWidthDigit(value) || (0xFF21...0xFF3A).contains(value) || (0xFF41...0xFF5A).contains(value)
                 let script = fullWidth ? latinScript : scriptOf(Int32(value), &code)
                 guard script == latinScript || script == greekScript || script == cyrillicScript else { break }
                 letters.insert(value)
                 if fullWidth || script != latinScript {
-                    foreign.insert(value)
+                    if !isFullWidthDigit(value) { foreign.insert(value) }
                 } else {
                     // A look-alike by the checker's skeleton or the compatibility form; a ligature of two letters or more is not one.
                     let ascii = isASCII(form) ? form : compatible
@@ -165,6 +179,13 @@ enum PermissionText {
                 }
             default: break
             }
+            // Of any script or category, when its form is one ASCII letter or digit: a letter of the letterlike block, a bar or a cup of
+            // maths, a cross of box drawing, Han's zero. A form of two letters or more is a digraph, and is not one.
+            if !foreign.contains(value), !isFullWidthDigit(value), !readAsText.contains(value), shown.contains(where: { $0.contains(value) }) {
+                let ascii = isASCII(form) ? form : compatible
+                if ascii.count == 1, isASCIIAlnum(ascii[0]) { foreign.insert(value) }
+            }
+            if listedQuotes.contains(value) || (!form.isEmpty && form.allSatisfy { $0 == 0x27 || $0 == 0x22 || $0 == 0x60 }) { quotes.insert(value) }
             if foreign.contains(value) { continue }
             if let drawn = drawnLike[value] { stands[value] = drawn; continue }
             for candidate in [form, compatible] where candidate.count == 1 && candidate != text && targets.contains(UInt32(candidate[0])) {
@@ -172,7 +193,7 @@ enum PermissionText {
                 break
             }
         }
-        return Confusables(foreign: foreign, letters: letters, stands: stands)
+        return Confusables(foreign: foreign, letters: letters, stands: stands, quotes: quotes)
     }()
 
     /// Whether the zero-width joiners in a sequence of pictures draw it as one picture in the card's font, by sequence. Asked of
@@ -189,10 +210,11 @@ enum PermissionText {
     /// What is shown is ASCII, the space, and the scalars of `shown`; a tab is shown as `tab`, and a line break stays one
     /// when `multiline`. Anything else is written out as `⟨U+202E⟩`, and so are the angle brackets that mark one, so an
     /// escape can't be faked. Of what reads as ASCII, only the certain cases are written out (the rest is shown, and
-    /// `hasLatinLookalike` tells the card to say so):
-    /// - A letter of `Confusables.foreign` in a letter run that holds an ASCII letter or digit. A letter run is the longest
-    ///   stretch of the input made of letters, digits and combining marks of any script and the ASCII `. - _ / : @ \ ~ ' "`.
-    /// - A hyphen-like scalar (`-`) right before an ASCII letter or digit (so between two as well); a full stop, colon or at sign
+    /// `warnsOfLatinLookalike` tells the card to say so):
+    /// - A letter of `Confusables.foreign` in a letter run that holds an ASCII letter or digit; a full width digit in a run that holds
+    ///   an ASCII letter. A letter run is the longest stretch of the input made of letters, digits and combining marks of any script,
+    ///   the scalars of `Confusables.foreign` whatever they are, and the ASCII `. - _ / : @ \ ~ ' "`.
+    /// - A hyphen-like scalar (`-`) right before an ASCII letter or digit; a full stop, colon or at sign
     ///   look-alike between two letters or digits of ASCII, Latin, Cyrillic or Greek; a slash, backslash, bar or shell
     ///   operator look-alike (`/ \ | ; & $ < > = * ? # ~`) beside an ASCII letter, digit or punctuation mark; `〈` right before
     ///   an ASCII letter or digit and `〉` right after one, which pass for the brackets of an escape.
@@ -332,11 +354,129 @@ enum PermissionText {
             && !withheld.contains { $0.contains(scalar.value) }
     }
 
-    /// Whether `text` holds a letter that passes for a Latin one: a Cyrillic or Greek letter, a full width Latin letter or digit,
-    /// or a Latin letter ICU's spoof checker calls a look-alike. Asked of what `escape` returned, so it is about what is shown.
+    /// Han's zero is a look-alike of `O` but not beside an ideograph, where it is the zero of a number written in Han (`二〇二四年`).
+    private static func isLatinLike(_ scalar: Unicode.Scalar, before: Unicode.Scalar?, after: Unicode.Scalar?, _ confusables: Confusables) -> Bool {
+        guard confusables.foreign.contains(scalar.value) else { return false }
+        func isIdeograph(_ scalar: Unicode.Scalar?) -> Bool {
+            guard let value = scalar?.value else { return false }
+            return value == 0x3007 || (0x3400...0x4DBF).contains(value) || (0x4E00...0x9FFF).contains(value)
+        }
+        return scalar.value != 0x3007 || !(isIdeograph(before) || isIdeograph(after))
+    }
+
+    /// Whether `text` holds a letter that passes for a Latin one: a Cyrillic or Greek letter, a full width Latin letter, a Latin
+    /// letter ICU's spoof checker calls a look-alike, or a scalar of any other kind whose skeleton is one ASCII letter or digit.
+    /// Asked of what `escape` returned, so it is about what is shown.
     static func hasLatinLookalike(_ text: String) -> Bool {
         guard let confusables else { return false }
-        return text.unicodeScalars.contains { confusables.foreign.contains($0.value) }
+        let scalars = Array(text.unicodeScalars)
+        return scalars.indices.contains { at in
+            isLatinLike(scalars[at], before: at > 0 ? scalars[at - 1] : nil, after: at + 1 < scalars.count ? scalars[at + 1] : nil, confusables)
+        }
+    }
+
+    /// Whether the card says "Letters that look like Latin" about `shown`, what `escape` returned for one part of the card: a
+    /// scalar that `hasLatinLookalike` finds, a word that a letter with a mark, hook or stroke makes read as ASCII, and, in
+    /// the command of the Bash tool, quotes that a shell does not take for its own beside the operators that they seem to hide.
+    static func warnsOfLatinLookalike(_ shown: String, command: Bool = false) -> Bool {
+        hasLatinLookalike(shown) || hasLatinLookingWord(shown, command: command) || (command && hasFakeQuotes(shown))
+    }
+
+    /// Latin letters with a hook, dot, stroke or accent are no look-alikes for ICU and read as ASCII at the card's size
+    /// (`ƴahoo.com`, `ġithub.com`, `ǥit`). They are shown, and the chip is raised when one is in an identifier: a run of
+    /// scalars between spaces, tabs and line breaks (the tab is shown as `⇥`) that holds an ASCII letter or digit and either
+    /// holds one of `. / : @ \ ~` (a name, an address, a path) or is the first word of a command: the first of the text and the
+    /// first after a line break, `;`, `|`, `&`, `(` and a backtick (so after `&&`, `||` and `$(` as well). The letters that count are
+    /// those past ASCII, besides the ideographs, kana and Hangul of CJK text, the full width digits and the controls of emoji;
+    /// punctuation, symbols and numbers do not, so prose stays quiet: `echo "café"`, `git commit -m "C’est l’été, œuvre"`,
+    /// `€9.99`, `3.5×2`. A stop, comma, colon or closing quote at the end of a word is not a mark of a name (`l’été.`).
+    /// Constraint, accepted: a plain argument with none of those marks (`git push origin maín`) is not caught, nor a command word
+    /// that is not the first of its clause (`sudo ṡudo`, `FOO=1 ǥit`); the line is drawn at what a reader takes for a name.
+    private static func hasLatinLookingWord(_ text: String, command: Bool) -> Bool {
+        guard confusables != nil else { return false }
+        let scalars = Array(text.unicodeScalars)
+        func isSpace(_ scalar: Unicode.Scalar) -> Bool { scalar == " " || scalar == "\t" || scalar == "\r" || scalar == "\n" || scalar.value == 0x21E5 }
+        func isMarked(_ scalar: Unicode.Scalar) -> Bool {
+            let value = scalar.value
+            guard value >= 0x80, !isCJKText(value), !isFullWidthDigit(value), value != 0xFE0E, value != 0xFE0F else { return false }
+            switch scalar.properties.generalCategory {
+            case .uppercaseLetter, .lowercaseLetter, .titlecaseLetter, .modifierLetter, .otherLetter, .nonspacingMark, .spacingMark: return true
+            default: return false
+            }
+        }
+        func isIdentifier(_ word: ArraySlice<Unicode.Scalar>) -> Bool {
+            word.contains { isASCIILetterOrDigit($0) } && word.contains(where: isMarked)
+        }
+        let trailing = Set(".,:;!?'\")]}".unicodeScalars).union([Unicode.Scalar(0x2019)!, Unicode.Scalar(0x201D)!])
+        let names = Set(".:/@\\~".unicodeScalars)
+        var at = 0
+        while at < scalars.count {
+            guard !isSpace(scalars[at]) else { at += 1; continue }
+            var end = at
+            while end < scalars.count, !isSpace(scalars[end]) { end += 1 }
+            var word = scalars[at..<end]
+            while let last = word.last, trailing.contains(last) { word.removeLast() }
+            if isIdentifier(word), word.contains(where: names.contains) { return true }
+            at = end
+        }
+        guard command else { return false }
+        // The first word of each clause: it ends at a space or at the next operator.
+        let starts = Set(";|&(`".unicodeScalars), ends = starts.union([")"])
+        var wordStarts = true
+        at = 0
+        while at < scalars.count {
+            let scalar = scalars[at]
+            if isSpace(scalar) {
+                if scalar == "\n" || scalar == "\r" { wordStarts = true }
+                at += 1
+            } else if starts.contains(scalar) {
+                wordStarts = true
+                at += 1
+            } else if wordStarts, !ends.contains(scalar) {
+                var end = at
+                while end < scalars.count, !isSpace(scalars[end]), !ends.contains(scalars[end]) { end += 1 }
+                if isIdentifier(scalars[at..<end]) { return true }
+                wordStarts = false
+                at = end
+            } else {
+                wordStarts = false
+                at += 1
+            }
+        }
+        return false
+    }
+
+    /// The ideographs, kana and Hangul of CJK text, and its signs: letters that no one reads as Latin ones.
+    private static func isCJKText(_ value: UInt32) -> Bool {
+        [0x3001...0x303F, 0x3041...0x30FF, 0x3131...0x318E, 0x3400...0x4DBF, 0x4E00...0x9FFF, 0xAC00...0xD7A3, 0xFF61...0xFF9D].contains { $0.contains(value) }
+    }
+
+    /// Whether the command, as shown, holds a quote look-alike outside the quotes a shell takes for its own and, outside them as
+    /// well, an operator the look-alike seems to quote: `$(`, a backtick, `;`, `|`, `&`, `>` or `<`. A look-alike inside real quotes
+    /// (`git commit -m "Don’t panic" && git push`) hides nothing.
+    private static func hasFakeQuotes(_ command: String) -> Bool {
+        guard let confusables else { return false }
+        let scalars = Array(command.unicodeScalars)
+        var quote: Unicode.Scalar?, escapes = false, fake = false, operators = false
+        for (at, scalar) in scalars.enumerated() {
+            if escapes {
+                escapes = false
+                if quote == nil, confusables.quotes.contains(scalar.value) { fake = true }
+            } else if quote == "'" {
+                if scalar == "'" { quote = nil }
+            } else if quote == "\"" {
+                if scalar == "\\" { escapes = true } else if scalar == "\"" { quote = nil }
+            } else if scalar == "\\" {
+                escapes = true
+            } else if scalar == "'" || scalar == "\"" {
+                quote = scalar
+            } else if confusables.quotes.contains(scalar.value) {
+                fake = true
+            } else if ";|&><`".unicodeScalars.contains(scalar) || (scalar == "$" && at + 1 < scalars.count && scalars[at + 1] == "(") {
+                operators = true
+            }
+        }
+        return fake && operators
     }
 
     /// A scalar of the input, in form C unless its own form C is another, and whether it is written out for reading as ASCII.
@@ -351,16 +491,23 @@ enum PermissionText {
         return (0x30...0x39).contains(value) || (0x41...0x5A).contains(value) || (0x61...0x7A).contains(value)
     }
 
+    private static func isASCIILetter(_ scalar: Unicode.Scalar?) -> Bool {
+        guard let value = scalar?.value else { return false }
+        return (0x41...0x5A).contains(value) || (0x61...0x7A).contains(value)
+    }
+
     private static func isASCIIPunctuation(_ scalar: Unicode.Scalar?) -> Bool {
         guard let value = scalar?.value else { return false }
         return (0x21...0x2F).contains(value) || (0x3A...0x40).contains(value) || (0x5B...0x60).contains(value) || (0x7B...0x7E).contains(value)
     }
 
-    /// Letters, digits and combining marks of any script, and the ASCII marks that join them in a name or a path.
-    private static func isLetterRun(_ token: Token) -> Bool {
+    /// Letters, digits and combining marks of any script, the look-alikes of letters whatever they are (a bar, a cup, a cross), and
+    /// the ASCII marks that join them in a name or a path.
+    private static func isLetterRun(_ token: Token, _ confusables: Confusables) -> Bool {
         guard !token.changes else { return false }
         let scalar = token.scalar
         if scalar.value < 0x80 { return isASCIILetterOrDigit(scalar) || ".-_/:@\\~'\"".unicodeScalars.contains(scalar) }
+        if confusables.foreign.contains(scalar.value) { return true }
         switch scalar.properties.generalCategory {
         case .uppercaseLetter, .lowercaseLetter, .titlecaseLetter, .modifierLetter, .otherLetter,
              .decimalNumber, .letterNumber, .otherNumber, .nonspacingMark, .spacingMark, .enclosingMark: return true
@@ -376,11 +523,19 @@ enum PermissionText {
         }
         var start = 0
         while start < tokens.count {
-            guard isLetterRun(tokens[start]) else { start += 1; continue }
+            guard isLetterRun(tokens[start], confusables) else { start += 1; continue }
             var end = start
-            while end < tokens.count, isLetterRun(tokens[end]) { end += 1 }
+            while end < tokens.count, isLetterRun(tokens[end], confusables) { end += 1 }
+            // A full width digit is a look-alike only beside an ASCII letter: in `第１回` or `（１）` it is the text's own.
+            let hasLetter = tokens[start..<end].contains { !$0.changes && isASCIILetter($0.scalar) }
             if tokens[start..<end].contains(where: { isASCIILetterOrDigit($0.scalar) }) {
-                for at in start..<end where confusables.foreign.contains(tokens[at].scalar.value) { tokens[at].hidden = true }
+                for at in start..<end {
+                    if isFullWidthDigit(tokens[at].scalar.value) {
+                        if hasLetter { tokens[at].hidden = true }
+                    } else if isLatinLike(tokens[at].scalar, before: scalar(at - 1), after: scalar(at + 1), confusables) {
+                        tokens[at].hidden = true
+                    }
+                }
             }
             start = end
         }
@@ -392,7 +547,7 @@ enum PermissionText {
             case let value:
                 guard let ascii = confusables.stands[value] else { continue }
                 switch ascii {
-                // A flag, or a name with a dash drawn in it: a letter or digit right after. (Between two, it has one right after as well.)
+                // A flag, or a dash drawn into a name: an ASCII letter or digit right after it.
                 case 0x2D: tokens[at].hidden = isASCIILetterOrDigit(after)
                 case 0x2E, 0x3A, 0x40: tokens[at].hidden = isWordLetter(before) && isWordLetter(after)
                 default:
@@ -613,9 +768,11 @@ struct PermissionPrompt: Identifiable, Equatable {
         let shownTitle = PermissionText.escape(described.title, multiline: false)
         let folder = PermissionText.clipped(PermissionText.escape(((json["cwd"] as? String).map { ($0 as NSString).lastPathComponent }) ?? "",
                                                                   multiline: false), limit: 80)
-        // Letters that pass for Latin ones, shown anywhere on the card, whatever the tool: said, since they are not written out.
+        // Letters that pass for Latin ones, shown anywhere on the card, whatever the tool: said, since they are not written out. The
+        // words of a command and the quotes in it are judged for the Bash tool's command alone.
         var flags = described.flags
-        if [shownTitle, folder, detail, secondary].contains(where: PermissionText.hasLatinLookalike) {
+        if [shownTitle, folder, secondary].contains(where: { PermissionText.warnsOfLatinLookalike($0) })
+            || PermissionText.warnsOfLatinLookalike(detail, command: described.isCommand) {
             flags.append(Flag(text: String(localized: "Letters that look like Latin"), warns: true))
         }
         let shown = detail.unicodeScalars.count + secondary.unicodeScalars.count + flags.reduce(0) { $0 + $1.text.unicodeScalars.count }
@@ -633,6 +790,8 @@ struct PermissionPrompt: Identifiable, Equatable {
         var detail: String
         var flags: [Flag] = []
         var secondary = ""
+        /// The detail is a shell command, the Bash tool's.
+        var isCommand = false
     }
 
     /// A known tool says what it does in plain words, shows the field that says what it acts on and the text it would put
@@ -650,7 +809,7 @@ struct PermissionPrompt: Identifiable, Equatable {
             guard let value = input[key] as? String, !value.isEmpty else { return nil }
             var rest = input
             rest[key] = nil
-            var described = Described(title: title, symbol: symbol, detail: value)
+            var described = Described(title: title, symbol: symbol, detail: value, isCommand: flagged)
             for name in texts {
                 guard let text = rest[name] as? String else { continue }
                 described.detail += "\n\(label(name)):\n\(text)"
