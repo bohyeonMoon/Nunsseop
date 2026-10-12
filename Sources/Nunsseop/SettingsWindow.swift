@@ -382,7 +382,7 @@ private struct AlertsPane: View {
                 }
                 Text("Connecting changes the tool's own settings file and keeps the old one with a `.nunsseop-backup` extension. Sessions started afterwards send their notifications here. Claude Code and Codex also report their sessions for the agents count in the closed notch, which works while notifications from local tools are on.")
                     .font(.caption).foregroundStyle(.secondary)
-                Text("The Agents tab lists their sessions with folder, model, context used and permission mode, read from the tools' own session files on this Mac.")
+                Text("The Agents tab lists their sessions and recent conversations with name, folder, model, context used, permission mode and last prompt, read from the tools' own session files on this Mac.")
                     .font(.caption).foregroundStyle(.secondary)
                 Picker("Resume conversations in", selection: Binding(
                     get: { ResumeTerminal.effective(saved: settings.resumeTerminal, installed: terminals) },

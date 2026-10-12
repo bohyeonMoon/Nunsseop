@@ -365,7 +365,7 @@
 "Full access" = "Acceso total";
 "Connect Claude Code and Codex in Settings › Alerts to see their sessions here" = "Conecta Claude Code y Codex en Ajustes › Avisos para ver aquí sus sesiones";
 "No sessions used in the last 3 hours" = "Ninguna sesión usada en las últimas 3 horas";
-"The Agents tab lists their sessions with folder, model, context used and permission mode, read from the tools' own session files on this Mac." = "La pestaña Agentes enumera sus sesiones con carpeta, modelo, contexto usado y modo de permisos, leídos de los archivos de sesión de las propias herramientas en este Mac.";
+"The Agents tab lists their sessions and recent conversations with name, folder, model, context used, permission mode and last prompt, read from the tools' own session files on this Mac." = "La pestaña Agentes muestra sus sesiones y conversaciones recientes con nombre, carpeta, modelo, contexto usado, modo de permisos y último prompt, leídos de los propios archivos de sesión de las herramientas en este Mac.";
 
 /* Permission prompts */
 "Answer permission prompts and questions in the notch" = "Responder a solicitudes de permiso y preguntas en el notch";
