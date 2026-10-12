@@ -917,10 +917,12 @@ enum TerminalFocus {
     }
 
     /// Runs a command and returns its output, or nil when it fails; for the terminals' own command-line tools.
-    static func run(_ executable: URL, _ arguments: [String]) -> String? {
+    /// - environment: what the command gets in place of Nunsseop's own.
+    static func run(_ executable: URL, _ arguments: [String], environment: [String: String]? = nil) -> String? {
         let process = Process()
         process.executableURL = executable
         process.arguments = arguments
+        if let environment { process.environment = environment }
         let output = Pipe()
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice

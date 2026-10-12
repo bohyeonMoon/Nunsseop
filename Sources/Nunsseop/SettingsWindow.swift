@@ -331,6 +331,7 @@ private struct AlertsPane: View {
     @ObservedObject var settings: AppSettings
     @State private var connected: Set<NotifyIntegration> = []
     @State private var failed: URL?
+    @State private var terminals = ResumeTerminal.installed
 
     var body: some View {
         Form {
@@ -383,6 +384,11 @@ private struct AlertsPane: View {
                     .font(.caption).foregroundStyle(.secondary)
                 Text("The Agents tab lists their sessions with folder, model, context used and permission mode, read from the tools' own session files on this Mac.")
                     .font(.caption).foregroundStyle(.secondary)
+                Picker("Resume conversations in", selection: Binding(
+                    get: { ResumeTerminal.effective(saved: settings.resumeTerminal, installed: terminals) },
+                    set: { settings.resumeTerminal = $0.rawValue })) {
+                    ForEach(terminals) { Text(verbatim: $0.name).tag($0) }
+                }
                 if connected.contains(.codex) {
                     Text("Codex asks you to review Nunsseop's hooks the next time it starts. Trust them (\"Review hooks\" lets you trust only Nunsseop's; \"Trust all and continue\" trusts every tool's new hooks); until then its sessions don't count.")
                         .font(.caption).foregroundStyle(.secondary)
@@ -457,6 +463,7 @@ private struct AlertsPane: View {
 
     private func refreshConnections() {
         connected = Set(NotifyIntegration.allCases.filter(\.isInstalled))
+        terminals = ResumeTerminal.installed
     }
 
     private func toggle(_ tool: NotifyIntegration) {

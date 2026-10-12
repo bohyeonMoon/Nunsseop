@@ -400,3 +400,8 @@
 "for this session" = "仅限本次会话";
 "1 of %lld" = "第 1 个，共 %lld 个";
 "Drag to reorder" = "拖动以调整顺序";
+
+/* Resuming recent conversations */
+"Recent" = "最近";
+"Resume conversations in" = "恢复对话所用的终端";
+"%@ ago" = "%@前";

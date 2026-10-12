@@ -400,3 +400,8 @@
 "for this session" = "このセッションのみ";
 "1 of %lld" = "%lld 件中 1 件目";
 "Drag to reorder" = "ドラッグで並べ替え";
+
+/* Resuming recent conversations */
+"Recent" = "最近";
+"Resume conversations in" = "会話を再開するターミナル";
+"%@ ago" = "%@前";

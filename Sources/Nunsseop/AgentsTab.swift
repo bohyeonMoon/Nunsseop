@@ -141,6 +141,10 @@ struct AgentRow: Identifiable, Equatable {
 @MainActor
 final class AgentsTabModel: ObservableObject {
     @Published private(set) var rows: [AgentRow] = []
+    /// Conversations that aren't open, to pick up again; listed below the rows.
+    @Published private(set) var recent: [RecentConversation] = []
+    /// Whether the first look for them is done; until then an empty list doesn't mean there are none.
+    @Published private(set) var recentLoaded = false
     /// Whether Claude Code or Codex is connected, which tells an empty tab from one waiting for a connection.
     @Published private(set) var connected = false
     var isShowing = false {
@@ -152,23 +156,42 @@ final class AgentsTabModel: ObservableObject {
     }
     /// Transcripts given instead of read, by `Entry.key`: for `--demo-agents`.
     var fixed: [String: AgentTranscript] = [:]
+    /// Recent conversations given instead of read: for `--demo-agents`.
+    var fixedRecent: [RecentConversation]?
 
     private let board: AgentBoard
     private let home: () -> URL
     private let isConnected: (() -> Bool)?
+    private let onResume: (RecentConversation) -> Void
+    private let scratch: [String]
     private var transcripts = AgentTranscripts()
     private var loading = false
     private var changedWhileLoading = false
+    private var scanner = RecentConversations()
+    private var scanning = false
+    private var scanWanted = false
     private var observer: AnyCancellable?
+    /// When each conversation was last clicked, which is how a repeat click is told from a first one.
+    private var opening: [String: Date] = [:]
+    /// How long a click on the same conversation is ignored: the terminal takes a while to start, cmux up to 10 s.
+    static let openingWindow: TimeInterval = 15
 
     /// - isConnected: whether a tool is connected; by default, whether Claude Code's or Codex's settings under `home` say so.
-    init(board: AgentBoard, home: @escaping () -> URL = { NotifyIntegration.home }, isConnected: (() -> Bool)? = nil) {
+    /// - scratch: folders whose conversations are left out.
+    /// - onResume: what clicking a recent conversation does; by default, opens it in the terminal chosen in Settings.
+    init(board: AgentBoard, home: @escaping () -> URL = { NotifyIntegration.home }, isConnected: (() -> Bool)? = nil,
+         scratch: [String] = RecentConversations.scratch, onResume: @escaping (RecentConversation) -> Void = Resume.inChosenTerminal) {
         self.board = board
         self.home = home
         self.isConnected = isConnected
+        self.onResume = onResume
+        self.scratch = scratch
         connected = checkConnected()
         #if DEBUG
-        if CommandLine.arguments.contains("--demo-agents") { fixed = AgentBoard.demoTranscripts }
+        if CommandLine.arguments.contains("--demo-agents") {
+            fixed = AgentBoard.demoTranscripts
+            fixedRecent = AgentBoard.demoRecent()
+        }
         #endif
         observer = board.$revision.sink { [weak self] _ in
             MainActor.assumeIsolated { if self?.isShowing == true { self?.refresh() } }
@@ -178,6 +201,7 @@ final class AgentsTabModel: ObservableObject {
     func refresh(now: Date = .now) {
         let entries = board.entries(now: now)
         rebuild(entries)
+        refreshRecent(entries, now: now)
         let keys = Set(entries.compactMap { fixed[$0.key] == nil ? AgentRow.transcriptKey($0.agent) : nil })
         guard !keys.isEmpty else { return transcripts.refresh([], home: home()) }
         guard !loading else { changedWhileLoading = true; return }
@@ -200,10 +224,51 @@ final class AgentsTabModel: ObservableObject {
         }
     }
 
+    /// Looks for conversations that aren't open (any listed session is), off the main thread.
+    private func refreshRecent(_ entries: [AgentBoard.Entry], now: Date) {
+        if let fixedRecent {
+            if recent != fixedRecent { recent = fixedRecent }
+            recentLoaded = true
+            return
+        }
+        guard !scanning else { scanWanted = true; return }
+        scanning = true
+        let open = Set(entries.compactMap { $0.agent.session?.lowercased() })
+        var snapshot = scanner
+        let home = home(), scratch = scratch
+        Task.detached(priority: .utility) { [weak self] in
+            let found = snapshot.list(home: home, excluding: open, now: now, scratch: scratch)
+            await self?.scanned(snapshot, found)
+        }
+    }
+
+    private func scanned(_ updated: RecentConversations, _ found: [RecentConversation]) {
+        scanner = updated
+        scanning = false
+        recentLoaded = true
+        if found != recent { recent = found }
+        if scanWanted {
+            scanWanted = false
+            refresh()
+        }
+    }
+
+    /// Opens it, unless it was opened a moment ago and the row is only still here because the session hasn't reached
+    /// the board yet: that would start a second terminal on the same transcript.
+    func resume(_ conversation: RecentConversation, now: Date = .now) {
+        opening = opening.filter { now.timeIntervalSince($0.value) < Self.openingWindow }
+        guard opening[conversation.id] == nil else { return }
+        opening[conversation.id] = now
+        onResume(conversation)
+    }
+
     private func checkConnected() -> Bool {
         if let isConnected { return isConnected() }
         return NotifyIntegration.$homeOverride.withValue(home()) { NotifyIntegration.claudeCode.isInstalled || NotifyIntegration.codex.isInstalled }
     }
+
+    /// Whether the tab says it has nothing: no session is listed and no recent conversation turned up.
+    var showsEmptyMessage: Bool { rows.isEmpty && recent.isEmpty && recentLoaded }
 
     /// What the tab says when no session is listed.
     var emptyMessage: String {
@@ -224,8 +289,8 @@ struct AgentsTab: View {
 
     var body: some View {
         Group {
-            if model.rows.isEmpty {
-                Text(verbatim: model.emptyMessage)
+            if model.rows.isEmpty && model.recent.isEmpty {
+                Text(verbatim: model.showsEmptyMessage ? model.emptyMessage : "")
                     .font(.system(size: 12)).foregroundStyle(.white.opacity(0.45))
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -235,6 +300,15 @@ struct AgentsTab: View {
                     ScrollView(.vertical, showsIndicators: false) {
                         LazyVStack(spacing: 4) {
                             ForEach(model.rows) { AgentRowView(row: $0, now: context.date) }
+                            if !model.recent.isEmpty {
+                                Text("Recent")
+                                    .font(.system(size: 10, weight: .semibold)).foregroundStyle(.white.opacity(0.4))
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.horizontal, 10).padding(.top, model.rows.isEmpty ? 0 : 4)
+                                ForEach(model.recent) { conversation in
+                                    RecentRowView(conversation: conversation, now: context.date) { model.resume(conversation) }
+                                }
+                            }
                         }
                     }
                 }
@@ -285,5 +359,34 @@ private struct AgentRowView: View {
                 }
             }
         }
+    }
+}
+
+private struct RecentRowView: View {
+    let conversation: RecentConversation
+    let now: Date
+    let resume: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "clock")
+                .font(.system(size: 11, weight: .semibold))
+                .frame(width: 16, height: 16)
+                .foregroundStyle(.white.opacity(0.45))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(verbatim: conversation.title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                Text(verbatim: conversation.details(now: now).joined(separator: " · "))
+                    .font(.system(size: 11)).foregroundStyle(.white.opacity(0.6)).lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .opacity(0.65)
+        .padding(.horizontal, 10).padding(.vertical, 6)
+        .surface(RoundedRectangle(cornerRadius: 10), opacity: hovering ? 0.14 : 0.06)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: resume)
+        .onHover { hovering = $0 }
+        .help(Text(verbatim: conversation.cwd))
     }
 }

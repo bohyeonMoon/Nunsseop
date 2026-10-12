@@ -400,3 +400,8 @@
 "for this session" = "para esta sesión";
 "1 of %lld" = "1 de %lld";
 "Drag to reorder" = "Arrastra para reordenar";
+
+/* Resuming recent conversations */
+"Recent" = "Recientes";
+"Resume conversations in" = "Reanudar conversaciones en";
+"%@ ago" = "hace %@";
