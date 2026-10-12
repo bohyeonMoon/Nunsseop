@@ -24,3 +24,16 @@ struct ShelfStoreTests {
         #expect(shelf.items.count == 1)
     }
 }
+
+@Suite struct ShelfTileSizeTests {
+    @Test func tilesGrowWithTheShelfUpToAMaximum() {
+        #expect(ShelfView.iconSize(forHeight: 150) == 84)
+        #expect(ShelfView.iconSize(forHeight: 400) == ShelfView.maxIcon)
+        #expect(ShelfView.iconSize(forHeight: 130) == 66)
+    }
+
+    @Test func aLowShelfKeepsTheOldSize() {
+        #expect(ShelfView.iconSize(forHeight: 90) == 40)
+        #expect(ShelfView.iconSize(forHeight: 0) == 40)
+    }
+}

@@ -9,6 +9,14 @@ struct ShelfView: View {
 
     static let airDropWidth: CGFloat = 76
 
+    /// A tile's thumbnail for a shelf this tall: as large as leaves room for its two-line name and some air, so a
+    /// few files don't sit small in an empty shelf.
+    static func iconSize(forHeight height: CGFloat) -> CGFloat {
+        min(max(height - 64, 40), maxIcon)
+    }
+
+    static let maxIcon: CGFloat = 84
+
     var body: some View {
         HStack(spacing: 8) {
             shelfArea
@@ -31,13 +39,17 @@ struct ShelfView: View {
                 }
                 .foregroundStyle(.white.opacity(0.55))
             } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        ForEach(shelf.items) { item in
-                            ShelfTile(item: item) { shelf.remove(item) }
+                GeometryReader { geometry in
+                    let icon = Self.iconSize(forHeight: geometry.size.height)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(shelf.items) { item in
+                                ShelfTile(item: item, icon: icon) { shelf.remove(item) }
+                            }
                         }
+                        .padding(.horizontal, 8)
+                        .frame(minHeight: geometry.size.height)
                     }
-                    .padding(.horizontal, 8)
                 }
             }
         }
@@ -54,6 +66,7 @@ struct ShelfView: View {
 
 private struct ShelfTile: View {
     let item: ShelfItem
+    let icon: CGFloat
     let onRemove: () -> Void
     @State private var hovering = false
     @State private var thumbnail: NSImage?
@@ -71,13 +84,13 @@ private struct ShelfTile: View {
                         .resizable()
                 }
             }
-            .frame(width: 40, height: 40)
+            .frame(width: icon, height: icon)
             .task(id: item.url) { thumbnail = await Self.thumbnail(for: item.url) }
             Text(item.url.lastPathComponent)
-                .font(.system(size: 9))
+                .font(.system(size: 10))
                 .lineLimit(2)
                 .multilineTextAlignment(.center)
-                .frame(width: 64)
+                .frame(width: max(64, icon + 16))
         }
         .padding(4)
         .background(RoundedRectangle(cornerRadius: 8).fill(.white.opacity(hovering ? 0.12 : 0)))
@@ -168,7 +181,7 @@ extension ShelfStore {
 private extension ShelfTile {
     /// A Quick Look preview of the file (screenshots, images, PDFs, videos), or nil to fall back to its icon.
     static func thumbnail(for url: URL) async -> NSImage? {
-        let request = QLThumbnailGenerator.Request(fileAt: url, size: CGSize(width: 40, height: 40),
+        let request = QLThumbnailGenerator.Request(fileAt: url, size: CGSize(width: ShelfView.maxIcon, height: ShelfView.maxIcon),
                                                    scale: NSScreen.main?.backingScaleFactor ?? 2,
                                                    representationTypes: .thumbnail)
         return try? await QLThumbnailGenerator.shared.generateBestRepresentation(for: request).nsImage
