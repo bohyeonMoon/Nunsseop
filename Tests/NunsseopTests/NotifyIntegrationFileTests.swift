@@ -64,6 +64,34 @@ struct NotifyIntegrationFileTests {
         }
     }
 
+    @Test func launchBringsAnOldClaudeCodeAgentCommandUpToDateInPlace() throws {
+        try withTempHome { _ in
+            let old = NotifyServer.agentHookCommand.replacingOccurrences(of: #"-H "X-Pid: $PPID" "#, with: "")
+            let mine: [String: Any] = ["hooks": [["type": "command", "command": "mine.sh"]]]
+            let table: JSONHook.Table = [("Notification", NotifyServer.hookCommand(title: "Claude Code"))]
+                + ["Notification", "UserPromptSubmit", "Stop", "StopFailure", "SessionEnd"].map { ($0, old) }
+            try NotifyIntegration.writeJSON(JSONHook.adding(table, to: ["hooks": ["Stop": [mine]], "model": "opus"]), to: claude.configURL)
+            #expect(claude.isInstalled)
+
+            NotifyIntegration.updateConnectedNow()
+
+            let settings = try NotifyIntegration.loadJSON(at: claude.configURL)
+            #expect(JSONHook.isCurrent(claude.hooks, in: settings))
+            let hooks = try #require(settings["hooks"] as? [String: Any])
+            let commands = { (event: String) in
+                ((hooks[event] as? [[String: Any]]) ?? []).flatMap { ($0["hooks"] as? [[String: Any]] ?? []).compactMap { $0["command"] as? String } }
+            }
+            // One agent command per event, the new one, and nothing of the old; the user's hook stays.
+            #expect(commands("Stop") == ["mine.sh", NotifyServer.agentHookCommand])
+            #expect(commands("SessionStart") == [NotifyServer.agentHookCommand])
+            #expect(commands("SessionEnd") == [NotifyServer.agentHookCommand])
+            #expect(hooks.values.allSatisfy { value in
+                ((value as? [[String: Any]]) ?? []).allSatisfy { ($0["hooks"] as? [[String: Any]] ?? []).allSatisfy { ($0["command"] as? String) != old } }
+            })
+            #expect(settings["model"] as? String == "opus")
+        }
+    }
+
     @Test func installCreatesTheFileAndFolderWhenThereIsNone() throws {
         try withTempHome { home in
             try claude.installNow()

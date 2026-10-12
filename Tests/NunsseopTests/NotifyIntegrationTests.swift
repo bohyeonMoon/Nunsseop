@@ -38,7 +38,7 @@ struct JSONHookTests {
 
 struct AgentHookInstallTests {
     private let claude = NotifyIntegration.$permissionPromptsOverride.withValue(true) { NotifyIntegration.claudeCode.hooks }
-    private let events = ["Notification", "UserPromptSubmit", "Stop", "StopFailure", "SessionEnd"]
+    private let events = ["Notification", "UserPromptSubmit", "Stop", "StopFailure", "SessionEnd", "SessionStart"]
 
     private func commands(_ settings: [String: Any], _ event: String) -> [[String]] {
         (((settings["hooks"] as? [String: Any])?[event] as? [[String: Any]]) ?? []).map { group in
@@ -48,8 +48,8 @@ struct AgentHookInstallTests {
 
     @Test func claudeCodeGetsTheNoticeHookAndTheAgentHooks() throws {
         let notice = NotifyServer.hookCommand(title: "Claude Code"), agent = NotifyServer.agentHookCommand
-        // The notice hook, then the agent hook under Notification and the four events, then the permission hook, twice (for approvals and for questions).
-        #expect(claude.count == 8)
+        // The notice hook, then the agent hook under Notification and the five events, then the permission hook, twice (for approvals and for questions).
+        #expect(claude.count == 9)
         let settings = try JSONHook.adding(claude, to: [:])
         #expect(JSONHook.isInstalled(in: settings))
         #expect(JSONHook.isCurrent(claude, in: settings))
@@ -58,6 +58,29 @@ struct AgentHookInstallTests {
         #expect(commands(settings, "PermissionRequest") == [[NotifyServer.permissionHookCommand]])
         #expect(commands(settings, "PreToolUse") == [[NotifyServer.permissionHookCommand]])
         #expect(JSONHook.removing(from: settings).isEmpty)
+    }
+
+    @Test func claudeCodesAgentHookSendsItsProcessAndSessionStartIsAmongItsEvents() {
+        let agentEvents = claude.filter { $0.command.contains("/agent") }
+        #expect(agentEvents.map(\.event).sorted() == events.sorted())
+        #expect(agentEvents.allSatisfy { $0.command == NotifyServer.agentHookCommand && $0.command.contains(#"-H "X-Pid: $PPID""#) })
+    }
+
+    @Test func anOldClaudeCodeAgentCommandIsReplacedNotDuplicatedAndSessionStartIsAdded() throws {
+        // As 0.28 left it: the agent hook without X-Pid under the four events it had.
+        let old = NotifyServer.agentHookCommand.replacingOccurrences(of: #"-H "X-Pid: $PPID" "#, with: "")
+        #expect(old != NotifyServer.agentHookCommand && !old.contains("X-Pid"))
+        let oldTable: JSONHook.Table = [("Notification", NotifyServer.hookCommand(title: "Claude Code"))]
+            + ["Notification", "UserPromptSubmit", "Stop", "StopFailure", "SessionEnd"].map { ($0, old) }
+        let seed = try JSONHook.adding(oldTable, to: ["model": "opus"])
+        #expect(JSONHook.isInstalled(in: seed) && !JSONHook.isCurrent(claude, in: seed))
+
+        let updated = try #require(try JSONHook.updating(claude, in: seed))
+        #expect(JSONHook.isCurrent(claude, in: updated))
+        for event in events.dropFirst() { #expect(commands(updated, event) == [[NotifyServer.agentHookCommand]], "\(event)") }
+        #expect(commands(updated, "Notification").count == 2)
+        #expect(updated["model"] as? String == "opus")
+        #expect(try JSONHook.updating(claude, in: updated) == nil)
     }
 
     @Test func geminiKeepsTheNoticeHookOnly() {

@@ -10,7 +10,12 @@ final class AgentBoard: ObservableObject {
         case working
         /// Asking for input, or finished and not yet looked at.
         case waiting
+        /// Open and used recently, but neither working nor waiting. Listed in the Agents tab, never counted.
+        case idle
     }
+
+    /// How long after its last use an open session stays listed.
+    nonisolated static let recentWindow: TimeInterval = 3 * 60 * 60
 
     struct Counts: Equatable {
         var working = 0
@@ -27,6 +32,7 @@ final class AgentBoard: ObservableObject {
                 switch state {
                 case .working: working += 1
                 case .waiting: waiting += 1
+                case .idle: break
                 }
             }
         }
@@ -52,6 +58,16 @@ final class AgentBoard: ObservableObject {
         var cwd: String? = nil
         /// The tool's own session id, to find its transcript.
         var session: String? = nil
+        /// From then on the agent is idle: a finished hand nobody looked at, a turn that sent nothing for too long.
+        var idleFrom: Date? = nil
+
+        /// The agent as it is at `now`: idle once `idleFrom` has passed.
+        func effective(at now: Date) -> Agent {
+            guard state != .idle, let idleFrom, idleFrom <= now else { return self }
+            var agent = self
+            (agent.state, agent.finished, agent.since) = (.idle, false, idleFrom)
+            return agent
+        }
     }
 
     /// A listed agent with where it came from.
@@ -78,9 +94,9 @@ final class AgentBoard: ObservableObject {
         #endif
     }
 
-    /// Everything listed that hasn't expired.
+    /// Everything listed that hasn't expired, as it is at `now`.
     func entries(now: Date = .now) -> [Entry] {
-        bySource.flatMap { source, agents in agents.map { Entry(source: source, id: $0.key, agent: $0.value) } }
+        bySource.flatMap { source, agents in agents.map { Entry(source: source, id: $0.key, agent: $0.value.effective(at: now)) } }
             .filter { $0.agent.expiresAt.map { $0 > now } ?? true }
     }
 
@@ -96,15 +112,15 @@ final class AgentBoard: ObservableObject {
 
     func clear(source: String) { replace(source: source, with: [String: Agent]()) }
 
-    /// Counts the agents that haven't expired, and wakes up when the next one does.
+    /// Counts the agents that haven't expired, and wakes up when the next one expires or turns idle.
     func recount(now: Date = .now) {
         let live = bySource.values.flatMap(\.values).filter { $0.expiresAt.map { $0 > now } ?? true }
-        let new = Counts(live.map(\.state))
+        let new = Counts(live.map { $0.effective(at: now).state })
         if new != counts { counts = new }
         revision &+= 1
         expiry?.invalidate()
         expiry = nil
-        guard let next = live.compactMap(\.expiresAt).min() else { return }
+        guard let next = live.flatMap({ [$0.expiresAt, $0.idleFrom] }).compactMap({ $0 }).filter({ $0 > now }).min() else { return }
         let timer = Timer(fire: next, interval: 0, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated { self?.recount() }
         }
@@ -115,7 +131,7 @@ final class AgentBoard: ObservableObject {
 }
 
 extension Herdr {
-    /// How long a finished pane nobody looked at in herdr keeps counting as waiting; past it the hand goes away even
+    /// How long a finished pane nobody looked at in herdr keeps counting as waiting; past it the hand goes down even
     /// for someone who never opens herdr.
     static let doneWindow: TimeInterval = 10 * 60
 
@@ -128,22 +144,33 @@ extension Herdr {
         var session: String? = nil
     }
 
-    /// The board's agents for a session's panes (`socket` is that session's); `done` ones expire `doneWindow` after
-    /// they finished.
+    /// The board's agents for a session's panes (`socket` is that session's). A `done` pane waits for you until
+    /// `doneWindow` after it finished, then sits idle, as an idle pane with an agent in it does; both stay listed for
+    /// `AgentBoard.recentWindow`.
     static func boardAgents(_ panes: [String: PaneState], socket: String? = nil) -> [String: AgentBoard.Agent] {
         var agents: [String: AgentBoard.Agent] = [:]
         for (id, pane) in panes {
-            guard let state = boardState(pane.status) else { continue }
+            let done = pane.status == "done"
+            let state: AgentBoard.State
+            if let counted = boardState(pane.status) {
+                state = counted
+            } else if pane.status == "idle", pane.agent?.isEmpty == false {
+                state = .idle
+            } else {
+                continue
+            }
+            let listed = done || state == .idle
             agents[id] = AgentBoard.Agent(
-                state: state, expiresAt: pane.status == "done" ? pane.since.addingTimeInterval(doneWindow) : nil,
-                since: pane.since, finished: pane.status == "done", tool: pane.agent, pane: id, socket: socket,
-                cwd: pane.cwd, session: pane.session)
+                state: state, expiresAt: listed ? pane.since.addingTimeInterval(AgentBoard.recentWindow) : nil,
+                since: pane.since, finished: done, tool: pane.agent, pane: id, socket: socket, cwd: pane.cwd,
+                session: pane.session, idleFrom: done ? pane.since.addingTimeInterval(doneWindow) : nil)
         }
         return agents
     }
 
     /// herdr's pane states as the board counts them. `done` is finished but not yet seen in herdr, so it waits for
-    /// the user like `blocked` (for a while: see `doneWindow`); idle and unknown panes aren't agents at work.
+    /// the user like `blocked` (for a while: see `doneWindow`); idle and unknown panes aren't agents at work, and an
+    /// idle one is only listed (see `boardAgents`).
     static func boardState(_ status: String) -> AgentBoard.State? {
         switch status {
         case "working": .working
@@ -159,22 +186,24 @@ extension Herdr {
 
 #if DEBUG
 extension AgentBoard {
-    /// Two Claude Code sessions working, one asking for input and a Codex session working.
+    /// Two Claude Code sessions working, one asking for input, one idle and a Codex session working.
     static func demoAgents(now: Date = .now) -> [String: Agent] {
         [
             "a": Agent(state: .working, since: now.addingTimeInterval(-190), tool: "claude", cwd: "/Users/demo/Projects/nunsseop"),
             "b": Agent(state: .working, since: now.addingTimeInterval(-45), tool: "claude", cwd: "/Users/demo/Projects/site"),
             "c": Agent(state: .waiting, since: now.addingTimeInterval(-720), tool: "claude", cwd: "/Users/demo/Projects/api-server"),
             "d": Agent(state: .working, since: now.addingTimeInterval(-3_900), tool: "codex", cwd: "/Users/demo/Projects/ios-app"),
+            "e": Agent(state: .idle, since: now.addingTimeInterval(-2_400), tool: "claude", cwd: "/Users/demo/Projects/docs"),
         ]
     }
 
     /// What their transcripts would say, by `Entry.key`.
     static let demoTranscripts: [String: AgentTranscript] = [
-        "demo|a": AgentTranscript(model: "claude-opus-5-5", tokens: 84_300),
+        "demo|a": AgentTranscript(model: "claude-opus-5-5", tokens: 84_300, name: "Agents tab"),
         "demo|b": AgentTranscript(model: "claude-sonnet-5-5", tokens: 31_900, mode: .plan),
         "demo|c": AgentTranscript(model: "claude-opus-5-5", tokens: 142_000),
         "demo|d": AgentTranscript(model: "gpt-5.6", tokens: 19_500),
+        "demo|e": AgentTranscript(model: "claude-sonnet-5-5", tokens: 12_400),
     ]
 }
 #endif

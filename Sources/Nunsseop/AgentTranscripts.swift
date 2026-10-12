@@ -32,14 +32,25 @@ enum AgentMode: Equatable {
     var warns: Bool { self == .bypass || self == .fullAccess }
 }
 
-/// What a session's transcript on disk says about it, for the Agents tab. Only these four values are kept: the
-/// hooks send no folder, model, token count or mode, and what the sessions say stays in the tools' own files.
+/// What a session's transcript on disk says about it, for the Agents tab. Only these five values are kept: the
+/// hooks send no folder, model, token count, mode or name, and what the sessions say stays in the tools' own files.
 struct AgentTranscript: Equatable {
     var cwd: String? = nil
     var model: String? = nil
     /// The context the last request used.
     var tokens: Int? = nil
     var mode: AgentMode? = nil
+    /// What the user (or the tool) called the session; not part of `parse`, which reads a window of the file.
+    var name: String? = nil
+
+    /// A name for display: control characters and newlines as spaces, whitespace collapsed, trimmed, at most 80
+    /// characters; nil when nothing is left.
+    static func cleanName(_ raw: String) -> String? {
+        let spaced = String(String.UnicodeScalarView(raw.unicodeScalars.map { $0.properties.generalCategory == .control ? " " : $0 }))
+        let collapsed = spaced.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        let capped = String(collapsed.prefix(80)).trimmingCharacters(in: .whitespaces)
+        return capped.isEmpty ? nil : capped
+    }
 
     /// Claude Code's lines carry `cwd` and, on assistant messages, `message.model` and `message.usage`, and on prompts
     /// and `permission-mode` lines the `permissionMode`; Codex's `session_meta` and `turn_context` carry `cwd` and
@@ -150,6 +161,162 @@ struct AgentTranscript: Equatable {
     }
 }
 
+/// A Claude Code session's name. `custom-title` lines (from /rename) win over `agent-name` ones, those over the
+/// automatic `ai-title` ones, the latest of each kind. They can sit anywhere in a file of tens of megabytes, so the file
+/// is read whole once and after that only what was appended.
+struct AgentNameScan: Equatable {
+    var custom: String?
+    var agent: String?
+    var ai: String?
+    /// The start of the first line not yet read whole: a line still being written is read again once it is finished.
+    var offset: UInt64 = 0
+    /// The bytes just before `offset`, which tell a file that was replaced from one that grew.
+    var anchor = Data()
+
+    var name: String? { custom ?? agent ?? ai }
+
+    static let chunk = 4 << 20
+    private static let anchorLength = 64
+    private static let markers = ["custom-title", "agent-name", "ai-title"].map { Array($0.utf8) }
+    private static let longest = markers.map(\.count).max() ?? 0
+
+    /// Reads from `offset` to the end of the file in pieces of `size` bytes; a smaller or different file is read from the start.
+    mutating func advance(_ url: URL, chunk size: Int = AgentNameScan.chunk) {
+        guard let handle = try? FileHandle(forReadingFrom: url), let end = try? handle.seekToEnd() else { return }
+        defer { try? handle.close() }
+        if offset > end || !anchorHolds(handle) { self = AgentNameScan() }
+        guard (try? handle.seek(toOffset: offset)) != nil else { return }
+        var position = offset
+        var lineStart = offset
+        // A line that has no marker keeps only its last bytes, for a marker that straddles two pieces. When the marker
+        // then turns up, the line's start is gone and the line is read again from the file once its end is known.
+        var line = Data()
+        var marked = false
+        var truncated = false
+        func take(_ piece: UnsafeRawBufferPointer, ended: Bool) {
+            if marked {
+                if !truncated { line.append(contentsOf: piece) }
+                return
+            }
+            let keep = Self.longest - 1
+            if line.isEmpty, !Self.hasMarker(piece) {
+                if !ended {
+                    line = Data(piece.suffix(keep))
+                    truncated = piece.count > keep
+                }
+                return
+            }
+            line.append(contentsOf: piece)
+            if Self.hasMarker(line) {
+                marked = true
+                if truncated { line = Data() }
+            } else if ended {
+                line = Data()
+            } else {
+                truncated = truncated || line.count > keep
+                line = Data(line.suffix(keep))
+            }
+        }
+        func finish(at lineEnd: UInt64) {
+            if marked {
+                if truncated, let here = try? handle.offset(), (try? handle.seek(toOffset: lineStart)) != nil {
+                    line = (try? handle.read(upToCount: Int(lineEnd - lineStart))) ?? Data()
+                    try? handle.seek(toOffset: here)
+                }
+                absorb(line)
+            }
+            line = Data()
+            marked = false
+            truncated = false
+        }
+        while position < end {
+            guard let data = try? handle.read(upToCount: Int(min(UInt64(max(1, size)), end - position))), !data.isEmpty else { break }
+            data.withUnsafeBytes { raw in
+                var start = 0
+                while start < raw.count {
+                    let rest = UnsafeRawBufferPointer(rebasing: raw[start...])
+                    if let found = memchr(rest.baseAddress, 0x0A, rest.count) {
+                        let length = found - UnsafeMutableRawPointer(mutating: rest.baseAddress!)
+                        take(UnsafeRawBufferPointer(rebasing: rest[..<length]), ended: true)
+                        finish(at: position + UInt64(start + length))
+                        start += length + 1
+                        lineStart = position + UInt64(start)
+                    } else {
+                        take(rest, ended: false)
+                        start = raw.count
+                    }
+                }
+            }
+            position += UInt64(data.count)
+        }
+        // A last line without its newline is used now and read again when it is finished.
+        finish(at: end)
+        offset = lineStart
+        anchor = Self.bytes(handle, before: offset)
+    }
+
+    private func anchorHolds(_ handle: FileHandle) -> Bool { offset == 0 || Self.bytes(handle, before: offset) == anchor }
+
+    private static func bytes(_ handle: FileHandle, before offset: UInt64) -> Data {
+        let length = min(UInt64(anchorLength), offset)
+        guard length > 0, (try? handle.seek(toOffset: offset - length)) != nil else { return Data() }
+        return (try? handle.read(upToCount: Int(length))) ?? Data()
+    }
+
+    private static func hasMarker(_ bytes: Data) -> Bool { bytes.withUnsafeBytes { hasMarker($0) } }
+
+    private static func hasMarker(_ bytes: UnsafeRawBufferPointer) -> Bool {
+        guard let base = bytes.baseAddress else { return false }
+        return markers.contains { marker in marker.withUnsafeBytes { memmem(base, bytes.count, $0.baseAddress, marker.count) != nil } }
+    }
+
+    private mutating func absorb(_ line: Data) {
+        guard let object = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any] else { return }
+        func value(_ key: String) -> String? { (object[key] as? String).flatMap(AgentTranscript.cleanName) }
+        switch object["type"] as? String {
+        case "custom-title": custom = value("customTitle") ?? custom
+        case "agent-name": agent = value("agentName") ?? agent
+        case "ai-title": ai = value("aiTitle") ?? ai
+        default: break
+        }
+    }
+}
+
+/// Codex's `session_index.jsonl`: one line per rename, the last line for a session id being its name.
+struct CodexSessionNames {
+    private(set) var names: [String: String] = [:]
+    private struct Stamp: Equatable {
+        let path: String
+        let modified: Date
+        let size: Int
+    }
+    private var stamp: Stamp?
+
+    /// Reads the index again only when its size or time changed.
+    mutating func refresh(home: URL) {
+        let file = home.appendingPathComponent(".codex/session_index.jsonl")
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: file.path),
+              let modified = attributes[.modificationDate] as? Date, let size = attributes[.size] as? Int else {
+            self = CodexSessionNames()
+            return
+        }
+        let next = Stamp(path: file.path, modified: modified, size: size)
+        guard next != stamp else { return }
+        stamp = next
+        names = (try? Data(contentsOf: file)).map(Self.parse) ?? [:]
+    }
+
+    static func parse(_ data: Data) -> [String: String] {
+        var names: [String: String] = [:]
+        for line in data.split(separator: 0x0A) {
+            guard let object = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any],
+                  let id = object["id"] as? String else { continue }
+            names[id] = (object["thread_name"] as? String).flatMap(AgentTranscript.cleanName)
+        }
+        return names
+    }
+}
+
 /// Finds each session's transcript and keeps what it says. A value type, so a refresh can run off the main thread on
 /// a copy: the files can be large and the folders many.
 struct AgentTranscripts {
@@ -165,27 +332,31 @@ struct AgentTranscripts {
         var modified: Date?
         var size: Int
         var transcript: AgentTranscript?
+        var scan = AgentNameScan()
     }
 
     /// How long a transcript that wasn't found waits before it is looked for again.
     static let retryInterval: TimeInterval = 30
     private var entries: [Key: Entry] = [:]
+    private var codexNames = CodexSessionNames()
 
     func transcript(_ key: Key) -> AgentTranscript? { entries[key]?.transcript }
 
     /// Brings the transcripts of `keys` up to date: a file is read again only when its size or time changed, one
-    /// that is missing is looked for every `retryInterval`, and sessions no longer listed are forgotten.
+    /// that is missing is looked for every `retryInterval`, and sessions no longer listed are forgotten. Names come from
+    /// the transcript's title lines (read on from where the last refresh stopped) or from Codex's session index.
     mutating func refresh(_ keys: Set<Key>, home: URL, now: Date = .now) {
         entries = entries.filter { keys.contains($0.key) }
+        if keys.contains(where: { $0.kind == .codex }) { codexNames.refresh(home: home) }
         for key in keys where Self.isSafe(key.session) {
             var entry = entries[key] ?? Entry(url: nil, checked: .distantPast, modified: nil, size: 0, transcript: nil)
             if let url = entry.url {
                 if let stamp = Self.stamp(url) {
                     if stamp.modified != entry.modified || stamp.size != entry.size {
-                        entry.transcript = AgentTranscript.read(url, kind: key.kind)
+                        load(&entry, key: key, url: url)
                         (entry.modified, entry.size) = stamp
                     }
-                    entries[key] = entry
+                    entries[key] = named(entry, key)
                     continue
                 }
                 entry = Entry(url: nil, checked: .distantPast, modified: nil, size: 0, transcript: nil)
@@ -195,10 +366,21 @@ struct AgentTranscripts {
             if let url = Self.locate(key, home: home), let stamp = Self.stamp(url) {
                 entry.url = url
                 (entry.modified, entry.size) = stamp
-                entry.transcript = AgentTranscript.read(url, kind: key.kind)
+                load(&entry, key: key, url: url)
             }
-            entries[key] = entry
+            entries[key] = named(entry, key)
         }
+    }
+
+    private func load(_ entry: inout Entry, key: Key, url: URL) {
+        entry.transcript = AgentTranscript.read(url, kind: key.kind)
+        if key.kind == .claude { entry.scan.advance(url) }
+    }
+
+    private func named(_ entry: Entry, _ key: Key) -> Entry {
+        var entry = entry
+        entry.transcript?.name = key.kind == .claude ? entry.scan.name : codexNames.names[key.session]
+        return entry
     }
 
     /// Not through `URL.resourceValues`, which keeps the first answer for as long as the URL lives.

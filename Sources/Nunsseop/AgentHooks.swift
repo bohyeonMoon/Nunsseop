@@ -1,17 +1,21 @@
 import AppKit
 
-/// Claude Code or Codex sessions for the agents count, told by the hooks Nunsseop installs, so one running in Muxy
-/// or a plain terminal counts as well as one in herdr. Every session is an entry that expires, because a hook can't
-/// say when a turn is cut short with Esc or the tool is killed: neither sends an event (Codex does send Interrupt).
-/// One instance per tool, each a source of its own, so two tools' session ids can't meet.
+/// Claude Code or Codex sessions for the agents count and the Agents tab, told by the hooks Nunsseop installs, so one
+/// running in Muxy or a plain terminal shows up as well as one in herdr. Every session is an entry that stays listed for
+/// `AgentBoard.recentWindow` after its latest event, because a hook can't say when a turn is cut short with Esc or the
+/// tool is killed: neither sends an event (Codex does send Interrupt). One that reports its process (`pid`) is dropped as
+/// soon as that process is gone. One instance per tool, each a source of its own, so two tools' session ids can't meet.
 ///
-/// Known limit: approving a permission sends no event either (PostToolUse isn't installed, to spare a process per
-/// tool call), so an approved turn that then works silently keeps its hand until the next event, and drops out of
-/// the count after `activeWindow` while it still runs, until its Stop.
+/// A session counts as working, or as asking for input, for `activeWindow` after its event and is idle from then on, as
+/// a finished hand nobody looked at is after `Herdr.doneWindow`. Known limit: approving a permission sends no event
+/// either (PostToolUse isn't installed, to spare a process per tool call), so an approved turn that then works silently
+/// keeps its hand until the next event, and turns idle after `activeWindow` while it still runs, until its Stop.
 @MainActor
 final class AgentHooks {
     /// How long a session keeps counting as working, or as asking for input, after its last event.
     static let activeWindow: TimeInterval = 20 * 60
+    /// How often the processes of the listed sessions are looked at.
+    static let livenessInterval: TimeInterval = 60
     let source: String
 
     private struct Entry {
@@ -19,9 +23,21 @@ final class AgentHooks {
         /// Done and not yet looked at, as opposed to asking for input.
         var finished = false
         var app: String?
+        /// The tool's process, when the hook says it.
+        var pid: Int32?
         /// When it entered this state; another event in the same state keeps it.
         var since: Date
-        var expiresAt: Date
+        /// When it stops counting and is idle.
+        var idleFrom: Date?
+        /// The time of its latest event; it goes `AgentBoard.recentWindow` after.
+        var lastUsed: Date
+        var expiresAt: Date { lastUsed.addingTimeInterval(AgentBoard.recentWindow) }
+
+        /// What the board shows at `now`: idle from `idleFrom` on, since then.
+        func settled(at now: Date) -> (state: AgentBoard.State, finished: Bool, since: Date) {
+            guard state != .idle, let idleFrom, idleFrom <= now else { return (state, finished, since) }
+            return (.idle, false, idleFrom)
+        }
     }
 
     private let kind: AgentKind
@@ -29,19 +45,24 @@ final class AgentHooks {
     private let isOn: () -> Bool
     private let watchesHerdr: () -> Bool
     private let frontmostApp: () -> String?
+    private let isAlive: (Int32) -> Bool
     private var entries: [String: Entry] = [:]
     private var activation: NSObjectProtocol?
+    private(set) var liveness: Timer?
 
     /// - isOn: whether the closed notch shows the agents count or the Agents tab is on; nothing is kept while it isn't.
     /// - watchesHerdr: whether herdr's own count is running, which already includes a session in a herdr pane.
+    /// - isAlive: whether a process still runs; one owned by another user does.
     init(board: AgentBoard, agent: AgentKind = .claude, isOn: @escaping () -> Bool, watchesHerdr: @escaping () -> Bool,
-         frontmostApp: @escaping () -> String? = { NSWorkspace.shared.frontmostApplication?.bundleIdentifier }) {
+         frontmostApp: @escaping () -> String? = { NSWorkspace.shared.frontmostApplication?.bundleIdentifier },
+         isAlive: @escaping (Int32) -> Bool = { kill($0, 0) == 0 || errno == EPERM }) {
         self.board = board
         self.kind = agent
         self.source = "hooks:\(agent.rawValue)"
         self.isOn = isOn
         self.watchesHerdr = watchesHerdr
         self.frontmostApp = frontmostApp
+        self.isAlive = isAlive
         // Coming to an app looks at what finished in it. Muxy's tabs and the like aren't told apart.
         activation = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
@@ -53,58 +74,111 @@ final class AgentHooks {
 
     deinit {
         if let activation { NSWorkspace.shared.notificationCenter.removeObserver(activation) }
+        liveness?.invalidate()
     }
 
     func apply(_ event: AgentEvent, now: Date = .now) {
         guard isOn(), !(event.inHerdr && watchesHerdr()) else { return }
         entries = entries.filter { $0.value.expiresAt > now }
         let id = event.session
+        // One process has one session at a time: /resume or /clear inside it starts another id.
+        if let pid = event.pid, event.action != .remove {
+            entries = entries.filter { $0.key == id || $0.value.pid != pid }
+        }
         switch event.action {
         case .working:
-            set(id, .working, app: event.app, until: now.addingTimeInterval(Self.activeWindow), now: now)
+            set(id, .working, idleFrom: now.addingTimeInterval(Self.activeWindow), event: event, now: now)
         case .needsInput:
-            set(id, .waiting, app: event.app, until: now.addingTimeInterval(Self.activeWindow), now: now)
+            set(id, .waiting, idleFrom: now.addingTimeInterval(Self.activeWindow), event: event, now: now)
         case .finished:
             // Finished in the app that's in front: it's being looked at.
             if event.app != nil, event.app == frontmostApp() {
-                entries[id] = nil
+                set(id, .idle, event: event, now: now)
             } else {
-                set(id, .waiting, finished: true, app: event.app, until: now.addingTimeInterval(Herdr.doneWindow), now: now)
+                set(id, .waiting, finished: true, idleFrom: now.addingTimeInterval(Herdr.doneWindow), event: event, now: now)
             }
         case .idle:
             // Claude Code only says idle with no dialog open, and Codex when a turn is interrupted, so a question or a
             // working turn is over; a finished hand stays.
-            if let entry = entries[id], !entry.finished { entries[id] = nil }
+            if entries[id]?.finished != true { set(id, .idle, event: event, now: now) }
+        case .opened:
+            // Also sent on resume, clear and compact, which can come mid-turn: what it was doing stays.
+            if var entry = entries[id] {
+                entry.app = event.app ?? entry.app
+                entry.pid = event.pid ?? entry.pid
+                entry.lastUsed = now
+                entries[id] = entry
+            } else {
+                set(id, .idle, event: event, now: now)
+            }
         case .remove:
             entries[id] = nil
         }
+        prune(now: now)
         publish(now: now)
     }
 
     /// Forgets everything, once the count isn't shown any more.
     func reset() {
+        liveness?.invalidate()
+        liveness = nil
         guard !entries.isEmpty else { return }
         entries = [:]
         board.clear(source: source)
     }
 
+    /// Coming to the app looks at what finished in it: it is idle now.
     func activated(_ app: String?) {
-        guard let app, entries.values.contains(where: { $0.finished && $0.app == app }) else { return }
-        entries = entries.filter { !($0.value.finished && $0.value.app == app) }
-        publish(now: .now)
+        let now = Date.now
+        // One whose hand has turned idle already stays as the board shows it.
+        let unseen = entries.filter { $0.value.app == app && $0.value.settled(at: now).finished }
+        guard app != nil, !unseen.isEmpty else { return }
+        for (id, entry) in unseen {
+            entries[id] = Entry(state: .idle, app: app, pid: entry.pid, since: now, lastUsed: entry.lastUsed)
+        }
+        publish(now: now)
     }
 
-    private func set(_ id: String, _ state: AgentBoard.State, finished: Bool = false, app: String?, until: Date, now: Date) {
-        let same = entries[id].map { $0.state == state && $0.finished == finished } ?? false
-        entries[id] = Entry(state: state, finished: finished, app: app, since: same ? entries[id]!.since : now, expiresAt: until)
+    private func set(_ id: String, _ state: AgentBoard.State, finished: Bool = false, idleFrom: Date? = nil, event: AgentEvent, now: Date) {
+        let old = entries[id]
+        // Compared as the board shows it: a hand that has turned idle since isn't in its old state any more.
+        let shown = old?.settled(at: now)
+        let same = shown.map { $0.state == state && $0.finished == finished } ?? false
+        entries[id] = Entry(state: state, finished: finished, app: event.app, pid: event.pid ?? old?.pid,
+                            since: same ? shown!.since : now, idleFrom: idleFrom, lastUsed: now)
+    }
+
+    /// Drops the sessions that have expired or whose process is gone.
+    private func prune(now: Date) {
+        entries = entries.filter { $0.value.expiresAt > now && ($0.value.pid.map(isAlive) ?? true) }
     }
 
     private func publish(now: Date) {
         board.replace(source: source, with: entries.reduce(into: [String: AgentBoard.Agent]()) { agents, entry in
             let (id, value) = entry
             agents[id] = AgentBoard.Agent(state: value.state, expiresAt: value.expiresAt, since: value.since,
-                                          finished: value.finished, tool: kind.rawValue, app: value.app, session: id)
+                                          finished: value.finished, tool: kind.rawValue, app: value.app, session: id,
+                                          idleFrom: value.idleFrom)
         }, now: now)
+        // A session's process can end without a word, so the ones that report theirs are looked at now and then.
+        if entries.values.contains(where: { $0.pid != nil }) {
+            guard liveness == nil else { return }
+            let timer = Timer(timeInterval: Self.livenessInterval, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.pruneDead() }
+            }
+            timer.tolerance = 20
+            RunLoop.main.add(timer, forMode: .common)
+            liveness = timer
+        } else {
+            liveness?.invalidate()
+            liveness = nil
+        }
+    }
+
+    func pruneDead(now: Date = .now) {
+        let before = entries.count
+        prune(now: now)
+        if entries.count != before { publish(now: now) }
     }
 }
 

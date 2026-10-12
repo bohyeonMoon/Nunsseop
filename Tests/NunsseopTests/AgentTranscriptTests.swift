@@ -42,6 +42,13 @@ private enum Fixture {
             + "\"model_context_window\":258400}}}"
     }
 
+    static func title(_ type: String, _ field: String, _ value: String) -> String {
+        "{\"type\":\"\(type)\",\"\(field)\":\"\(value)\",\"sessionId\":\"s\"}"
+    }
+    static func custom(_ value: String) -> String { title("custom-title", "customTitle", value) }
+    static func agentName(_ value: String) -> String { title("agent-name", "agentName", value) }
+    static func ai(_ value: String) -> String { title("ai-title", "aiTitle", value) }
+
     static func data(_ lines: [String]) -> Data { Data((lines.joined(separator: "\n") + "\n").utf8) }
 
     @discardableResult
@@ -348,6 +355,257 @@ struct AgentTranscriptLookupTests {
             var transcripts = AgentTranscripts()
             transcripts.refresh([key], home: home)
             #expect(transcripts.transcript(key) == nil)
+        }
+    }
+}
+
+struct AgentNameTests {
+    private func scratch() throws -> URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent("nunsseop-name-\(UUID().uuidString.prefix(8)).jsonl")
+    }
+
+    private func scanned(_ lines: [String], chunk: Int = AgentNameScan.chunk) throws -> AgentNameScan {
+        let url = try scratch()
+        defer { try? FileManager.default.removeItem(at: url) }
+        try Fixture.write(lines, to: url)
+        var scan = AgentNameScan()
+        scan.advance(url, chunk: chunk)
+        return scan
+    }
+
+    private func size(_ url: URL) throws -> UInt64 { UInt64(try Data(contentsOf: url).count) }
+
+    private func append(_ text: String, to url: URL) throws {
+        let handle = try FileHandle(forWritingTo: url)
+        defer { try? handle.close() }
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data(text.utf8))
+    }
+
+    @Test func aCustomTitleBeatsAnAgentNameBeatsAnAiTitleAndTheLatestOfAKindWins() throws {
+        let user = Fixture.claudeUser(cwd: "/p")
+        #expect(try scanned([Fixture.ai("auto"), user]).name == "auto")
+        #expect(try scanned([Fixture.ai("auto"), Fixture.agentName("agent"), user]).name == "agent")
+        #expect(try scanned([Fixture.custom("mine"), Fixture.agentName("agent"), Fixture.ai("auto")]).name == "mine")
+        #expect(try scanned([Fixture.ai("first"), user, Fixture.ai("second")]).name == "second")
+        #expect(try scanned([Fixture.custom("one"), user, Fixture.custom("two"), Fixture.ai("later")]).name == "two")
+        #expect(try scanned([user]).name == nil)
+        // A title that is only whitespace doesn't replace the one before it.
+        #expect(try scanned([Fixture.custom("kept"), Fixture.custom("   ")]).name == "kept")
+    }
+
+    @Test func aMarkerInsideAMessageIsNotATitle() throws {
+        let quoted = "{\"type\":\"user\",\"message\":{\"content\":\"the ai-title line {\\\"type\\\":\\\"custom-title\\\"} is in a file\"}}"
+        #expect(try scanned([quoted, Fixture.ai("real")]).name == "real")
+    }
+
+    @Test func titlesAnywhereInAFileAreFoundInSmallPieces() throws {
+        let filler = (0..<300).map { _ in "{\"type\":\"attachment\",\"text\":\"\(String(repeating: "x", count: 100))\"}" }
+        for chunk in [1, 7, 64, 1_000, 4_096] {
+            let scan = try scanned([Fixture.ai("early")] + filler + [Fixture.custom("middle")] + filler + [Fixture.agentName("late")], chunk: chunk)
+            #expect(scan.custom == "middle" && scan.agent == "late" && scan.ai == "early", "chunk \(chunk)")
+        }
+    }
+
+    @Test func aMarkerInAHugeLineOrAcrossPiecesIsFound() throws {
+        let huge = "{\"type\":\"custom-title\",\"padding\":\"\(String(repeating: "z", count: 3 << 20))\",\"customTitle\":\"in a big line\"}"
+        let big = try scanned([huge, Fixture.claudeUser(cwd: "/p")], chunk: 1 << 20)
+        #expect(big.name == "in a big line")
+        // The marker at the end of a line whose start was already let go.
+        let late = "{\"padding\":\"\(String(repeating: "z", count: 3 << 20))\",\"customTitle\":\"at the end\",\"type\":\"custom-title\"}"
+        #expect(try scanned([late, Fixture.claudeUser(cwd: "/p")], chunk: 1 << 20).name == "at the end")
+        // Every position of the marker against the piece boundaries.
+        for chunk in 1...40 {
+            #expect(try scanned([Fixture.ai("split title")], chunk: chunk).name == "split title", "chunk \(chunk)")
+        }
+        // A huge line that has no marker is passed over.
+        let plain = "{\"type\":\"user\",\"message\":\"\(String(repeating: "y", count: 2 << 20))\"}"
+        #expect(try scanned([plain, Fixture.ai("after")], chunk: 1 << 20).name == "after")
+    }
+
+    @Test func aTitleAppendedLaterIsPickedUpWithoutReadingTheFileAgain() throws {
+        let url = try scratch()
+        defer { try? FileManager.default.removeItem(at: url) }
+        try Fixture.write([Fixture.ai("auto"), Fixture.claudeUser(cwd: "/p")], to: url)
+        var scan = AgentNameScan()
+        scan.advance(url)
+        #expect(scan.name == "auto")
+        let first = scan.offset
+        let written = try size(url)
+        #expect(first == written)
+        try append(Fixture.custom("renamed") + "\n", to: url)
+        scan.advance(url)
+        #expect(scan.name == "renamed" && scan.offset > first)
+        // Nothing appended: nothing changes.
+        let before = scan
+        scan.advance(url)
+        #expect(scan == before)
+    }
+
+    @Test func aLineStillBeingWrittenIsReadAgainOnceFinished() throws {
+        let url = try scratch()
+        defer { try? FileManager.default.removeItem(at: url) }
+        try Fixture.write([Fixture.ai("auto")], to: url)
+        var scan = AgentNameScan()
+        scan.advance(url)
+        let complete = scan.offset
+        let line = Fixture.custom("half done")
+        try append(String(line.prefix(30)), to: url)
+        scan.advance(url)
+        #expect(scan.name == "auto" && scan.offset == complete)
+        try append(String(line.dropFirst(30)) + "\n", to: url)
+        scan.advance(url)
+        let finished = try size(url)
+        #expect(scan.name == "half done" && scan.offset == finished)
+        // A last line that is whole but has no newline yet counts, and is read again when the newline comes.
+        try append(Fixture.agentName("no newline"), to: url)
+        let beforeNewline = scan.offset
+        scan.advance(url)
+        #expect(scan.agent == "no newline" && scan.offset == beforeNewline)
+        try append("\n", to: url)
+        scan.advance(url)
+        #expect(scan.agent == "no newline" && scan.offset > beforeNewline)
+    }
+
+    @Test func aShrunkOrReplacedFileIsReadFromTheStart() throws {
+        let url = try scratch()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let filler = (0..<50).map { _ in Fixture.claudeUser(cwd: "/some/long/folder/name") }
+        try Fixture.write([Fixture.custom("old name")] + filler, to: url)
+        var scan = AgentNameScan()
+        scan.advance(url)
+        #expect(scan.name == "old name")
+        // Shorter than what was read.
+        try Fixture.write([Fixture.ai("fresh")], to: url)
+        scan.advance(url)
+        #expect(scan.name == "fresh" && scan.custom == nil)
+        // Replaced by a file at least as long, with other content before the old offset.
+        let longer = [Fixture.agentName("replacement")] + filler + filler
+        try Fixture.write(longer, to: url)
+        scan.advance(url)
+        let replaced = try size(url)
+        #expect(scan.name == "replacement" && scan.ai == nil && scan.offset == replaced)
+    }
+
+    @Test func onlyTheAppendedBytesAreReadWhenTheFileGrew() throws {
+        let url = try scratch()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let filler = (0..<10).map { _ in Fixture.claudeUser(cwd: "/some/long/folder/name") }
+        try Fixture.write([Fixture.custom("AAAA")] + filler, to: url)
+        var scan = AgentNameScan()
+        scan.advance(url)
+        #expect(scan.name == "AAAA")
+        // Same length, so the bytes before the offset that anchor the scan stay as they were; only a rescan would see it.
+        var data = try Data(contentsOf: url)
+        let range = try #require(data.range(of: Data("AAAA".utf8)))
+        data.replaceSubrange(range, with: Data("BBBB".utf8))
+        try data.write(to: url)
+        try append(Fixture.claudeUser(cwd: "/p") + "\n", to: url)
+        scan.advance(url)
+        #expect(scan.name == "AAAA")
+        let grown = try size(url)
+        #expect(scan.offset == grown)
+    }
+
+    @Test func aMissingFileLeavesTheScanAsItWas() throws {
+        var scan = AgentNameScan()
+        scan.ai = "kept"
+        scan.advance(try scratch())
+        #expect(scan.name == "kept")
+    }
+
+    @Test func namesAreCleanedForDisplay() {
+        #expect(AgentTranscript.cleanName("  plain  ") == "plain")
+        #expect(AgentTranscript.cleanName("two\nlines\r\nand\ttabs") == "two lines and tabs")
+        #expect(AgentTranscript.cleanName("a \u{1B}[31mred\u{0} \u{7F}word") == "a [31mred word")
+        #expect(AgentTranscript.cleanName("many     spaces\u{2028}here") == "many spaces here")
+        #expect(AgentTranscript.cleanName("") == nil && AgentTranscript.cleanName(" \n\t ") == nil && AgentTranscript.cleanName("\u{1}\u{2}") == nil)
+        #expect(AgentTranscript.cleanName("한국어 이름 \u{1F600}") == "한국어 이름 \u{1F600}")
+        #expect(AgentTranscript.cleanName(String(repeating: "a", count: 200))?.count == 80)
+        // The cut doesn't leave a space at the end.
+        #expect(AgentTranscript.cleanName(String(repeating: "a", count: 79) + " bbb") == String(repeating: "a", count: 79))
+        #expect(AgentTranscript.cleanName(String(repeating: "한", count: 100))?.count == 80)
+    }
+
+    @Test func aTitleIsCleanedWhenItIsRead() throws {
+        #expect(try scanned(["{\"type\":\"custom-title\",\"customTitle\":\"  a\\nb\\u0000  c  \"}"]).name == "a b c")
+    }
+
+    @Test func codexIndexLinesTheLastOneForAnIdWins() {
+        let data = Data("""
+        {"id":"a","thread_name":"first","updated_at":"1"}
+        {"id":"b","thread_name":"other\\nname","updated_at":"2"}
+        not json
+        {"id":"a","thread_name":"second","updated_at":"3"}
+        {"thread_name":"no id"}
+        {"id":"c","thread_name":"  ","updated_at":"4"}
+        """.utf8)
+        #expect(CodexSessionNames.parse(data) == ["a": "second", "b": "other name"])
+    }
+}
+
+struct AgentNameRefreshTests {
+    @Test func claudeNamesComeFromTheWholeTranscriptAndFollowAppendsAndRenames() throws {
+        try withTempHome { home in
+            let file = home.appendingPathComponent(".claude/projects/-p/s1.jsonl")
+            let filler = (0..<4_000).map { _ in "{\"type\":\"attachment\",\"text\":\"\(String(repeating: "x", count: 100))\"}" }
+            // The title is far from both ends, outside every window `read` looks at.
+            try Fixture.write([Fixture.claudeUser(cwd: "/Users/me/p"), Fixture.custom("my session")] + filler + filler + filler
+                              + [Fixture.claudeAssistant(model: "claude-opus-5-5", input: 1, cacheRead: 0, cacheCreation: 0)], to: file)
+            let key = AgentTranscripts.Key(kind: .claude, session: "s1")
+            var transcripts = AgentTranscripts()
+            transcripts.refresh([key], home: home)
+            #expect(transcripts.transcript(key)?.name == "my session")
+            #expect(transcripts.transcript(key)?.model == "claude-opus-5-5" && transcripts.transcript(key)?.cwd == "/Users/me/p")
+
+            let handle = try FileHandle(forWritingTo: file)
+            try handle.seekToEnd()
+            try handle.write(contentsOf: Data((Fixture.custom("renamed") + "\n").utf8))
+            try handle.close()
+            transcripts.refresh([key], home: home)
+            #expect(transcripts.transcript(key)?.name == "renamed")
+
+            // A transcript without any title has no name.
+            let other = home.appendingPathComponent(".claude/projects/-p/s2.jsonl")
+            try Fixture.write([Fixture.claudeUser(cwd: "/p")], to: other)
+            let unnamed = AgentTranscripts.Key(kind: .claude, session: "s2")
+            transcripts.refresh([key, unnamed], home: home)
+            #expect(transcripts.transcript(unnamed) != nil && transcripts.transcript(unnamed)?.name == nil)
+        }
+    }
+
+    @Test func codexNamesComeFromTheSessionIndexAndAreReadAgainWhenItChanges() throws {
+        try withTempHome { home in
+            let rollout = home.appendingPathComponent(".codex/sessions/2026/10/11/rollout-2026-10-11T00-00-00-abc-1.jsonl")
+            try Fixture.write([Fixture.codexTurn(model: "gpt-5.6", cwd: "/p")], to: rollout)
+            let index = home.appendingPathComponent(".codex/session_index.jsonl")
+            let key = AgentTranscripts.Key(kind: .codex, session: "abc-1")
+            var transcripts = AgentTranscripts()
+
+            // No index: no name.
+            transcripts.refresh([key], home: home)
+            #expect(transcripts.transcript(key)?.name == nil)
+
+            let stamp = Date(timeIntervalSinceReferenceDate: 700_000_000)
+            let write = { (lines: [String]) throws in
+                try Fixture.write(lines, to: index)
+                try FileManager.default.setAttributes([.modificationDate: stamp], ofItemAtPath: index.path)
+            }
+            let line = { (id: String, name: String) in "{\"id\":\"\(id)\",\"thread_name\":\"\(name)\",\"updated_at\":\"2026-10-11T00:00:00Z\"}" }
+            try write([line("abc-1", "first"), line("zzz", "someone else"), line("abc-1", "second")])
+            transcripts.refresh([key], home: home)
+            #expect(transcripts.transcript(key)?.name == "second")
+            #expect(transcripts.transcript(key)?.model == "gpt-5.6")
+
+            // Same size and time: not read again, even if the content differs.
+            try write([line("abc-1", "SECOND"), line("zzz", "someone else"), line("abc-1", "second")])
+            transcripts.refresh([key], home: home)
+            #expect(transcripts.transcript(key)?.name == "second")
+
+            // Changed (the transcript itself is untouched): read again.
+            try write([line("abc-1", "second"), line("abc-1", "renamed later"), line("zzz", "someone else")])
+            transcripts.refresh([key], home: home)
+            #expect(transcripts.transcript(key)?.name == "renamed later")
         }
     }
 }
