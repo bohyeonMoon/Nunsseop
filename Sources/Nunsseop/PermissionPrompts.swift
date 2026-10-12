@@ -3,9 +3,13 @@ import CryptoKit
 import Foundation
 import os
 
-/// How a permission prompt in the notch was answered.
+/// How a prompt in the notch was answered.
 enum PermissionAnswer: Equatable {
     case allow, deny, always
+    /// The options chosen for each question of an `AskUserQuestion`: question index to option indexes.
+    case answered([Int: [Int]])
+    /// Let go of the hook with nothing said, so the terminal asks for itself.
+    case terminal
 }
 
 /// The messages between Claude Code's PermissionRequest hook and the server. The key never travels: each side proves it
@@ -40,8 +44,13 @@ enum PermissionWire {
 
     static let denyMessage = "Denied in Nunsseop"
 
-    /// What Claude Code reads from the hook's stdout. `always` echoes the one suggestion the prompt offered.
-    static func decision(_ answer: PermissionAnswer, suggestion: [String: Any]?) -> Data? {
+    /// What Claude Code reads from the hook's stdout. `always` echoes the one suggestion the prompt offered. `questionInput` is
+    /// the `tool_input` of a question: it takes `answered` and nothing else, and an approval takes everything but `answered`.
+    static func decision(_ answer: PermissionAnswer, suggestion: [String: Any]?, questionInput: [String: Any]? = nil) -> Data? {
+        if let questionInput {
+            guard case .answered(let picked) = answer else { return nil }
+            return questionDecision(picked, input: questionInput)
+        }
         var decision: [String: Any]
         switch answer {
         case .allow:
@@ -51,6 +60,8 @@ enum PermissionWire {
         case .always:
             guard let suggestion else { return nil }
             decision = ["behavior": "allow", "updatedPermissions": [suggestion]]
+        case .answered, .terminal:
+            return nil
         }
         let output: [String: Any] = ["hookSpecificOutput": ["hookEventName": "PermissionRequest", "decision": decision]]
         return try? JSONSerialization.data(withJSONObject: output, options: [.sortedKeys, .withoutEscapingSlashes])
@@ -715,6 +726,8 @@ struct PermissionPrompt: Identifiable, Equatable {
     /// How tall what it shows is, at the narrowest closed card and at the narrowest open panel.
     let card: PermissionLayout.Measure
     let panel: PermissionLayout.Measure
+    /// The questions of an `AskUserQuestion`, which the card shows in place of `detail` and the three buttons; nil for an approval.
+    let asking: Asking?
 
     struct Flag: Equatable {
         let text: String
@@ -732,10 +745,27 @@ struct PermissionPrompt: Identifiable, Equatable {
         self.secondary = secondary
         self.folder = folder
         self.grant = grant
+        asking = nil
         toolLine = PermissionLayout.titleFits(title, folder: folder) ? "" : "tool: \(title)"
         let text = PermissionText.isolated(Self.scrollText(toolLine: toolLine, flags: flags, detail: detail, secondary: secondary))
         card = PermissionLayout.measure(isolatedText: text, grant: grant, place: .card)
         panel = PermissionLayout.measure(isolatedText: text, grant: grant, place: .panel)
+    }
+
+    /// A question: titled "Question", with nothing of an approval to measure.
+    init(id: UUID, asking: Asking, folder: String) {
+        self.id = id
+        title = String(localized: "Question")
+        symbol = "questionmark.bubble"
+        detail = ""
+        toolLine = ""
+        flags = []
+        secondary = ""
+        self.folder = folder
+        grant = nil
+        card = PermissionLayout.Measure(scroll: 0, rules: 0, caption: 0)
+        panel = card
+        self.asking = asking
     }
 
     /// The scrolling text before its lines are isolated: the tool's name if needed, flags, detail and the rest, a line break between.
@@ -783,14 +813,18 @@ struct PermissionPrompt: Identifiable, Equatable {
         let prompt: PermissionPrompt
         /// The `addRules` suggestion "Always allow" echoes back; nil unless the prompt offers it.
         let suggestion: [String: Any]?
+        /// The `tool_input` of a question, which the answer is built from; nil for an approval.
+        var questionInput: [String: Any]?
     }
 
-    /// Questions and plan approvals are answered in the terminal, and so is anything unreadable.
+    /// Plan approvals are answered in the terminal, and so is anything unreadable. A question is no approval: it comes as a
+    /// PreToolUse (see `parseQuestion`), and as a PermissionRequest it stays in the terminal too.
     private static let terminalOnly: Set<String> = ["AskUserQuestion", "ExitPlanMode"]
 
     static func parse(_ body: Data) -> Parsed? {
-        guard let json = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any],
-              json["hook_event_name"] as? String == "PermissionRequest",
+        guard let json = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else { return nil }
+        if json["hook_event_name"] as? String == "PreToolUse" { return parseQuestion(json) }
+        guard json["hook_event_name"] as? String == "PermissionRequest",
               let tool = json["tool_name"] as? String, !tool.isEmpty, !terminalOnly.contains(tool) else { return nil }
         let input = json["tool_input"] as? [String: Any] ?? [:]
         let described = describe(tool: tool, input: input)
@@ -799,8 +833,7 @@ struct PermissionPrompt: Identifiable, Equatable {
         let rest = PermissionText.escape(described.secondary, multiline: true)
         let secondary = [note, rest].filter { !$0.isEmpty }.joined(separator: "\n")
         let shownTitle = PermissionText.escape(described.title, multiline: false)
-        let folder = PermissionText.clipped(PermissionText.escape(((json["cwd"] as? String).map { ($0 as NSString).lastPathComponent }) ?? "",
-                                                                  multiline: false), limit: 80)
+        let folder = folderName(json)
         // Anything shown past ASCII that is no letter of CJK text or emoji is said, since it can pass for ASCII and is not all written
         // out. What is judged is what the call acts on: the tool's name when it is the title, the detail and the listing, but not the
         // folder, the Bash tool's description (Claude's own words, nothing runs it) or the titles of the card.
@@ -815,6 +848,12 @@ struct PermissionPrompt: Identifiable, Equatable {
         let prompt = PermissionPrompt(id: UUID(), title: shownTitle, symbol: described.symbol, detail: detail, flags: flags,
                                       secondary: secondary, folder: folder, grant: grant)
         return Parsed(prompt: prompt, suggestion: grant == nil ? nil : suggestion)
+    }
+
+    /// The folder the session runs in, as the card shows it.
+    static func folderName(_ json: [String: Any]) -> String {
+        PermissionText.clipped(PermissionText.escape(((json["cwd"] as? String).map { ($0 as NSString).lastPathComponent }) ?? "",
+                                                     multiline: false), limit: 80)
     }
 
     private struct Described {
@@ -962,6 +1001,24 @@ struct PermissionPrompt: Identifiable, Equatable {
                          detail: "npm run build && npm test -- --coverage", folder: "nunsseop-web",
                          grant: Grant(rules: ["Bash(npm run *)"], place: .localSettings))
     }
+
+    /// `--demo-question` shows this: two questions, the second one with several answers.
+    static var demoQuestion: PermissionPrompt {
+        let input: [String: Any] = ["questions": [
+            ["question": "Which database should the new service use?", "header": "Database", "multiSelect": false,
+             "options": [["label": "PostgreSQL", "description": "Relational, what the other services already run on"],
+                         ["label": "SQLite", "description": "A single file, nothing to operate"],
+                         ["label": "DynamoDB", "description": "Managed key-value store"]]],
+            ["question": "Which checks should run before every deploy?", "header": "Checks", "multiSelect": true,
+             "options": [["label": "Unit tests", "description": "About 40 seconds"],
+                         ["label": "Type check", "description": "About 15 seconds"],
+                         ["label": "Lint", "description": ""],
+                         ["label": "End-to-end tests", "description": "Slow: around 6 minutes"]]],
+        ]]
+        let body = try! JSONSerialization.data(withJSONObject: ["hook_event_name": "PreToolUse", "tool_name": "AskUserQuestion",
+                                                                  "cwd": "/Users/me/nunsseop-web", "tool_input": input])
+        return parse(body)!.prompt
+    }
     #endif
 }
 
@@ -1037,6 +1094,8 @@ final class PermissionBoard: ObservableObject {
     @Published private(set) var prompts: [PermissionPrompt] = [] {
         didSet { if prompts.first != oldValue.first, prompts.first != nil { gate.arm() } }
     }
+    /// Where the user is in each question prompt that waits.
+    @Published private(set) var drafts: [UUID: QuestionDraft] = [:]
     let gate: PermissionClickGate
     /// Hands an answer to the server, which holds the hook's connection.
     var onAnswer: ((UUID, PermissionAnswer) -> Void)?
@@ -1063,11 +1122,33 @@ final class PermissionBoard: ObservableObject {
         onAnswer?(prompt.id, answer)
     }
 
+    func draft(for prompt: PermissionPrompt) -> QuestionDraft { drafts[prompt.id] ?? QuestionDraft() }
+
+    /// A click on the question card in front, which counts only when the gate lets it. Moving on to the next question closes the gate
+    /// again, so a second click on the same spot can't answer it unseen; the last answer goes to the server.
+    func act(_ prompt: PermissionPrompt, _ action: QuestionAction) {
+        guard gate.accepts(), let asking = prompt.asking, current?.id == prompt.id else { return }
+        var draft = draft(for: prompt)
+        switch draft.apply(action, to: asking) {
+        case .stay:
+            drafts[prompt.id] = draft
+        case .next:
+            drafts[prompt.id] = draft
+            gate.arm()
+        case .finished(let picked):
+            answer(prompt, .answered(picked))
+        case .terminal:
+            answer(prompt, .terminal)
+        }
+    }
+
     func remove(_ id: UUID) {
         prompts.removeAll { $0.id == id }
+        drafts[id] = nil
     }
 
     func clear() {
         prompts = []
+        drafts = [:]
     }
 }

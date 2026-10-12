@@ -23,6 +23,8 @@ final class PermissionGate: @unchecked Sendable {
         let connection: NWConnection
         let nonce: String
         let suggestion: [String: Any]?
+        /// The `tool_input` of a question; nil for an approval.
+        let questionInput: [String: Any]?
         let timeout: DispatchWorkItem
     }
 
@@ -67,7 +69,8 @@ final class PermissionGate: @unchecked Sendable {
         }
         let prompt = parsed.prompt
         let timeout = DispatchWorkItem { [weak self] in self?.release(prompt.id) }
-        held[prompt.id] = Held(connection: connection, nonce: nonce, suggestion: parsed.suggestion, timeout: timeout)
+        held[prompt.id] = Held(connection: connection, nonce: nonce, suggestion: parsed.suggestion,
+                           questionInput: parsed.questionInput, timeout: timeout)
         queue.asyncAfter(deadline: .now() + holdSeconds, execute: timeout)
         watch(connection, prompt.id)
         let handler = onPrompt
@@ -80,7 +83,12 @@ final class PermissionGate: @unchecked Sendable {
         queue.async { [self] in
             guard let entry = held.removeValue(forKey: id) else { return }
             entry.timeout.cancel()
-            guard let decision = PermissionWire.decision(answer, suggestion: entry.suggestion) else {
+            // Nothing is printed, so the terminal asks for itself.
+            if answer == .terminal {
+                NotifyServer.reply(entry.connection, status: "204 No Content")
+                return
+            }
+            guard let decision = PermissionWire.decision(answer, suggestion: entry.suggestion, questionInput: entry.questionInput) else {
                 entry.connection.cancel()
                 return
             }

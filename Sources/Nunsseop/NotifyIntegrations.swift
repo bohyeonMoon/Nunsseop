@@ -59,7 +59,8 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
             let agent = NotifyServer.agentHookCommand
             return [("Notification", NotifyServer.hookCommand(title: name))]
                 + ["Notification", "UserPromptSubmit", "Stop", "StopFailure", "SessionEnd", "SessionStart"].map { ($0, agent) }
-                + (Self.answersPermissions ? [("PermissionRequest", NotifyServer.permissionHookCommand)] : [])
+                + (Self.answersPermissions ? [("PermissionRequest", NotifyServer.permissionHookCommand),
+                                              ("PreToolUse", NotifyServer.permissionHookCommand)] : [])
         case .codex:
             let agent = NotifyServer.agentHookCommand(for: .codex)
             return ["UserPromptSubmit", "PermissionRequest", "Stop", "Interrupt", "SessionEnd"].map { ($0, agent) }
@@ -270,6 +271,15 @@ enum JSONHook {
         command.contains("127.0.0.1:\(NotifyServer.port)/permission")
     }
 
+    /// The tool that makes the permission hook run under PreToolUse. Never left out: the hook would otherwise start for every
+    /// tool call.
+    static let questionMatcher = "AskUserQuestion"
+
+    /// The matcher of the group a hook of Nunsseop's goes in, nil for a group without one.
+    private static func matcher(event: String, command: String) -> String? {
+        event == "PreToolUse" && isPermission(command: command) ? questionMatcher : nil
+    }
+
     /// Any of Nunsseop's hooks: the ones for the agents count (`/agent`) and for permission prompts (`/permission`),
     /// which are ours under any event, or the notice one (`/notify`), which is ours only under Notification. Under
     /// another event it's a command the user pasted from "Copy command for scripts", and stays.
@@ -333,13 +343,17 @@ enum JSONHook {
     static func isCurrent(_ table: Table, in settings: [String: Any]) -> Bool {
         let events = settings["hooks"] as? [String: Any] ?? [:]
         let ours = events.flatMap { event, groups in
-            ((groups as? [Any]) ?? []).flatMap { hooks(in: $0).filter { isOurs(hook: $0, event: event) } }
-                .map { hook in
+            ((groups as? [Any]) ?? []).flatMap { group in
+                let matcher = (group as? [String: Any])?["matcher"] as? String ?? ""
+                return hooks(in: group).filter { isOurs(hook: $0, event: event) }.map { hook in
                     let hook = hook as? [String: Any]
-                    return "\(event)\n\(hook?["command"] as? String ?? "")\n\((hook?["timeout"] as? NSNumber)?.stringValue ?? "")"
+                    return "\(event)\n\(matcher)\n\(hook?["command"] as? String ?? "")\n\((hook?["timeout"] as? NSNumber)?.stringValue ?? "")"
                 }
+            }
         }
-        return ours.sorted() == table.map { "\($0.event)\n\($0.command)\n\(timeout(for: $0.command).map(String.init) ?? "")" }.sorted()
+        return ours.sorted() == table.map {
+            "\($0.event)\n\(matcher(event: $0.event, command: $0.command) ?? "")\n\($0.command)\n\(timeout(for: $0.command).map(String.init) ?? "")"
+        }.sorted()
     }
 
     static func isCurrent(_ command: String, in settings: [String: Any]) -> Bool {
@@ -360,7 +374,9 @@ enum JSONHook {
             guard var groups = (hooks[event] ?? [Any]()) as? [Any] else { throw NotifyIntegration.IntegrationError.unreadableConfig }
             var hook: [String: Any] = ["type": "command", "command": command]
             hook["timeout"] = timeout(for: command)
-            groups.append(["hooks": [hook]])
+            var group: [String: Any] = ["hooks": [hook]]
+            group["matcher"] = matcher(event: event, command: command)
+            groups.append(group)
             hooks[event] = groups
         }
         settings["hooks"] = hooks

@@ -48,14 +48,15 @@ struct AgentHookInstallTests {
 
     @Test func claudeCodeGetsTheNoticeHookAndTheAgentHooks() throws {
         let notice = NotifyServer.hookCommand(title: "Claude Code"), agent = NotifyServer.agentHookCommand
-        // The notice hook, then the agent hook under Notification and the five events, then the permission hook.
-        #expect(claude.count == 8)
+        // The notice hook, then the agent hook under Notification and the five events, then the permission hook, twice (for approvals and for questions).
+        #expect(claude.count == 9)
         let settings = try JSONHook.adding(claude, to: [:])
         #expect(JSONHook.isInstalled(in: settings))
         #expect(JSONHook.isCurrent(claude, in: settings))
         #expect(commands(settings, "Notification") == [[notice], [agent]])
         for event in events.dropFirst() { #expect(commands(settings, event) == [[agent]]) }
         #expect(commands(settings, "PermissionRequest") == [[NotifyServer.permissionHookCommand]])
+        #expect(commands(settings, "PreToolUse") == [[NotifyServer.permissionHookCommand]])
         #expect(JSONHook.removing(from: settings).isEmpty)
     }
 

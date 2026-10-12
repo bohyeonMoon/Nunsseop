@@ -101,7 +101,8 @@ struct NotchView: View {
                             .opacity(model.approvals.current == nil ? 1 : 0)
                             .accessibilityHidden(model.approvals.current != nil)
                             if let prompt = model.approvals.current {
-                                PermissionPanel(prompt: prompt, count: model.approvals.prompts.count, gate: model.approvals.gate) {
+                                PermissionPanel(prompt: prompt, count: model.approvals.prompts.count, gate: model.approvals.gate,
+                                                draft: model.approvals.draft(for: prompt), act: { model.approvals.act(prompt, $0) }) {
                                     model.approvals.answerByClick(prompt, $0)
                                 }
                             }
@@ -116,7 +117,8 @@ struct NotchView: View {
                 } else if let prompt = model.approvals.current {
                     PermissionCard(prompt: prompt, count: model.approvals.prompts.count, height: notchHeight,
                                    earWidth: NotchViewModel.hudEarWidth, leadingInset: earLead, hasNotch: model.geometry.hasNotch,
-                                   gate: model.approvals.gate) {
+                                   gate: model.approvals.gate, draft: model.approvals.draft(for: prompt),
+                                   act: { model.approvals.act(prompt, $0) }) {
                         model.approvals.answerByClick(prompt, $0)
                     }
                     .padding(.horizontal, topRadius + 12)

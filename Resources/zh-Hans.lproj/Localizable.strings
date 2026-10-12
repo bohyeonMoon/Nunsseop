@@ -368,8 +368,14 @@
 "The Agents tab lists their sessions with folder, model, context used and permission mode, read from the tools' own session files on this Mac." = "“代理”标签会列出它们的会话，并显示文件夹、模型、已用上下文和权限模式，数据读取自这台 Mac 上工具自己的会话文件。";
 
 /* Permission prompts */
-"Answer permission prompts in the notch" = "在刘海中回应权限请求";
-"Claude Code's permission prompts also show in the notch, where you can allow or deny them. Answer in the terminal and the notch lets go of it; if Nunsseop isn't running, the terminal asks as before. Works with Claude Code connected above. What a prompt asks is kept in memory only." = "Claude Code 的权限请求也会显示在刘海中，你可以在这里允许或拒绝。若先在终端中回应，刘海中的请求会随之消失；Nunsseop 未运行时，终端会像以前一样询问。需要先在上方连接 Claude Code。请求的内容只保存在内存中。";
+"Answer permission prompts and questions in the notch" = "在刘海中回应权限请求和提问";
+"Claude Code's permission prompts and questions also show in the notch, where you can allow or deny a prompt and pick the answer to a question. Answer a prompt in the terminal and the notch lets go of it; a question is asked in the terminal once you press “Answer in terminal” in the notch. If Nunsseop isn't running, the terminal asks as before. Works with Claude Code connected above. What a prompt asks is kept in memory only." = "Claude Code 的权限请求和提问也会显示在刘海中，权限请求可以允许或拒绝，提问可以直接选择答案。若先在终端中回应权限请求，刘海中的请求会随之消失；提问则要在刘海中点“在终端中回答”后，才会在终端里询问。Nunsseop 未运行时，终端会像以前一样询问。需要先在上方连接 Claude Code。请求的内容只保存在内存中。";
+
+/* Questions in the notch */
+"Question" = "提问";
+"Send" = "发送";
+"Next" = "下一个";
+"Answer in terminal" = "在终端中回答";
 "Run a command" = "运行命令";
 "Edit a file" = "编辑文件";
 "Write a file" = "写入文件";
