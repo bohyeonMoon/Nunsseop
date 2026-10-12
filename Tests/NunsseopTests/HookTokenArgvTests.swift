@@ -221,7 +221,7 @@ struct HookTokenArgvTests {
             #expect(mode == 0o600)
             // Nothing but the two files, no scratch file left by the replacement.
             let names = try FileManager.default.contentsOfDirectory(atPath: NotifyServer.tokenURL.deletingLastPathComponent().path)
-            #expect(names.sorted() == ["notify-auth", "notify-token"], "\(names) in \(home.lastPathComponent)")
+            #expect(names.sorted() == ["notify-auth", "notify-token", "permission-key"], "\(names) in \(home.lastPathComponent)")
         }
     }
 }
@@ -292,7 +292,7 @@ struct HookTokenRealRunTests {
         #expect(seen.count == 0)
     }
 
-    @Test func aRotatedTokenIsTheOneEveryConsumerUses() async throws {
+    @Test func theTokenThatWasThereIsKeptAndEveryConsumerUsesIt() async throws {
         let old = String(repeating: "a1", count: 32)
         let (server, seen) = try await listening(token: old, seed: { home in
             // Claude Code with 0.28's hooks, which put the token on curl's command line.
@@ -300,24 +300,25 @@ struct HookTokenRealRunTests {
                                                 ("Stop", TokenInArgvFixtures.agent(codex: false))], to: [:])
             try NotifyIntegration.writeJSON(settings, to: home.appendingPathComponent(".claude/settings.json"))
         })
-        #expect(server.token != old && server.token.count == 64)
-        #expect(try String(contentsOf: server.home.tokenFile, encoding: .utf8) == server.token)
+        // Nothing makes the token new: the old hooks and the new ones go on using the one that is there.
+        #expect(server.token == old)
+        #expect(try String(contentsOf: server.home.tokenFile, encoding: .utf8) == old)
 
-        // The old hooks read the file when they run: they still reach the server, with the new token.
         try await run(TokenInArgvFixtures.script(port: server.port), stdin: "", in: server)
         await eventually { seen.count == 1 }
         #expect(seen.notices.count == 1)
 
-        // The new ones: header file.
         try await run(NotifyServer.hookCommand(title: "Claude Code", port: server.port), stdin: #"{"message":"m"}"#, in: server)
         await eventually { seen.count == 2 }
         #expect(seen.count == 2)
 
-        // The permission gate holds the same token as the hook reads: a prompt is accepted, and answered in the notch.
+        // The permission gate holds the key the hook reads, a secret of its own: a prompt is accepted, and answered in the notch.
+        #expect(server.permissionKey != old && server.permissionKey.count == 64)
+        #expect(try String(contentsOf: server.home.permissionKeyFile, encoding: .utf8) == server.permissionKey)
         let hook = try HookProcess(command: server.hookCommand, home: server.home.url,
-                                   stdin: PermissionTestServer.hookInput(input: ["command": "echo rotated-4d2f"]))
+                                   stdin: PermissionTestServer.hookInput(input: ["command": "echo kept-4d2f"]))
         await eventually { server.events.prompts.count == 1 }
-        #expect(server.events.prompts.first?.detail == "echo rotated-4d2f")
+        #expect(server.events.prompts.first?.detail == "echo kept-4d2f")
         server.server.permissions.answer(server.events.prompts[0].id, .allow)
         #expect(await hook.finish()?.stdout.isEmpty == false)
     }
@@ -376,7 +377,7 @@ struct TokenMigrationTests {
         try put(TokenInArgvFixtures.terminalScript(), at: TerminalBell.scriptURL, mode: 0o755)
     }
 
-    @Test func theTokenIsMadeNewOnceAndEveryOldFormIsReplacedBesideOtherToolsHooks() throws {
+    @Test func everyOldFormIsReplacedBesideOtherToolsHooksAndTheTokenStays() throws {
         try withTempHome { home in
             try NotifyIntegration.$permissionPromptsOverride.withValue(true) {
                 try seedOldInstall(home)
@@ -384,12 +385,11 @@ struct TokenMigrationTests {
                 let plugin = text(NotifyIntegration.openCode.configURL)
                 #expect(NotifyIntegration.holdsLegacyTokenCommands)
 
-                // Launch: the server comes first and makes the token new.
+                // Launch: the server comes first and keeps the token; the old commands read the file when they run.
                 let server = NotifyServer()
-                #expect(server.token != oldToken && server.token.count == 64)
-                #expect(text(NotifyServer.tokenURL) == server.token && mode(NotifyServer.tokenURL) == 0o600)
-                #expect(text(NotifyServer.authHeaderURL) == "Authorization: Bearer \(server.token)\n" && mode(NotifyServer.authHeaderURL) == 0o600)
-                // Nothing is replaced yet, and nothing has been cut off: the old commands read the file when they run.
+                #expect(server.token == oldToken)
+                #expect(text(NotifyServer.tokenURL) == oldToken && mode(NotifyServer.tokenURL) == 0o600)
+                #expect(text(NotifyServer.authHeaderURL) == "Authorization: Bearer \(oldToken)\n" && mode(NotifyServer.authHeaderURL) == 0o600)
                 #expect(NotifyIntegration.holdsLegacyTokenCommands)
 
                 // What the feature's start does at launch, then what updates the connected tools.
@@ -422,8 +422,8 @@ struct TokenMigrationTests {
 
                 #expect(text(TerminalBell.scriptURL) == TerminalBell.script)
 
-                // The next launch keeps what it finds: the token is rotated once.
-                #expect(NotifyServer().token == server.token)
+                // The next launch keeps what it finds.
+                #expect(NotifyServer().token == oldToken)
                 // And running the migration again changes nothing.
                 let before = [claude.configURL, gemini.configURL, codex.hooksURL, codex.configURL].map { text($0) }
                 NotifyIntegration.updateConnectedNow()
@@ -451,32 +451,22 @@ struct TokenMigrationTests {
         }
     }
 
-    @Test func aTokenWithNoOldFormAnywhereIsKept() throws {
-        try withTempHome { _ in
-            try NotifyIntegration.$permissionPromptsOverride.withValue(true) {
-                try put(oldToken, at: NotifyServer.tokenURL, mode: 0o600)
-                try claude.installNow()
-                try codex.installNow()
-                #expect(!NotifyIntegration.holdsLegacyTokenCommands)
-                #expect(NotifyServer().token == oldToken)
-            }
-        }
-    }
-
-    @Test func aPastedScriptCommandOrAStaleScriptNothingRunsDoesNotRotateTheToken() throws {
+    @Test func aPastedScriptCommandOrAStaleScriptNothingRunsIsNotTakenForAnOldHook() throws {
         try withTempHome { _ in
             try put(oldToken, at: NotifyServer.tokenURL, mode: 0o600)
             // A user's own hook under another event than Notification, which Nunsseop never touches.
             try NotifyIntegration.writeJSON(["hooks": ["Stop": [group(TokenInArgvFixtures.script())]]], to: claude.configURL)
+            let settings = text(claude.configURL)
             // An old script left in Application Support by a Codex connection that is gone: no notify line runs it.
             try put(TokenInArgvFixtures.codexScript(), at: CodexNotify.scriptURL, mode: 0o755)
             try put("model = \"o3\"\n", at: codex.configURL)
             #expect(!NotifyIntegration.holdsLegacyTokenCommands)
-            #expect(NotifyServer().token == oldToken)
+            NotifyIntegration.replaceLegacyTokenCommandsNow()
+            #expect(text(claude.configURL) == settings && text(CodexNotify.scriptURL) == TokenInArgvFixtures.codexScript())
         }
     }
 
-    @Test func eachOldFormAloneIsEnoughToRotate() throws {
+    @Test func eachOldFormAloneIsFoundAndReplacedAndNeverMakesTheTokenNew() throws {
         let forms: [(String, (URL) throws -> Void)] = [
             ("claude notice", { _ in try NotifyIntegration.writeJSON(JSONHook.adding([("Notification", TokenInArgvFixtures.notice(title: "Claude Code"))], to: [:]), to: self.claude.configURL) }),
             ("claude agent only", { _ in try NotifyIntegration.writeJSON(JSONHook.adding([("Stop", TokenInArgvFixtures.agent(codex: false))], to: [:]), to: self.claude.configURL) }),
@@ -493,7 +483,10 @@ struct TokenMigrationTests {
                 try put(oldToken, at: NotifyServer.tokenURL, mode: 0o600)
                 try seed(home)
                 #expect(NotifyIntegration.holdsLegacyTokenCommands, "\(name)")
-                #expect(NotifyServer().token != oldToken, "\(name)")
+                #expect(NotifyServer().token == oldToken, "\(name)")
+                NotifyIntegration.replaceLegacyTokenCommandsNow()
+                #expect(!NotifyIntegration.holdsLegacyTokenCommands, "\(name)")
+                #expect(NotifyServer().token == oldToken, "\(name)")
             }
         }
     }
@@ -503,6 +496,8 @@ struct TokenMigrationTests {
             let server = NotifyServer()
             #expect(server.token.count == 64)
             #expect(text(NotifyServer.authHeaderURL) == "Authorization: Bearer \(server.token)\n")
+            // The header file says nothing of the permission key, which no notice hook has any use for.
+            #expect(text(NotifyServer.authHeaderURL)?.contains(server.permissionKey) == false)
         }
     }
 

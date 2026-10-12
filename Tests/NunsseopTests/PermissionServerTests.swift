@@ -53,8 +53,8 @@ struct PermissionServerTests {
         let answer = parts(await client.read(timeout: 5))
         #expect(answer.status == "HTTP/1.1 200 OK")
         #expect(answer.decision == (try decisionText(.always, suggestion: PermissionTestServer.addRules)))
-        #expect(answer.proof == PermissionWire.responseProof(token: server.token, nonce: nonce, decision: Data(answer.decision.utf8)))
-        #expect(answer.proof != PermissionWire.responseProof(token: server.token, nonce: PermissionTestServer.nonce(),
+        #expect(answer.proof == PermissionWire.responseProof(key: server.permissionKey, nonce: nonce, decision: Data(answer.decision.utf8)))
+        #expect(answer.proof != PermissionWire.responseProof(key: server.permissionKey, nonce: PermissionTestServer.nonce(),
                                                               decision: Data(answer.decision.utf8)))
     }
 
@@ -76,22 +76,25 @@ struct PermissionServerTests {
         let server = try await PermissionTestServer()
         let body = PermissionTestServer.hookInput()
         let nonce = PermissionTestServer.nonce()
-        let good = PermissionWire.requestProof(token: server.token, nonce: nonce, body: body)
+        let good = PermissionWire.requestProof(key: server.permissionKey, nonce: nonce, body: body)
         let flipped = String(good.dropLast()) + (good.last == "0" ? "1" : "0")
         let attempts: [(String, Data)] = [
             ("a wrong proof", server.request(body: body, nonce: nonce, proof: flipped)),
-            ("another token's proof", server.request(body: body, nonce: nonce,
-                                                     proof: PermissionWire.requestProof(token: server.token + "0", nonce: nonce, body: body))),
+            ("another key's proof", server.request(body: body, nonce: nonce,
+                                                     proof: PermissionWire.requestProof(key: server.permissionKey + "0", nonce: nonce, body: body))),
             ("a proof of another body", server.request(body: body, nonce: nonce,
-                                                       proof: PermissionWire.requestProof(token: server.token, nonce: nonce, body: body + [0x20]))),
+                                                       proof: PermissionWire.requestProof(key: server.permissionKey, nonce: nonce, body: body + [0x20]))),
             ("a proof of another nonce", server.request(body: body, nonce: nonce,
-                                                        proof: PermissionWire.requestProof(token: server.token, nonce: PermissionTestServer.nonce(), body: body))),
+                                                        proof: PermissionWire.requestProof(key: server.permissionKey, nonce: PermissionTestServer.nonce(), body: body))),
             ("the response's domain", server.request(body: body, nonce: nonce,
-                                                     proof: PermissionWire.responseProof(token: server.token, nonce: nonce, decision: body))),
+                                                     proof: PermissionWire.responseProof(key: server.permissionKey, nonce: nonce, decision: body))),
             ("an empty proof", server.request(body: body, nonce: nonce, proof: "")),
+            // What a listener on the port learns from every notice hook, as a key and as a bearer token.
+            ("the notify token as the key", server.request(body: body, nonce: nonce,
+                                                           proof: PermissionWire.requestProof(key: server.token, nonce: nonce, body: body))),
             ("a bearer token", Data("POST /permission HTTP/1.1\r\nAuthorization: Bearer \(server.token)\r\nContent-Length: \(body.count)\r\n\r\n".utf8) + body),
             ("a nonce that is not hex", server.request(body: body, nonce: "zz" + String(nonce.dropFirst(2)),
-                                                       proof: PermissionWire.requestProof(token: server.token, nonce: "zz" + String(nonce.dropFirst(2)), body: body))),
+                                                       proof: PermissionWire.requestProof(key: server.permissionKey, nonce: "zz" + String(nonce.dropFirst(2)), body: body))),
         ]
         for (name, request) in attempts {
             let client = try RawClient(port: server.port)
@@ -99,6 +102,28 @@ struct PermissionServerTests {
             #expect(await client.status() == "HTTP/1.1 401 Unauthorized", Comment(rawValue: name))
         }
         #expect(server.events.prompts.isEmpty)
+    }
+
+    /// The notify token is sent by every notice hook to whatever listens, and the permission key never is: only the key answers.
+    @Test func theNotifyTokenOpensNoPermissionAndThePermissionKeyOpensNoNotice() async throws {
+        let server = try await PermissionTestServer()
+        #expect(server.token != server.permissionKey)
+        let body = PermissionTestServer.hookInput()
+        let nonce = PermissionTestServer.nonce()
+        let signedWithToken = try RawClient(port: server.port)
+        signedWithToken.send(server.request(body: body, nonce: nonce, proof: PermissionWire.requestProof(key: server.token, nonce: nonce, body: body)))
+        #expect(await signedWithToken.status() == "HTTP/1.1 401 Unauthorized")
+        let asNotice = try RawClient(port: server.port)
+        asNotice.send(Data("POST /notify HTTP/1.1\r\nAuthorization: Bearer \(server.permissionKey)\r\nContent-Length: 0\r\n\r\n".utf8))
+        #expect(await asNotice.status() == "HTTP/1.1 401 Unauthorized")
+        let asAgent = try RawClient(port: server.port)
+        asAgent.send(Data("POST /agent HTTP/1.1\r\nAuthorization: Bearer \(server.permissionKey)\r\nContent-Length: 0\r\n\r\n".utf8))
+        #expect(await asAgent.status() == "HTTP/1.1 401 Unauthorized")
+        #expect(server.events.prompts.isEmpty)
+        // And the token still does what it did.
+        let notice = try RawClient(port: server.port)
+        notice.send(Data("POST /notify HTTP/1.1\r\nAuthorization: Bearer \(server.token)\r\nContent-Length: 0\r\n\r\n".utf8))
+        #expect(await notice.status() == "HTTP/1.1 204 No Content")
     }
 
     @Test func aRepeatedRequestIsRefusedEvenAfterItWasAnswered() async throws {
@@ -165,7 +190,8 @@ struct PermissionServerTests {
         let result = try #require(await process.finish())
         #expect(result.stdout == (try decisionText(.allow)))
         #expect(files(under: server.home.url) == ["Library/Application Support/Nunsseop/notify-auth",
-                                                  "Library/Application Support/Nunsseop/notify-token"])
+                                                  "Library/Application Support/Nunsseop/notify-token",
+                                                  "Library/Application Support/Nunsseop/permission-key"])
     }
 
     // MARK: When the hook goes away

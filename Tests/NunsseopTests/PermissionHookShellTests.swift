@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Testing
 @testable import Nunsseop
@@ -11,11 +12,13 @@ private final class StubbedHook {
     let home: ScratchHome
     let process: HookProcess
 
-    /// - tokenFile: the token file's text; nil leaves it out.
-    init(token: String? = String(repeating: "0123456789abcdef", count: 4), tokenFile: String? = nil, mode: Mode = .fail,
+    /// - key: the permission key; nil leaves the file out.
+    /// - keyFile: the key file's text, instead of `key`.
+    /// - notifyToken: the notify token the home also holds, which the hook has nothing to do with.
+    init(key: String? = String(repeating: "0123456789abcdef", count: 4), keyFile: String? = nil, mode: Mode = .fail,
          input: Data = PermissionTestServer.hookInput(), command: String = NotifyServer.permissionHookCommand,
-         path: String? = nil) throws {
-        home = try ScratchHome(token: tokenFile ?? token)
+         path: String? = nil, notifyToken: String? = String(repeating: "5e", count: 32)) throws {
+        home = try ScratchHome(token: notifyToken, permissionKey: keyFile ?? key)
         dir = FileManager.default.temporaryDirectory.appendingPathComponent("nunsseop-stub-\(UUID().uuidString.prefix(8))")
         let bin = dir.appendingPathComponent("bin")
         try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
@@ -26,7 +29,7 @@ private final class StubbedHook {
         echo $$ > "$D/pid"
         while [ $# -gt 0 ]; do
           case "$1" in
-            -H) printf '%s\\n' "$2" >> "$D/headers"; shift ;;
+            -H) case "$2" in @*) cat "${2#@}" >> "$D/headers" ;; *) printf '%s\\n' "$2" >> "$D/headers" ;; esac; shift ;;
           esac
           shift
         done
@@ -57,6 +60,9 @@ private final class StubbedHook {
         return (nonce, proof)
     }
 
+    /// The header lines curl was told to send, `-H @file` read as curl reads it.
+    var sentHeaders: String? { text("headers") }
+
     var body: Data? { try? Data(contentsOf: dir.appendingPathComponent("body")) }
     var arguments: Data? { try? Data(contentsOf: dir.appendingPathComponent("args")) }
     var curlPID: pid_t? { text("pid").flatMap { Int32($0.trimmingCharacters(in: .whitespacesAndNewlines)) } }
@@ -78,7 +84,7 @@ private final class StubbedHook {
 
 @MainActor
 struct PermissionHookShellTests {
-    private let tokens = [
+    private let keys = [
         // 0x36 is the HMAC inner pad, so each of these characters makes a NUL byte in the padded key.
         "6666666666666666666666666666666666666666666666666666666666666666",
         String(repeating: "0123456789abcdef", count: 4),
@@ -97,25 +103,25 @@ struct PermissionHookShellTests {
 
     // MARK: Request proof
 
-    @Test func theShellsProofIsCryptoKitsForAnyTokenAndBody() async throws {
-        for token in tokens {
+    @Test func theShellsProofIsCryptoKitsForAnyKeyAndBody() async throws {
+        for key in keys {
             for body in bodies {
-                let hook = try StubbedHook(token: token, input: body)
-                let sent = try #require(await hook.request(), "\(token.count)")
+                let hook = try StubbedHook(key: key, input: body)
+                let sent = try #require(await hook.request(), "\(key.count)")
                 #expect(sent.body == body)
                 #expect(PermissionWire.isNonce(sent.nonce))
-                #expect(sent.proof == PermissionWire.requestProof(token: token, nonce: sent.nonce, body: sent.body),
-                        "token of \(token.count) bytes, body of \(body.count)")
+                #expect(sent.proof == PermissionWire.requestProof(key: key, nonce: sent.nonce, body: sent.body),
+                        "key of \(key.count) bytes, body of \(body.count)")
                 #expect(await hook.process.finish()?.stdout == "")
             }
         }
     }
 
-    @Test func aTokenFileWithWhitespaceAroundItIsTheSameKey() async throws {
-        let token = String(repeating: "0123456789abcdef", count: 4)
-        let hook = try StubbedHook(tokenFile: "  \(token)\r\n\n")
+    @Test func aKeyFileWithWhitespaceAroundItIsTheSameKey() async throws {
+        let key = String(repeating: "0123456789abcdef", count: 4)
+        let hook = try StubbedHook(keyFile: "  \(key)\r\n\n")
         let sent = try #require(await hook.request())
-        #expect(sent.proof == PermissionWire.requestProof(token: token, nonce: sent.nonce, body: sent.body))
+        #expect(sent.proof == PermissionWire.requestProof(key: key, nonce: sent.nonce, body: sent.body))
     }
 
     @Test func eachRequestHasANonceOfItsOwn() async throws {
@@ -128,7 +134,7 @@ struct PermissionHookShellTests {
         let hook = try StubbedHook(input: body + Data("\n\n".utf8))
         let sent = try #require(await hook.request())
         #expect(sent.body == body)
-        #expect(sent.proof == PermissionWire.requestProof(token: String(repeating: "0123456789abcdef", count: 4),
+        #expect(sent.proof == PermissionWire.requestProof(key: String(repeating: "0123456789abcdef", count: 4),
                                                            nonce: sent.nonce, body: body))
     }
 
@@ -143,12 +149,12 @@ struct PermissionHookShellTests {
     }
 
     @Test func anAnswerWithItsProofIsPrintedByteForByte() async throws {
-        let token = String(repeating: "0123456789abcdef", count: 4)
+        let key = String(repeating: "0123456789abcdef", count: 4)
         for answer in [PermissionAnswer.allow, .deny, .always] {
-            let hook = try StubbedHook(token: token, mode: .answer)
+            let hook = try StubbedHook(key: key, mode: .answer)
             let sent = try #require(await hook.request())
             let text = try decision(answer)
-            let proof = PermissionWire.responseProof(token: token, nonce: sent.nonce, decision: Data(text.utf8))
+            let proof = PermissionWire.responseProof(key: key, nonce: sent.nonce, decision: Data(text.utf8))
             try hook.answer("\(proof) \(text)")
             let result = try #require(await hook.process.finish())
             #expect(result.stdout == text, "\(answer)")
@@ -157,27 +163,27 @@ struct PermissionHookShellTests {
     }
 
     @Test func anAnswerThatIsNotProvenIsNotPrinted() async throws {
-        let token = String(repeating: "0123456789abcdef", count: 4)
+        let key = String(repeating: "0123456789abcdef", count: 4)
         let allow = try decision(.allow), deny = try decision(.deny)
-        func response(_ nonce: String, of text: String = allow, token key: String = token, said: String? = nil) -> String {
-            "\(PermissionWire.responseProof(token: key, nonce: nonce, decision: Data(text.utf8))) \(said ?? text)"
+        func response(_ nonce: String, of text: String = allow, key signing: String = key, said: String? = nil) -> String {
+            "\(PermissionWire.responseProof(key: signing, nonce: nonce, decision: Data(text.utf8))) \(said ?? text)"
         }
         let others: [(String, (String) -> String)] = [
             ("another nonce", { _ in response(String(repeating: "ab", count: 16)) }),
             ("another decision", { response($0, of: deny, said: allow) }),
-            ("the request's domain", { "\(PermissionWire.requestProof(token: token, nonce: $0, body: Data(allow.utf8))) \(allow)" }),
-            ("another token", { response($0, token: token + "0") }),
+            ("the request's domain", { "\(PermissionWire.requestProof(key: key, nonce: $0, body: Data(allow.utf8))) \(allow)" }),
+            ("another key", { response($0, key: key + "0") }),
             ("a decision cut short", { response($0, said: String(allow.dropLast())) }),
             ("a decision with more after a newline", { response($0, said: allow + "\nextra") }),
             ("no decision", { response($0, of: "", said: "") }),
             ("no proof", { _ in " " + allow }),
             ("no space", { _ in allow }),
-            ("a proof alone", { PermissionWire.responseProof(token: token, nonce: $0, decision: Data(allow.utf8)) }),
+            ("a proof alone", { PermissionWire.responseProof(key: key, nonce: $0, decision: Data(allow.utf8)) }),
             ("garbage", { _ in "HTTP/1.1 200 OK" }),
             ("nothing", { _ in "" }),
         ]
         for (name, make) in others {
-            let hook = try StubbedHook(token: token, mode: .answer)
+            let hook = try StubbedHook(key: key, mode: .answer)
             let sent = try #require(await hook.request())
             try hook.answer(make(sent.nonce))
             let result = try #require(await hook.process.finish())
@@ -193,9 +199,9 @@ struct PermissionHookShellTests {
         let cases: [(String, () throws -> StubbedHook)] = [
             ("curl fails", { try StubbedHook(mode: .fail) }),
             ("curl says nothing", { try StubbedHook(mode: .silent) }),
-            ("no token file", { try StubbedHook(token: nil) }),
-            ("an empty token file", { try StubbedHook(tokenFile: "") }),
-            ("a token too short to be ours", { try StubbedHook(tokenFile: "short") }),
+            ("no key file", { try StubbedHook(key: nil) }),
+            ("an empty key file", { try StubbedHook(keyFile: "") }),
+            ("a key too short to be ours", { try StubbedHook(keyFile: "short") }),
             ("no input", { try StubbedHook(input: Data()) }),
             ("an input over the cap", { try StubbedHook(input: Data(repeating: 0x61, count: PermissionGate.maxBodyBytes + 1)) }),
             ("no tools to compute with", { try StubbedHook(input: body, path: "/nonexistent") }),
@@ -205,7 +211,7 @@ struct PermissionHookShellTests {
             let result = try #require(await hook.process.finish(), Comment(rawValue: name))
             #expect(result.stdout == "", Comment(rawValue: name))
             #expect(result.status == 0, Comment(rawValue: name))
-            if ["no token file", "an empty token file", "a token too short to be ours", "no input", "an input over the cap",
+            if ["no key file", "an empty key file", "a key too short to be ours", "no input", "an input over the cap",
                 "no tools to compute with"].contains(name) {
                 #expect(!hook.curlWasCalled, Comment(rawValue: name))
             }
@@ -216,7 +222,7 @@ struct PermissionHookShellTests {
         let holder = try NotifyServerListenTests.PortHolder()
         let port = holder.port
         holder.release()
-        let home = try ScratchHome(token: String(repeating: "0123456789abcdef", count: 4))
+        let home = try ScratchHome(permissionKey: String(repeating: "0123456789abcdef", count: 4))
         let hook = try HookProcess(command: NotifyServer.permissionHookCommand(port: port), home: home.url,
                                    stdin: PermissionTestServer.hookInput())
         let result = try #require(await hook.finish())
@@ -235,22 +241,22 @@ struct PermissionHookShellTests {
         #expect(command.contains("curl -s -m 590 "))
     }
 
-    // MARK: The token stays out of arguments and off the wire
+    // MARK: The key stays out of arguments and off the wire
 
-    @Test func theTokenIsInNoProcessArgumentsAndIsNeverSent() async throws {
-        let token = String(repeating: "0123456789abcdef", count: 4)
-        let hook = try StubbedHook(token: token, mode: .fail)
+    @Test func theKeyIsInNoProcessArgumentsAndIsNeverSent() async throws {
+        let key = String(repeating: "0123456789abcdef", count: 4)
+        let hook = try StubbedHook(key: key, mode: .fail)
         let sent = try #require(await hook.request())
         #expect(await hook.process.finish()?.stdout == "")
         let wire = (hook.arguments ?? Data()) + sent.body
-        #expect(!String(decoding: wire, as: UTF8.self).contains(token))
+        #expect(!String(decoding: wire, as: UTF8.self).contains(key))
         #expect(!String(decoding: wire, as: UTF8.self).lowercased().contains("authorization"))
         #expect(String(decoding: hook.arguments ?? Data(), as: UTF8.self).contains(sent.proof))
     }
 
     /// Every program the hook starts is a link to this, which writes down its arguments and then runs the real one.
-    @Test func noProgramTheHookStartsIsGivenTheTokenOrAnythingDerivedFromIt() async throws {
-        let token = String(repeating: "0123456789abcdef", count: 4)
+    @Test func noProgramTheHookStartsIsGivenTheKeyOrAnythingDerivedFromIt() async throws {
+        let key = String(repeating: "0123456789abcdef", count: 4)
         let shims = FileManager.default.temporaryDirectory.appendingPathComponent("nunsseop-shims-\(UUID().uuidString.prefix(8))")
         try FileManager.default.createDirectory(at: shims, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: shims) }
@@ -271,7 +277,8 @@ struct PermissionHookShellTests {
         let holder = try NotifyServerListenTests.PortHolder()
         let port = holder.port
         holder.release()
-        let home = try ScratchHome(token: token)
+        let notifyToken = String(repeating: "5e", count: 32)
+        let home = try ScratchHome(token: notifyToken, permissionKey: key)
         let hook = try HookProcess(command: NotifyServer.permissionHookCommand(port: port), home: home.url,
                                    stdin: PermissionTestServer.hookInput(), path: shims.path, environment: ["LOG": log.path])
         _ = try #require(await hook.finish())
@@ -279,14 +286,57 @@ struct PermissionHookShellTests {
         let arguments = try Data(contentsOf: log)
         let text = String(decoding: arguments, as: UTF8.self)
         let programs = Set(text.components(separatedBy: "\0").filter { ["openssl", "curl", "tr", "od", "dd", "sed", "wc", "cat"].contains($0) })
-        // The log really saw the programs that handle the key and the request, so its silence about the token means something.
+        // The log really saw the programs that handle the key and the request, so its silence about the key means something.
         #expect(programs.isSuperset(of: ["openssl", "curl", "tr", "od", "dd", "sed", "wc", "cat"]), "\(programs)")
         #expect(text.contains("X-Proof: "))
-        let hex = Array(token.utf8).map { String(format: "%02x", $0) }.joined()
-        let pads = Array(token.utf8).map { String(format: "%02x", $0 ^ 0x36) }.joined()
-        for secret in [token, hex, pads, String(token.prefix(16)), String(token.suffix(16))] {
+        let hex = Array(key.utf8).map { String(format: "%02x", $0) }.joined()
+        let pads = Array(key.utf8).map { String(format: "%02x", $0 ^ 0x36) }.joined()
+        for secret in [key, hex, pads, String(key.prefix(16)), String(key.suffix(16))] {
             #expect(!text.contains(secret), "\(secret.prefix(8))…")
         }
+        // The notify token is not the hook's to read, so no program has it either.
+        #expect(!text.contains(notifyToken))
+    }
+
+    /// A stranger who binds the port while Nunsseop is off gets every notice hook's headers, the notify token among them.
+    /// The permission key is not in them, and nothing made from the token is the key, so no answer he makes is printed.
+    @Test func aListenerThatLearnsTheNotifyTokenFromANoticeHookCannotProduceAnAnswerThePermissionHookPrints() async throws {
+        let token = String(repeating: "5e", count: 32), key = String(repeating: "0123456789abcdef", count: 4)
+        let notice = try StubbedHook(key: key, input: Data(#"{"message":"Needs you"}"#.utf8),
+                                     command: NotifyServer.hookCommand(title: "Claude Code"), notifyToken: token)
+        #expect(await notice.process.finish()?.status == 0)
+        let received = try #require(notice.sentHeaders)
+        #expect(received.contains("Authorization: Bearer \(token)"), "the listener learns the notify token")
+        #expect(!received.contains(key))
+        let learned = try #require(received.components(separatedBy: "\n").first { $0.hasPrefix("Authorization: Bearer ") }
+            .map { String($0.dropFirst("Authorization: Bearer ".count)) })
+
+        let allow = try decision(.allow)
+        let sha = SHA256.hash(data: Data(learned.utf8))
+        let guesses = [learned, learned.uppercased(), Data(learned.utf8).map { String(format: "%02x", $0) }.joined(),
+                       sha.map { String(format: "%02x", $0) }.joined(), learned + learned, String(learned.prefix(32))]
+        for guess in guesses {
+            let hook = try StubbedHook(key: key, mode: .answer, notifyToken: token)
+            let sent = try #require(await hook.request())
+            #expect(sent.proof != PermissionWire.requestProof(key: guess, nonce: sent.nonce, body: sent.body),
+                    "the hook proved itself with something made from the token")
+            let proof = PermissionWire.responseProof(key: guess, nonce: sent.nonce, decision: Data(allow.utf8))
+            try hook.answer("\(proof) \(allow)")
+            let result = try #require(await hook.process.finish())
+            #expect(result.stdout == "" && result.status == 0, "an answer made from \(guess.prefix(8))… was printed")
+        }
+
+        // The control: the same exchange with the key is printed.
+        let hook = try StubbedHook(key: key, mode: .answer, notifyToken: token)
+        let sent = try #require(await hook.request())
+        try hook.answer("\(PermissionWire.responseProof(key: key, nonce: sent.nonce, decision: Data(allow.utf8))) \(allow)")
+        #expect(await hook.process.finish()?.stdout == allow)
+    }
+
+    @Test func theCommandNamesTheKeyFileAndNeitherTheNotifyTokenNorItsHeaderFile() {
+        let command = NotifyServer.permissionHookCommand
+        #expect(command.contains("Application Support/Nunsseop/permission-key"))
+        #expect(!command.contains("notify-token") && !command.contains("notify-auth"))
     }
 
     @Test func curlGivesUpAfterTheServerLetsGoAndBeforeClaudeCodeStopsTheHook() throws {
@@ -304,14 +354,14 @@ struct PermissionHookShellTests {
         #expect(!command.contains(" -o ") && !command.contains(" > "))
     }
 
-    @Test func theCommandReadsTheTokenOnlyByRedirectionAndSendsNoBearer() {
+    @Test func theCommandReadsTheKeyOnlyByRedirectionAndSendsNoBearer() {
         let command = NotifyServer.permissionHookCommand
         #expect(!command.contains("Bearer") && !command.lowercased().contains("authorization"))
         #expect(!command.contains("cat \"$t\"") && !command.contains("$(<"))
         var searchRange = command.startIndex..<command.endIndex
         var uses = 0
         while let range = command.range(of: "\"$t\"", range: searchRange) {
-            #expect(command[..<range.lowerBound].hasSuffix("< "), "a use of the token file that isn't a redirection")
+            #expect(command[..<range.lowerBound].hasSuffix("< "), "a use of the key file that isn't a redirection")
             uses += 1
             searchRange = range.upperBound..<command.endIndex
         }

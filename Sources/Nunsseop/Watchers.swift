@@ -166,9 +166,10 @@ enum AgentHook {
 /// Accepts notifications from local tools such as Claude Code hooks:
 /// `POST http://127.0.0.1:47750/notify` with `Authorization: Bearer <token>` and a JSON body
 /// `{"title": "...", "message": "..."}`. The token lives in Application Support/Nunsseop/notify-token; the same header, as
-/// one line, in notify-auth beside it. The commands below give curl that file (`-H @file`) instead of the token, which
-/// would be in the command line of curl, and `ps` shows every process's command line to every user: a stranger who read
-/// the token there could answer a permission prompt in the notch's place while Nunsseop isn't listening.
+/// one line, in notify-auth beside it. The commands below give curl that file (`-H @file`) instead of the token, so the
+/// notify token is in no argument list, which `ps` would show to every user. It does go to whatever listens on the port,
+/// so a stranger who binds 47750 while Nunsseop is off can learn it and fake notices, and nothing more: it authenticates
+/// `/notify` and `/agent` only. Prompts are answered under the permission key (permission-key), which is never sent.
 /// `POST /agent` takes Claude Code's and Codex's session events for the agents count, as headers only (see `agentHookCommand`).
 /// `POST /permission` holds a Claude Code permission prompt until it is answered in the notch (see `PermissionGate`).
 final class NotifyServer: @unchecked Sendable {
@@ -201,6 +202,8 @@ final class NotifyServer: @unchecked Sendable {
     private static let maxConnections = 8
     static let maxRequestBytes = 65_536
     let token: String
+    /// What `/permission` is proven with, apart from `token`. Never sent: only HMACs made with it are.
+    let permissionKey: String
     let permissions: PermissionGate
 
     /// A shell command for Claude Code's Notification hook. Claude Code passes the event as
@@ -240,18 +243,19 @@ final class NotifyServer: @unchecked Sendable {
     /// Claude Code's PermissionRequest hook. It asks the notch about a permission prompt and prints the answer Claude Code
     /// reads from stdout, or nothing at all, which leaves the terminal's dialog in charge: that is what every failure ends in.
     ///
-    /// The token is read by redirection into `tr`, which has no argument holding it, and goes no further than shell
-    /// variables, so it is in no process's arguments (`ps` shows those to every user). It is not sent either: the request
-    /// carries an HMAC-SHA256 of a fresh nonce and the body, built from `openssl dgst` calls over the key XOR the HMAC
-    /// pads, which reach it on stdin (see `PermissionWire`). An answer is printed only when its own HMAC, over the same
-    /// nonce and the exact bytes printed, checks out, so a stranger on 127.0.0.1:47750 can't make the hook allow anything.
+    /// The permission key (not the notify token) is read by redirection into `tr`, which has no argument holding it, and
+    /// goes no further than shell variables, so it is in no process's arguments (`ps` shows those to every user). It is
+    /// not sent either: the request carries an HMAC-SHA256 of a fresh nonce and the body, built from `openssl dgst` calls
+    /// over the key XOR the HMAC pads, which reach it on stdin (see `PermissionWire`). An answer is printed only when its
+    /// own HMAC, over the same nonce and the exact bytes printed, checks out. A stranger on 127.0.0.1:47750 can learn the
+    /// notify token from a notice hook, but that is not the key, so it can't make the hook allow anything.
     /// The answer is held in a shell variable, so nothing of the prompt reaches a file. When Claude Code ends the hook (the
     /// terminal answered first) by TERM or KILL, a watchdog sees the shell gone within a second and ends curl and its connection.
     static var permissionHookCommand: String { permissionHookCommand(port: port) }
 
     static func permissionHookCommand(port: UInt16) -> String {
         #"""
-        t="$HOME/Library/Application Support/Nunsseop/notify-token"
+        t="$HOME/Library/Application Support/Nunsseop/permission-key"
         in=$(cat)
         [ -n "$in" ] && [ $(printf %s "$in" | wc -c) -le \#(PermissionGate.maxBodyBytes) ] || exit 0
         kh=$(tr -d ' \t\r\n' < "$t" 2>/dev/null | od -An -v -tx1 | tr -d ' \n')
@@ -295,15 +299,8 @@ final class NotifyServer: @unchecked Sendable {
     /// The file with the `Authorization` header line the commands give curl (`-H @file`), beside the token.
     static var authHeaderURL: URL { tokenURL.deletingLastPathComponent().appendingPathComponent("notify-auth") }
 
-    /// Writes `text` to `url` so it is never readable by anyone else: the file is private from the moment it exists,
-    /// and replaces the old one in a single step.
-    private static func writeSecret(_ text: String, to url: URL) {
-        let fileManager = FileManager.default
-        try? fileManager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let scratch = url.deletingLastPathComponent().appendingPathComponent(".\(url.lastPathComponent).\(UUID().uuidString.prefix(8))")
-        guard fileManager.createFile(atPath: scratch.path, contents: Data(text.utf8), attributes: [.posixPermissions: 0o600]) else { return }
-        if rename(scratch.path, url.path) != 0 { try? fileManager.removeItem(at: scratch) }
-    }
+    /// The key the permission hook and `PermissionGate` prove themselves with, beside the token.
+    static var permissionKeyURL: URL { tokenURL.deletingLastPathComponent().appendingPathComponent("permission-key") }
 
     /// Makes the header file say what the token file does. A missing, stale or loosely held one is replaced; it holds
     /// the token as much as the token file does, so it is private as well. Does nothing without a usable token file.
@@ -315,29 +312,33 @@ final class NotifyServer: @unchecked Sendable {
         if (try? String(contentsOf: url, encoding: .utf8)) == line {
             try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
         } else {
-            writeSecret(line, to: url)
+            SecretFiles.write(line, to: url)
         }
     }
 
-    /// The token is made new, once, when a hook or script of an older version is still in place: those put it on curl's
-    /// command line, where any user could read it. It happens here, before the server or the permission gate has the
-    /// token, so nothing has to change hands while running; hooks read the file whenever they run, so the ones about to
-    /// be replaced (see `NotifyIntegration.updateConnected`) go on working with the new token until they are.
+    /// The secret in `url` when it is a usable one (32 characters or more, whitespace around it ignored; the file is made
+    /// private if it wasn't), otherwise a new random one, written private from its first byte.
+    private static func loadOrCreateSecret(at url: URL) -> String {
+        if let existing = try? String(contentsOf: url, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines),
+           existing.count >= 32 {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+            return existing
+        }
+        let secret = SecretFiles.randomHex()
+        SecretFiles.write(secret, to: url)
+        return secret
+    }
+
     init(port: UInt16 = NotifyServer.port, permissionHold: Double = PermissionGate.holdSeconds) {
         listenPort = port
         let queue = DispatchQueue(label: "nunsseop.notify")
         self.queue = queue
-        let url = Self.tokenURL
-        if let existing = try? String(contentsOf: url, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines),
-           existing.count >= 32, !NotifyIntegration.holdsLegacyTokenCommands {
-            token = existing
-            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
-        } else {
-            token = (UUID().uuidString + UUID().uuidString).replacingOccurrences(of: "-", with: "").lowercased()
-            Self.writeSecret(token, to: url)
-        }
+        // The folder holding the secrets is for this user alone, whatever it was when an earlier version made it.
+        SecretFiles.makeDirectoryPrivate(Self.tokenURL.deletingLastPathComponent())
+        token = Self.loadOrCreateSecret(at: Self.tokenURL)
+        permissionKey = Self.loadOrCreateSecret(at: Self.permissionKeyURL)
         Self.syncAuthHeader()
-        permissions = PermissionGate(token: token, queue: queue, holdSeconds: permissionHold)
+        permissions = PermissionGate(key: permissionKey, queue: queue, holdSeconds: permissionHold)
     }
 
     /// The port the listener is ready on, nil until it is; with port 0 the system picks it.

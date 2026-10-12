@@ -26,15 +26,16 @@ final class PermissionGate: @unchecked Sendable {
         let timeout: DispatchWorkItem
     }
 
-    private let token: String
+    /// The permission key, which only this and the permission hook have. Not the notify token, which any notice hook sends.
+    private let key: String
     private let queue: DispatchQueue
     private let holdSeconds: Double
     private var held: [UUID: Held] = [:]
     private var nonces: [String] = []
     private var knownNonces = Set<String>()
 
-    init(token: String, queue: DispatchQueue, holdSeconds: Double = PermissionGate.holdSeconds) {
-        self.token = token
+    init(key: String, queue: DispatchQueue, holdSeconds: Double = PermissionGate.holdSeconds) {
+        self.key = key
         self.queue = queue
         self.holdSeconds = holdSeconds
     }
@@ -51,7 +52,7 @@ final class PermissionGate: @unchecked Sendable {
         }
         guard let nonce = request.headers["x-nonce"], PermissionWire.isNonce(nonce),
               NotifyServer.constantTimeEqual(request.headers["x-proof"] ?? "",
-                                             PermissionWire.requestProof(token: token, nonce: nonce, body: request.body)),
+                                             PermissionWire.requestProof(key: key, nonce: nonce, body: request.body)),
               remember(nonce) else {
             NotifyServer.reply(connection, status: "401 Unauthorized")
             return false
@@ -83,7 +84,7 @@ final class PermissionGate: @unchecked Sendable {
                 entry.connection.cancel()
                 return
             }
-            let proof = PermissionWire.responseProof(token: token, nonce: entry.nonce, decision: decision)
+            let proof = PermissionWire.responseProof(key: key, nonce: entry.nonce, decision: decision)
             NotifyServer.reply(entry.connection, status: "200 OK", body: Data("\(proof) ".utf8) + decision)
         }
     }
