@@ -159,7 +159,7 @@ struct PermissionChipTests {
     private static let letterRanges: [ClosedRange<UInt32>] = [
         0xAC00...0xD7A3, 0x3131...0x318E, 0x3400...0x4DBF, 0x4E00...0x9FFF, 0x3041...0x3096, 0x309D...0x309F, 0x30A1...0x30FA, 0x30FD...0x30FF,
         0xFF66...0xFF6F, 0xFF71...0xFF9D]
-    private static let notLetters: Set<UInt32> = [0x3161, 0x3163, 0x318D, 0x4E00, 0x4E28]
+    private static let notLetters: Set<UInt32> = [0x3161, 0x3163, 0x3164, 0x318D, 0x4E00, 0x4E28]
     private static let dashLetters: [Unicode.Scalar] = ["\u{30FC}", "\u{4E00}", "\u{3161}", "\u{FF70}"]
 
     private func isLetter(_ scalar: Unicode.Scalar) -> Bool {
@@ -214,27 +214,77 @@ struct PermissionChipTests {
         for text in ["🎉", "😀", "❤️", "☀️", "👍🏽", "🇰🇷", "1️⃣", "👨‍👩‍👧", "✅", "❌"] { #expect(!PermissionText.hasUnusualCharacters(text), "\(name(text))") }
     }
 
-    /// A dash-shaped letter is quiet only with a letter before it, and after it a letter, a space, a line break or the end of the text.
-    @Test func aDashShapedLetterNeedsALetterBeforeItAndALetterOrAWordEndAfterIt() {
+    /// The oracle for a dash-shaped letter between `left` and `right` (one scalar each, nil for the edge of the text): quiet after a letter
+    /// of CJK text, or after the edge, a space, a line break or ASCII punctuation when a letter of CJK text follows; and before a letter of
+    /// CJK text, the edge, a space, a line break or ASCII punctuation but `-`.
+    private func dashIsQuiet(_ left: Unicode.Scalar?, _ right: Unicode.Scalar?) -> Bool {
+        func isSpace(_ scalar: Unicode.Scalar) -> Bool { [0x20, 0x0A, 0x0D].contains(scalar.value) }
+        func isPunctuation(_ scalar: Unicode.Scalar) -> Bool {
+            (0x21...0x7E).contains(scalar.value) && !(0x30...0x39).contains(scalar.value) && !(0x41...0x5A).contains(scalar.value) && !(0x61...0x7A).contains(scalar.value)
+        }
+        let rightLetter = right.map(isLetter) ?? false
+        let rightQuiet = right == nil || rightLetter || right.map { isSpace($0) || (isPunctuation($0) && $0 != "-") } == true
+        let leftQuiet = left.map(isLetter) == true || (rightLetter && (left == nil || left.map { isSpace($0) || isPunctuation($0) } == true))
+        return rightQuiet && leftQuiet
+    }
+
+    /// A dash-shaped letter is quiet in the middle of CJK text: after a letter and before a letter, a space, a line break, ASCII punctuation
+    /// but `-`, or the end; or at the start of a word (a space, a line break, ASCII punctuation, the start) before a letter.
+    @Test func aDashShapedLetterIsQuietInTheMiddleOrAtTheEdgeOfCJKText() {
         let letters = ["ユ", "ザ", "한", "中", "ｱ", "ぁ", "ゝ"]
-        let notLetters = ["a", "1", "-", "、", "。", "「", "・", "〇", "々", "ー", "一", "ㅡ", "ｰ", "丨", "é", "→", "🎉", "\u{FF0C}", "ㅣ", ""]
-        let ends = ["", " ", "\n", "\r\n"]
+        let punctuation = ["\"", "'", ",", ".", ")", "(", ":", "/", "!", "~", ";", "`", "_", "[", "{", "@", "$"]
+        let notLetters = ["a", "Z", "1", "-", "、", "。", "「", "・", "〇", "々", "ー", "一", "ㅡ", "ｰ", "丨", "é", "→", "🎉", "\u{FF0C}", "ㅣ", "\t"]
+        let spaces = [" ", "\n", "\r\n"]
         for dash in Self.dashLetters {
             let d = String(dash)
             for left in letters {
-                for right in letters + ends { #expect(!PermissionText.hasUnusualCharacters(left + d + right), "\(name(left + d + right))") }
-                for right in notLetters where !ends.contains(right) { #expect(PermissionText.hasUnusualCharacters(left + d + right), "\(name(left + d + right))") }
+                for right in letters + [""] + spaces + punctuation where right != "-" { #expect(!PermissionText.hasUnusualCharacters(left + d + right), "\(name(left + d + right))") }
+                for right in notLetters { #expect(PermissionText.hasUnusualCharacters(left + d + right), "\(name(left + d + right))") }
             }
-            for left in notLetters {
-                for right in letters + ends + notLetters { #expect(PermissionText.hasUnusualCharacters(left + d + right), "\(name(left + d + right))") }
+            // Before a letter, the edge, a space, a line break and ASCII punctuation are a start; a letter or digit of ASCII and the rest are not.
+            for left in [""] + spaces + punctuation + ["-"] {
+                for right in letters { #expect(!PermissionText.hasUnusualCharacters(left + d + right), "\(name(left + d + right))") }
+                for right in [""] + spaces + punctuation + ["-"] + notLetters { #expect(PermissionText.hasUnusualCharacters(left + d + right), "\(name(left + d + right))") }
             }
-            #expect(PermissionText.hasUnusualCharacters(d) && PermissionText.hasUnusualCharacters(" " + d + "ザ"))
+            for left in notLetters where left != "-" {
+                for right in letters + [""] + spaces + punctuation + notLetters { #expect(PermissionText.hasUnusualCharacters(left + d + right), "\(name(left + d + right))") }
+            }
+            #expect(PermissionText.hasUnusualCharacters(d) && PermissionText.hasUnusualCharacters(d + d) && PermissionText.hasUnusualCharacters(d + d + d))
         }
-        for text in ["ユーザー", "サーバー", "データ", "コンピューター", "统一", "第一", "命令一次性", "ｱｰｽ"] { #expect(!PermissionText.hasUnusualCharacters(text), "\(name(text))") }
-        // At the start of the text or of a word there is no letter before it (`一个`), and a half width voiced sound mark is none (`ｻｰﾊﾞｰ`).
-        for text in ["一次性", "echo 一个", "ｻｰﾊﾞｰ"] { #expect(PermissionText.hasUnusualCharacters(text), "\(name(text))") }
-        // An escape or the arrow of a tab is no letter and no space.
-        #expect(PermissionText.hasUnusualCharacters(escaped("ユー\u{200B}")) && PermissionText.hasUnusualCharacters(escaped("\u{200B}ーザ")) && PermissionText.hasUnusualCharacters(escaped("ユー\tザ")))
+        for text in ["ユーザー", "サーバー", "データ", "コンピューター", "统一", "第一", "命令一次性", "ｱｰｽ", "echo \"ユーザー\"", "git commit -m 'サーバー'",
+                     "git commit -m \"fix(サーバー): 修正\"", "ls ~/フォルダー/", "echo ユーザー, フォルダー.", "git commit -m \"ユーザー: 追加\"", "echo 一二三", "echo 一个",
+                     "echo 简体 一下", "echo \"统一\"", "echo 第一, 统一.", "一次性", "ｻｰﾊｰ"] {
+            #expect(!PermissionText.hasUnusualCharacters(text) && !PermissionText.hasUnusualCharacters(escaped(text)), "\(name(text))")
+        }
+        // A letter or digit of ASCII beside the dash-shaped one, a dash after it, a half width voiced sound mark before it, and nothing else.
+        for text in ["ユーザーID", "统一API", "ー", "ーー", "ーrf", "한ー-force", "ㅡㅡ", "ー-x", "ユー-", "a一个", "1一个", "ｻｰﾊﾞｰ", "echo 一-"] {
+            #expect(PermissionText.hasUnusualCharacters(text), "\(name(text))")
+        }
+        // An escape or the arrow of a tab is no letter, no space and no edge.
+        for text in ["ユー\u{200B}", "\u{200B}ーザ", "ユー\tザ", "ユー\u{200B}ザ", "ユ\u{200B}ーザ"] {
+            #expect(PermissionText.hasUnusualCharacters(escaped(text)), "\(name(text))")
+        }
+    }
+
+    /// Every pair of neighbours from ASCII and a few other scalars, against the oracle.
+    @Test func aDashShapedLetterFollowsTheOracleForEveryASCIINeighbour() {
+        var sample: [Unicode.Scalar?] = [nil]
+        for value in UInt32(0)...0x7F { sample.append(Unicode.Scalar(value)) }
+        for scalar in ["命", "한", "ユ", "ｱ", "ぁ", "é", "→", "🎉", "、", "ー", "ㅣ", "ﾞ", "\u{3164}", "々"] as [Unicode.Scalar] { sample.append(scalar) }
+        for dash in Self.dashLetters {
+            for left in sample {
+                for right in sample {
+                    let text = (left.map(String.init) ?? "") + String(dash) + (right.map(String.init) ?? "")
+                    #expect(PermissionText.hasUnusualCharacters(text) == !dashIsQuiet(left, right), "\(name(text))")
+                }
+            }
+        }
+    }
+
+    /// The Hangul filler is no letter: it is blank, and written out by the escape; unescaped it raises the chip alone and in Hangul.
+    @Test func theHangulFillerIsNoLetter() {
+        for text in ["\u{3164}", "한\u{3164}한", "a\u{3164}b", "한\u{3164}", "\u{3164}한"] { #expect(PermissionText.hasUnusualCharacters(text), "\(name(text))") }
+        #expect(!PermissionText.hasUnusualCharacters(escaped("한\u{3164}한")))
     }
 
     @Test func theControlsThatGoWithAnEmojiAreExemptAndAnEscapeIsNoneThatIsShown() throws {

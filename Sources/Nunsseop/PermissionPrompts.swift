@@ -374,12 +374,12 @@ enum PermissionText {
     /// indicators and the keycap.
     private static let emojiControls: [ClosedRange<UInt32>] = [0xFE0E...0xFE0F, 0x200D...0x200D, 0x20E3...0x20E3, 0x1F3FB...0x1F3FF, 0x1F1E6...0x1F1FF]
     /// The letters of Korean, Japanese and Chinese text that read as themselves: Hangul syllables and compatibility letters (not
-    /// `ㅡ ㅣ ㆍ`), ideographs (not `一` and `丨`), kana letters (not the middle dot, the prolonged sound mark, the voiced sound marks
+    /// `ㅡ ㅣ ㆍ` and not the filler), ideographs (not `一` and `丨`), kana letters (not the middle dot, the prolonged sound mark, the voiced sound marks
     /// or `゠`), half width katakana letters (not `ｰ` and `･`).
     private static func isCJKLetter(_ scalar: Unicode.Scalar?) -> Bool {
         guard let value = scalar?.value else { return false }
         switch value {
-        case 0x3161, 0x3163, 0x318D, 0x4E00, 0x4E28: return false
+        case 0x3161, 0x3163, 0x3164, 0x318D, 0x4E00, 0x4E28: return false
         case 0xAC00...0xD7A3, 0x3131...0x318E, 0x3400...0x4DBF, 0x4E00...0x9FFF, 0x3041...0x3096, 0x309D...0x309F, 0x30A1...0x30FA, 0x30FD...0x30FF,
              0xFF66...0xFF6F, 0xFF71...0xFF9D: return true
         default: return false
@@ -389,8 +389,9 @@ enum PermissionText {
     /// Whether the card says "Unusual characters" about `shown`: it holds a scalar past ASCII that is not a letter of Korean, Japanese
     /// or Chinese text or an emoji. All punctuation, signs, symbols, digits and letters of other scripts and widths say so, because
     /// they can pass for ASCII and are not all written out. Neither a picture that can be read as ASCII (`➕`, `➖`) nor a dash-shaped
-    /// letter (`ー 一 ㅡ ｰ`) is exempt, but for the dash-shaped one between two letters of CJK text, or at the end of a word of it
-    /// (a space, a line break or the end of the text after it): `ユーザー`, `统一`.
+    /// letter (`ー 一 ㅡ ｰ`) is exempt, but for the dash-shaped one that is part of CJK text: before a letter of CJK text, a space, a line
+    /// break, ASCII punctuation other than `-` or the end of the text, and after a letter of CJK text, or after the start of the text,
+    /// a space, a line break or ASCII punctuation when a letter of CJK text follows it (`ユーザー`, `统一`, `echo 一个`, `fix(サーバー):`).
     /// An escape and the arrow of a tab are not shown, and no neighbour.
     static func hasUnusualCharacters(_ shown: String) -> Bool {
         // The scalars shown, in order; nil for a written-out scalar or the arrow of a tab.
@@ -401,9 +402,19 @@ enum PermissionText {
         for (at, item) in items.enumerated() {
             guard let scalar = item, scalar.value >= 0x80, !emojiControls.contains(where: { $0.contains(scalar.value) }) else { continue }
             if isCJKLetter(scalar) || (isPicture(scalar) && confusables?.asciiPictures.contains(scalar.value) != true) { continue }
-            if [0x30FC, 0x4E00, 0x3161, 0xFF70].contains(scalar.value), at > 0, isCJKLetter(items[at - 1]) {
-                let after = at + 1 < items.count ? items[at + 1] : " "
-                if isCJKLetter(after) || [0x20, 0x0A, 0x0D].contains(after?.value) { continue }
+            if [0x30FC, 0x4E00, 0x3161, 0xFF70].contains(scalar.value) {
+                // The neighbours shown; a written-out scalar or a tab is `nil` among them, and neither a letter nor a space.
+                let atStart = at == 0, atEnd = at + 1 == items.count
+                let before = atStart ? nil : items[at - 1], after = atEnd ? nil : items[at + 1]
+                // A space, a line break or ASCII punctuation makes a quiet edge of a word; `-` does not on the right.
+                func isEdge(_ neighbour: Unicode.Scalar?, dash: Bool) -> Bool {
+                    guard let mark = neighbour else { return false }
+                    return [0x20, 0x0A, 0x0D].contains(mark.value) || (isASCIIPunctuation(mark) && (dash || mark.value != 0x2D))
+                }
+                let letterAfter = isCJKLetter(after)
+                let quietAfter = letterAfter || atEnd || isEdge(after, dash: false)
+                let quietBefore = isCJKLetter(before) || (letterAfter && (atStart || isEdge(before, dash: true)))
+                if quietAfter && quietBefore { continue }
             }
             return true
         }
