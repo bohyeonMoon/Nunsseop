@@ -190,8 +190,6 @@
 "Title under the notch when the track changes" = "Título bajo el notch al cambiar de pista";
 "Always show the title while something is playing" = "Mostrar siempre el título durante la reproducción";
 "Current lyric under the notch while playing" = "Letra actual bajo el notch durante la reproducción";
-"Move up" = "Subir";
-"Move down" = "Bajar";
 "Volume and brightness" = "Volumen y brillo";
 "Power and devices" = "Energía y dispositivos";
 "Files" = "Archivos";
@@ -391,3 +389,4 @@
 "everywhere" = "en todas partes";
 "for this session" = "para esta sesión";
 "1 of %lld" = "1 de %lld";
+"Drag to reorder" = "Arrastra para reordenar";
