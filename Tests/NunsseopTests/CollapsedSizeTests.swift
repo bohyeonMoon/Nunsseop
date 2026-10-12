@@ -272,4 +272,25 @@ struct CollapsedShiftTests {
         let shift = NotchViewModel.collapsedShift(fitted: nil, hidesLeftEar: true, width: width, notch: notch)
         #expect(-width / 2 + shift == -notch / 2)
     }
+
+    @Test func aPermissionPromptIgnoresALopsidedLiveActivity() {
+        let notch: CGFloat = 200, live = LiveEars.Sides(left: 30, right: 140)
+        let fitted = NotchViewModel.fittedSides(prompt: true, liveShows: true, live: live, idle: (10, 10))
+        #expect(fitted == nil)
+        let shift = NotchViewModel.collapsedShift(fitted: fitted, hidesLeftEar: false, width: 460, notch: notch)
+        #expect(shift == 0)
+        #expect(NotchViewModel.earLead(shift: shift, notch: notch) == 0)
+    }
+
+    @Test func withoutAPromptTheLiveSidesStillFitTheShape() {
+        let notch: CGFloat = 200, live = LiveEars.Sides(left: 30, right: 140)
+        let fitted = NotchViewModel.fittedSides(prompt: false, liveShows: true, live: live, idle: (10, 10))
+        #expect(fitted?.left == 30 && fitted?.right == 140)
+        let shift = NotchViewModel.collapsedShift(fitted: fitted, hidesLeftEar: false, width: 370, notch: notch)
+        #expect(shift == 55)
+        #expect(NotchViewModel.earLead(shift: shift, notch: notch) == 194)
+        let idle = NotchViewModel.fittedSides(prompt: false, liveShows: false, live: live, idle: (10, 20))
+        #expect(idle?.left == 10 && idle?.right == 20)
+        #expect(NotchViewModel.fittedSides(prompt: false, liveShows: false, live: live, idle: nil) == nil)
+    }
 }

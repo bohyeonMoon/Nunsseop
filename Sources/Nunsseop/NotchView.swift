@@ -24,7 +24,7 @@ struct NotchView: View {
                               sideInset: !model.geometry.hasNotch && model.isExpanded ? 18 : 0)
         // With the left ear hidden, the collapsed shape grows right only and its top row starts past the camera.
         let shift = model.isExpanded ? 0 : model.collapsedShift
-        let earLead = shift > 0 ? model.geometry.collapsedSize.width - 6 : 0
+        let earLead = NotchViewModel.earLead(shift: shift, notch: model.geometry.collapsedSize.width)
 
         let ears = earsMotion
 

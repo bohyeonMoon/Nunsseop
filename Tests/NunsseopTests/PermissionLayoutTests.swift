@@ -634,7 +634,7 @@ struct PermissionLayoutTests {
         for (language, text) in texts {
             #expect(!text.isEmpty && text != "Unusual characters", "\(language): \(text)")
         }
-        #expect(texts.first { $0.language == "ko.lproj" }?.text == "낯선 문자")
+        #expect(texts.first { $0.language == "ko.lproj" }?.text == "확인 필요한 문자")
     }
 
     /// In every language, the chip takes one row at the narrowest card and panel, and the body is as tall as it was sized for with the chip among the flags.

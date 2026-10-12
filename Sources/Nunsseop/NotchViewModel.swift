@@ -566,11 +566,25 @@ final class NotchViewModel: ObservableObject {
 
     /// The widths the two sides are fitted to: the live activity's while it shows, otherwise the idle values'.
     private var fittedSides: (left: CGFloat, right: CGFloat)? {
-        if showsLiveActivity && hud.event == nil {
-            let sides = liveEarSides
+        Self.fittedSides(prompt: approvals.current != nil, liveShows: showsLiveActivity && hud.event == nil,
+                         live: liveEarSides, idle: idleFittedSides)
+    }
+
+    /// The widths the two sides are fitted to. A permission prompt is a symmetric card that covers the sides, so it
+    /// takes none: the live activity under it must not move the shape sideways.
+    nonisolated static func fittedSides(prompt: Bool, liveShows: Bool, live: @autoclosure () -> LiveEars.Sides,
+                                        idle: @autoclosure () -> (left: CGFloat, right: CGFloat)?) -> (left: CGFloat, right: CGFloat)? {
+        if prompt { return nil }
+        if liveShows {
+            let sides = live()
             return (sides.left, sides.right)
         }
-        return idleFittedSides
+        return idle()
+    }
+
+    /// How far the top row's content starts past the shape's left wall: past the camera when the shape moved right.
+    nonisolated static func earLead(shift: CGFloat, notch: CGFloat) -> CGFloat {
+        shift > 0 ? notch - 6 : 0
     }
 
     /// How far fitted idle values grow the shape on each side: each by its own value, nothing where there is none.

