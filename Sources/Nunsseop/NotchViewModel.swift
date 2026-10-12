@@ -245,6 +245,9 @@ final class NotchViewModel: ObservableObject {
         approvals.$prompts
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
+        approvals.$drafts
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
         settings.$idleLeft.combineLatest(settings.$idleRight, settings.$agentsTab)
             .map { $0 == .agents || $1 == .agents || $2 }
             .removeDuplicates()

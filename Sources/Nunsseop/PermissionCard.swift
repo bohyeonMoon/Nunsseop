@@ -189,7 +189,7 @@ struct PermissionBody: View {
 }
 
 /// Tells the gate when the mouse goes down and comes up on a button, and dims the button while the gate is closed.
-private struct GatedPress: ButtonStyle {
+struct GatedPress: ButtonStyle {
     let gate: PermissionClickGate
 
     func makeBody(configuration: Configuration) -> some View {
@@ -345,10 +345,14 @@ struct PermissionCard: View {
     /// A display without a camera has room in the top row for the title itself.
     let hasNotch: Bool
     @ObservedObject var gate: PermissionClickGate
+    /// Where the user is in a question; unused by an approval.
+    var draft = QuestionDraft()
+    var act: (QuestionAction) -> Void = { _ in }
     let answer: (PermissionAnswer) -> Void
 
     static func bodyHeight(for prompt: PermissionPrompt, hasNotch: Bool) -> CGFloat {
-        PermissionLayout.height(of: prompt, showsTitle: hasNotch, stacked: true, place: .card)
+        if let asking = prompt.asking { return QuestionLayout.height(of: asking, showsTitle: hasNotch, stacked: true, place: .card) }
+        return PermissionLayout.height(of: prompt, showsTitle: hasNotch, stacked: true, place: .card)
     }
 
     var body: some View {
@@ -369,9 +373,15 @@ struct PermissionCard: View {
             }
             .padding(.leading, leadingInset)
             .frame(height: height)
-            PermissionBody(prompt: prompt, showsTitle: hasNotch, stacked: true, place: .card, gate: gate,
-                           answer: answer)
-                .padding(.horizontal, 6)
+            Group {
+                if let asking = prompt.asking {
+                    QuestionBody(prompt: prompt, asking: asking, draft: draft, showsTitle: hasNotch, stacked: true, place: .card,
+                                 gate: gate, act: act)
+                } else {
+                    PermissionBody(prompt: prompt, showsTitle: hasNotch, stacked: true, place: .card, gate: gate, answer: answer)
+                }
+            }
+            .padding(.horizontal, 6)
         }
         // Whatever the system's language: nothing here may be mirrored.
         .environment(\.layoutDirection, .leftToRight)
@@ -383,11 +393,15 @@ struct PermissionPanel: View {
     let prompt: PermissionPrompt
     let count: Int
     @ObservedObject var gate: PermissionClickGate
+    var draft = QuestionDraft()
+    var act: (QuestionAction) -> Void = { _ in }
     let answer: (PermissionAnswer) -> Void
 
     /// What the panel takes: the top row, the gap under it and the body.
     static func height(for prompt: PermissionPrompt) -> CGFloat {
-        PermissionLayout.titleHeight + 8 + PermissionLayout.height(of: prompt, showsTitle: false, stacked: false, place: .panel)
+        let body = prompt.asking.map { QuestionLayout.height(of: $0, showsTitle: false, stacked: false, place: .panel) }
+            ?? PermissionLayout.height(of: prompt, showsTitle: false, stacked: false, place: .panel)
+        return PermissionLayout.titleHeight + 8 + body
     }
 
     var body: some View {
@@ -401,8 +415,12 @@ struct PermissionPanel: View {
                 Spacer(minLength: 0)
                 PermissionPosition(count: count)
             }
-            PermissionBody(prompt: prompt, showsTitle: false, stacked: false, place: .panel, gate: gate,
-                           answer: answer)
+            if let asking = prompt.asking {
+                QuestionBody(prompt: prompt, asking: asking, draft: draft, showsTitle: false, stacked: false, place: .panel,
+                             gate: gate, act: act)
+            } else {
+                PermissionBody(prompt: prompt, showsTitle: false, stacked: false, place: .panel, gate: gate, answer: answer)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         // Whatever the system's language: nothing here may be mirrored.

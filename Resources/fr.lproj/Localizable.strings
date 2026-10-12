@@ -368,8 +368,14 @@
 "The Agents tab lists their sessions with folder, model, context used and permission mode, read from the tools' own session files on this Mac." = "L’onglet Agents liste leurs sessions avec leur dossier, leur modèle, le contexte utilisé et leur mode de permissions, lus dans les fichiers de session des outils sur ce Mac.";
 
 /* Permission prompts */
-"Answer permission prompts in the notch" = "Répondre aux demandes d’autorisation dans l’encoche";
-"Claude Code's permission prompts also show in the notch, where you can allow or deny them. Answer in the terminal and the notch lets go of it; if Nunsseop isn't running, the terminal asks as before. Works with Claude Code connected above. What a prompt asks is kept in memory only." = "Les demandes d’autorisation de Claude Code s’affichent aussi dans l’encoche, où vous pouvez les autoriser ou les refuser. Si vous répondez dans le terminal, l’encoche la lâche ; si Nunsseop ne tourne pas, le terminal demande comme avant. Fonctionne avec Claude Code connecté ci-dessus. Le contenu d’une demande n’est gardé qu’en mémoire.";
+"Answer permission prompts and questions in the notch" = "Répondre aux demandes d’autorisation et aux questions dans l’encoche";
+"Claude Code's permission prompts and questions also show in the notch, where you can allow or deny a prompt and pick the answer to a question. Answer a prompt in the terminal and the notch lets go of it; a question is asked in the terminal once you press “Answer in terminal” in the notch. If Nunsseop isn't running, the terminal asks as before. Works with Claude Code connected above. What a prompt asks is kept in memory only." = "Les demandes d’autorisation et les questions de Claude Code s’affichent aussi dans l’encoche : vous autorisez ou refusez une demande, et vous choisissez la réponse à une question. Si vous répondez à une demande dans le terminal, l’encoche la lâche ; le terminal ne pose une question que lorsque vous appuyez sur « Répondre dans le terminal » dans l’encoche. Si Nunsseop ne tourne pas, le terminal demande comme avant. Fonctionne avec Claude Code connecté ci-dessus. Le contenu d’une demande n’est gardé qu’en mémoire.";
+
+/* Questions in the notch */
+"Question" = "Question";
+"Send" = "Envoyer";
+"Next" = "Suivant";
+"Answer in terminal" = "Répondre dans le terminal";
 "Run a command" = "Exécuter une commande";
 "Edit a file" = "Modifier un fichier";
 "Write a file" = "Écrire un fichier";

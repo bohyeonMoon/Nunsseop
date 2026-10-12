@@ -201,6 +201,10 @@ final class NotchWindowController {
         if CommandLine.arguments.contains("--demo-permission") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.model.approvals.add(.demo) }
         }
+        // Debug: --demo-question shows two questions, the second with several answers; answering only closes the card.
+        if CommandLine.arguments.contains("--demo-question") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.model.approvals.add(.demoQuestion) }
+        }
         if CommandLine.arguments.contains("--demo-settings") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { SettingsWindowController.shared.show() }
         }

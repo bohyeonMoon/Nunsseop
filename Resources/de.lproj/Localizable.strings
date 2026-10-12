@@ -368,8 +368,14 @@
 "The Agents tab lists their sessions with folder, model, context used and permission mode, read from the tools' own session files on this Mac." = "Der Tab „Agenten“ listet ihre Sitzungen mit Ordner, Modell, genutztem Kontext und Berechtigungsmodus auf, gelesen aus den eigenen Sitzungsdateien der Tools auf diesem Mac.";
 
 /* Permission prompts */
-"Answer permission prompts in the notch" = "Berechtigungsanfragen in der Notch beantworten";
-"Claude Code's permission prompts also show in the notch, where you can allow or deny them. Answer in the terminal and the notch lets go of it; if Nunsseop isn't running, the terminal asks as before. Works with Claude Code connected above. What a prompt asks is kept in memory only." = "Berechtigungsanfragen von Claude Code erscheinen auch in der Notch, wo du sie erlauben oder ablehnen kannst. Antwortest du im Terminal, verschwindet die Anfrage in der Notch; läuft Nunsseop nicht, fragt das Terminal wie gewohnt. Funktioniert mit dem oben verbundenen Claude Code. Was eine Anfrage fragt, wird nur im Arbeitsspeicher gehalten.";
+"Answer permission prompts and questions in the notch" = "Berechtigungsanfragen und Fragen in der Notch beantworten";
+"Claude Code's permission prompts and questions also show in the notch, where you can allow or deny a prompt and pick the answer to a question. Answer a prompt in the terminal and the notch lets go of it; a question is asked in the terminal once you press “Answer in terminal” in the notch. If Nunsseop isn't running, the terminal asks as before. Works with Claude Code connected above. What a prompt asks is kept in memory only." = "Berechtigungsanfragen und Fragen von Claude Code erscheinen auch in der Notch: Anfragen kannst du erlauben oder ablehnen, bei Fragen wählst du die Antwort. Antwortest du auf eine Anfrage im Terminal, verschwindet sie in der Notch; eine Frage stellt das Terminal erst, wenn du in der Notch „Im Terminal antworten“ drückst. Läuft Nunsseop nicht, fragt das Terminal wie gewohnt. Funktioniert mit dem oben verbundenen Claude Code. Was eine Anfrage fragt, wird nur im Arbeitsspeicher gehalten.";
+
+/* Questions in the notch */
+"Question" = "Frage";
+"Send" = "Senden";
+"Next" = "Weiter";
+"Answer in terminal" = "Im Terminal antworten";
 "Run a command" = "Befehl ausführen";
 "Edit a file" = "Datei bearbeiten";
 "Write a file" = "Datei schreiben";

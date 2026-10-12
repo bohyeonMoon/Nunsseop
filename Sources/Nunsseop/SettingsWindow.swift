@@ -307,9 +307,9 @@ private struct AlertsPane: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 if NotifyIntegration.claudeCode.isPresent {
-                    Toggle("Answer permission prompts in the notch", isOn: $settings.permissionPrompts)
+                    Toggle("Answer permission prompts and questions in the notch", isOn: $settings.permissionPrompts)
                         .disabled(!settings.localNotifications)
-                    Text("Claude Code's permission prompts also show in the notch, where you can allow or deny them. Answer in the terminal and the notch lets go of it; if Nunsseop isn't running, the terminal asks as before. Works with Claude Code connected above. What a prompt asks is kept in memory only.")
+                    Text("Claude Code's permission prompts and questions also show in the notch, where you can allow or deny a prompt and pick the answer to a question. Answer a prompt in the terminal and the notch lets go of it; a question is asked in the terminal once you press “Answer in terminal” in the notch. If Nunsseop isn't running, the terminal asks as before. Works with Claude Code connected above. What a prompt asks is kept in memory only.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 if let failed {
