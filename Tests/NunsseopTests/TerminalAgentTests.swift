@@ -102,7 +102,7 @@ struct TerminalAgentWatcherTests {
 
     private func waitUntil(_ condition: () -> Bool) async {
         // Stops as soon as it holds; the cap only matters on a slow or busy machine.
-        let deadline = Date.now.addingTimeInterval(30)
+        let deadline = Date.now.addingTimeInterval(eventDeadline)
         while !condition() && Date.now < deadline {
             try? await Task.sleep(for: .milliseconds(50))
         }
@@ -122,8 +122,7 @@ struct TerminalAgentWatcherTests {
     }
 
     private func fakeHerdr(at socket: URL, quietSubscription: Bool = false) async throws -> FakeHerdr {
-        let script = temporary("herdr.py")
-        try """
+        let server = try StandIn.python("""
         import json, os, socket, sys, threading, time
         path = sys.argv[1]
         quiet = len(sys.argv) > 2
@@ -151,13 +150,9 @@ struct TerminalAgentWatcherTests {
         while True:
             conn, _ = server.accept()
             threading.Thread(target=serve, args=(conn,), daemon=True).start()
-        """.write(to: script, atomically: true, encoding: .utf8)
-        let server = Process()
-        server.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
-        server.arguments = [script.path, socket.path] + (quietSubscription ? ["quiet"] : [])
-        try server.run()
+        """, arguments: [socket.path] + (quietSubscription ? ["quiet"] : []))
         await waitUntil { FileManager.default.fileExists(atPath: socket.path) }
-        return FakeHerdr(server: server, files: [socket, script])
+        return FakeHerdr(server: server, files: [socket])
     }
 
     @Test func herdrWatcherListsSubscribesAndAnnounces() async throws {
@@ -368,7 +363,7 @@ struct TmuxWatcherTests {
 
     private func waitUntil(_ condition: () -> Bool) async {
         // Stops as soon as it holds; the cap only matters on a slow or busy machine.
-        let deadline = Date.now.addingTimeInterval(30)
+        let deadline = Date.now.addingTimeInterval(eventDeadline)
         while !condition() && Date.now < deadline {
             try? await Task.sleep(for: .milliseconds(50))
         }
@@ -469,6 +464,8 @@ struct TerminalBellScriptTests {
         process.executableURL = script
         process.arguments = arguments
         process.environment = ["HOME": dir.path, "PATH": "\(bin.path):/usr/bin:/bin", "__CFBundleIdentifier": "com.mitchellh.ghostty"]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
         try process.run()
         process.waitUntilExit()
         let args = try String(contentsOf: dir.appendingPathComponent("args"), encoding: .utf8).split(separator: "\n").map(String.init)
@@ -492,6 +489,8 @@ struct TerminalBellScriptTests {
             process.executableURL = script
             process.arguments = ["tmux-window", tmux.path, "", window]
             process.environment = ["HOME": dir.path, "PATH": "\(dir.path)/bin:/usr/bin:/bin"]
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
             try process.run()
             process.waitUntilExit()
         }
@@ -546,7 +545,7 @@ struct WezTermSnippetTests {
         let args = dir.appendingPathComponent("args")
         // The CLI runs in the background: wait for what it writes, not just for the file, which exists before the write.
         let read = { (try? String(contentsOf: args, encoding: .utf8)) ?? "" }
-        let deadline = Date.now.addingTimeInterval(30)
+        let deadline = Date.now.addingTimeInterval(eventDeadline)
         while !read().hasSuffix("--pane-id 7 ") && Date.now < deadline { usleep(20_000) }
         #expect(read() == "cli --no-auto-start activate-pane --pane-id 7 ")
     }
@@ -707,12 +706,9 @@ struct NoticeClickTests {
         for line in f:
             f.write(b"ok:" + line); f.flush()
         """
-        let server = Process()
-        server.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
-        server.arguments = ["-c", script, path]
-        try server.run()
+        let server = try StandIn.python(script, arguments: [path])
         defer { server.terminate(); try? FileManager.default.removeItem(atPath: path) }
-        let deadline = Date.now.addingTimeInterval(30)
+        let deadline = Date.now.addingTimeInterval(eventDeadline)
         while !FileManager.default.fileExists(atPath: path) && Date.now < deadline { usleep(20_000) }
         #expect(TerminalFocus.send(["switch-project|A", "switch-tab|B"], toSocket: path) == ["ok:switch-project|A", "ok:switch-tab|B"])
         #expect(TerminalFocus.send(["x"], toSocket: "/tmp/nunsseop-missing.sock").isEmpty)
@@ -728,12 +724,9 @@ struct NoticeClickTests {
             c, _ = s.accept(); line = c.makefile("rb").readline()
             c.sendall(b"ok " + line); c.close()
         """
-        let server = Process()
-        server.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
-        server.arguments = ["-c", script, path]
-        try server.run()
+        let server = try StandIn.python(script, arguments: [path])
         defer { server.terminate(); try? FileManager.default.removeItem(atPath: path) }
-        let deadline = Date.now.addingTimeInterval(30)
+        let deadline = Date.now.addingTimeInterval(eventDeadline)
         while !FileManager.default.fileExists(atPath: path) && Date.now < deadline { usleep(20_000) }
         let commands = ["switch-project|A", "switch-worktree|B|A", "switch-tab|C"]
         #expect(MuxyNotice.send(commands, toSocket: path) == commands.map { "ok \($0)" })
@@ -781,7 +774,7 @@ struct TmuxFocusTests {
 
         Tmux.focus(pane: target, socketName: socket)
         var active = ""
-        let deadline = Date.now.addingTimeInterval(30)
+        let deadline = Date.now.addingTimeInterval(eventDeadline)
         repeat {
             active = tmux(socket, "display-message", "-p", "#{window_name} #{pane_id}")?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             if active == "two \(target)" { break }
@@ -817,7 +810,7 @@ struct TmuxSlotTests {
     private func slot(_ socket: String) -> String? { Tmux.slot(in: tmux(socket, "show-hooks", "-g") ?? "") }
 
     private func waitUntil(_ condition: () -> Bool) async {
-        let deadline = Date.now.addingTimeInterval(30)
+        let deadline = Date.now.addingTimeInterval(eventDeadline)
         while !condition() && Date.now < deadline {
             try? await Task.sleep(for: .milliseconds(20))
         }

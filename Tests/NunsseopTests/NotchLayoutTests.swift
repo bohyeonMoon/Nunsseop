@@ -136,7 +136,7 @@ struct IdleEarWidthTests {
         var fired = false
         let watching = NotchViewModel.dayChanges.sink { fired = true }
         NotificationCenter.default.post(name: .NSCalendarDayChanged, object: nil)
-        let deadline = Date.now.addingTimeInterval(30)
+        let deadline = Date.now.addingTimeInterval(eventDeadline)
         while !fired && Date.now < deadline { try? await Task.sleep(for: .milliseconds(10)) }
         watching.cancel()
         #expect(fired)

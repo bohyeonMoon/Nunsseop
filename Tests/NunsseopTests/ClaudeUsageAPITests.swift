@@ -138,12 +138,8 @@ struct ClaudeUsageAPITests {
         print(first.server_port, flush=True)
         first.serve_forever()
         """
-        let server = Process()
-        server.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
-        server.arguments = ["-c", script, log]
         let output = Pipe()
-        server.standardOutput = output
-        try server.run()
+        let server = try StandIn.python(script, arguments: [log], output: output)
         defer { server.terminate(); try? FileManager.default.removeItem(atPath: log) }
         let line = String(decoding: output.fileHandleForReading.availableData, as: UTF8.self)
         let port = try #require(Int(line.trimmingCharacters(in: .whitespacesAndNewlines)))

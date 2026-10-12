@@ -24,10 +24,14 @@ jobs:
           if grep -q "warning:" build.log; then grep "warning:" build.log | sort -u; exit 1; fi
       # Two passes that never overlap: the exhaustive sweeps (all of Unicode, thousands of glyphs) use every core of the
       # runner, and the tests that wait for a real event with a deadline time out beside them.
+      # Each step takes about two minutes. scripts/test.sh ends a pass that hangs after ten minutes, with a sample of it; the timeout of
+      # the step is only for the script itself hanging, and keeps a hang from taking the whole 30 minutes of the job.
       - name: Test
+        timeout-minutes: 15
         run: ./scripts/test.sh
       # A second run catches a test that passes only sometimes.
       - name: Test again
+        timeout-minutes: 15
         run: ./scripts/test.sh
 
   bundle:

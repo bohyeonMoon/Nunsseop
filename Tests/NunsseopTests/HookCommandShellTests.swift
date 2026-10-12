@@ -49,6 +49,7 @@ private struct ShellRun {
         let input = Pipe(), output = Pipe()
         process.standardInput = input
         process.standardOutput = output
+        process.standardError = FileHandle.nullDevice
         try process.run()
         input.fileHandleForWriting.write(Data(stdin.utf8))
         try input.fileHandleForWriting.close()

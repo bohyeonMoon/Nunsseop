@@ -49,7 +49,7 @@ struct PermissionServerTests {
         let nonce = PermissionTestServer.nonce()
         client.send(server.request(body: PermissionTestServer.hookInput(suggestions: [PermissionTestServer.addRules]), nonce: nonce))
         await eventually { server.events.prompts.count == 1 }
-        server.server.permissions.answer(server.events.prompts[0].id, .always)
+        server.server.permissions.answer(try #require(server.events.prompts.first).id, .always)
         let answer = parts(await client.read(timeout: 5))
         #expect(answer.status == "HTTP/1.1 200 OK")
         #expect(answer.decision == (try decisionText(.always, suggestion: PermissionTestServer.addRules)))
@@ -63,7 +63,7 @@ struct PermissionServerTests {
         let client = try RawClient(port: server.port)
         client.send(server.request(body: PermissionTestServer.hookInput(suggestions: [PermissionTestServer.setMode])))
         await eventually { server.events.prompts.count == 1 }
-        let prompt = server.events.prompts[0]
+        let prompt = try #require(server.events.prompts.first)
         #expect(prompt.grant == nil)
         server.server.permissions.answer(prompt.id, .always)
         // Nothing allows more than was offered: the connection closes without an answer, and the terminal asks.
@@ -113,7 +113,7 @@ struct PermissionServerTests {
         second.send(request)
         #expect(await second.status() == "HTTP/1.1 401 Unauthorized")
 
-        server.server.permissions.answer(server.events.prompts[0].id, .deny)
+        server.server.permissions.answer(try #require(server.events.prompts.first).id, .deny)
         #expect(parts(await first.read(timeout: 5)).status == "HTTP/1.1 200 OK")
         let third = try RawClient(port: server.port)
         third.send(request)
@@ -161,7 +161,7 @@ struct PermissionServerTests {
                                       stdin: PermissionTestServer.hookInput(input: ["command": "echo marker-7c1e"]), writesNothing: true)
         await eventually { server.events.prompts.count == 1 }
         #expect(server.events.prompts.first?.detail == "echo marker-7c1e")
-        server.server.permissions.answer(server.events.prompts[0].id, .allow)
+        server.server.permissions.answer(try #require(server.events.prompts.first).id, .allow)
         let result = try #require(await process.finish())
         #expect(result.stdout == (try decisionText(.allow)))
         #expect(files(under: server.home.url) == ["Library/Application Support/Nunsseop/notify-token"])
@@ -201,7 +201,8 @@ struct PermissionServerTests {
         await eventually { server.events.prompts.count == 1 }
         client.close()
         await eventually { !server.events.goneIDs.isEmpty }
-        #expect(server.events.goneIDs == [server.events.prompts[0].id])
+        let first = try #require(server.events.prompts.first)
+        #expect(server.events.goneIDs == [first.id])
     }
 
     @Test func aPromptNobodyAnswersEndsBeforeTheHooksOwnTimeout() async throws {
@@ -212,7 +213,8 @@ struct PermissionServerTests {
         await eventually { !server.events.goneIDs.isEmpty }
         let result = try #require(await process.finish())
         #expect(result.stdout == "" && result.status == 0)
-        #expect(server.events.goneIDs == [server.events.prompts[0].id])
+        let first = try #require(server.events.prompts.first)
+        #expect(server.events.goneIDs == [first.id])
     }
 
     @Test func stoppingTheServerOrTurningTheFeatureOffLetsEveryHookGo() async throws {
@@ -240,7 +242,7 @@ struct PermissionServerTests {
         // Other connections are dropped after 5 s of saying nothing; no condition marks the absence of that drop.
         try await Task.sleep(for: .seconds(6.5))
         #expect(server.events.goneIDs.isEmpty)
-        server.server.permissions.answer(server.events.prompts[0].id, .allow)
+        server.server.permissions.answer(try #require(server.events.prompts.first).id, .allow)
         #expect(parts(await client.read(timeout: 5)).status == "HTTP/1.1 200 OK")
     }
 
@@ -318,7 +320,7 @@ struct PermissionServerTests {
         #expect(server.events.prompts.count == PermissionGate.maxPending)
 
         // A place frees up when one is answered.
-        server.server.permissions.answer(server.events.prompts[0].id, .deny)
+        server.server.permissions.answer(try #require(server.events.prompts.first).id, .deny)
         _ = await clients[0].read(timeout: 5)
         let next = try RawClient(port: server.port)
         next.send(server.request(body: PermissionTestServer.hookInput()))

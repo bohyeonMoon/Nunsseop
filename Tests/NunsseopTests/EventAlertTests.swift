@@ -240,7 +240,7 @@ struct MeetingNoticeTests {
         // A volume HUD covers it, then goes: the notice comes back, still clickable.
         hud.show(.volume(0.4, muted: false), duration: 0.05)
         #expect(hud.action == nil)
-        let deadline = Date.now.addingTimeInterval(30)
+        let deadline = Date.now.addingTimeInterval(eventDeadline)
         while hud.action == nil && Date.now < deadline {
             try? await Task.sleep(for: .milliseconds(20))
         }

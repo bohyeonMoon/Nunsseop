@@ -209,7 +209,7 @@ struct AgentsBoardFeedTests {
 struct AgentsTabModelTests {
     /// Waits, for at most 30 seconds, until the condition holds.
     private func eventually(_ condition: () -> Bool) async -> Bool {
-        let deadline = Date().addingTimeInterval(30)
+        let deadline = Date().addingTimeInterval(eventDeadline)
         while !condition() {
             guard Date() < deadline else { return false }
             try? await Task.sleep(nanoseconds: 20_000_000)

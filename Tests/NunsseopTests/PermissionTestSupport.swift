@@ -126,10 +126,16 @@ enum ShownScalars {
     }
 }
 
+/// How long a test waits for a real event (a prompt that reaches the main actor, a process answering) before it gives up. A wait stops as
+/// soon as its event comes, so the cap only matters when it doesn't. The main actor carries every test that draws or lays out a view, and on a
+/// busy machine that queue takes most of a minute (about 50 seconds beside 40 busy processes on 11 cores), longer than the 30 seconds this
+/// used to be, which failed the tests that wait behind it.
+let eventDeadline: TimeInterval = 120
+
 /// Waits for `condition`, stopping as soon as it holds; the cap only matters on a slow or busy machine.
 /// It runs on the caller's actor, so a condition may read what that actor owns.
 func eventually(isolation: isolated (any Actor)? = #isolation, _ condition: () -> Bool) async {
-    let deadline = Date.now.addingTimeInterval(30)
+    let deadline = Date.now.addingTimeInterval(eventDeadline)
     while !condition() && Date.now < deadline {
         try? await Task.sleep(for: .milliseconds(20))
     }
@@ -182,7 +188,7 @@ final class PermissionTestServer {
         server.permissions.onGone = { events.remove($0) }
         server.start()
         var bound = server.listeningPort
-        let deadline = Date.now.addingTimeInterval(30)
+        let deadline = Date.now.addingTimeInterval(eventDeadline)
         while bound == nil && Date.now < deadline {
             try await Task.sleep(for: .milliseconds(20))
             bound = server.listeningPort
@@ -363,7 +369,7 @@ final class HookProcess: @unchecked Sendable {
 
     /// Waits for the command to end; nil if it is still running after the cap.
     func finish() async -> (stdout: String, status: Int32)? {
-        let deadline = Date.now.addingTimeInterval(30)
+        let deadline = Date.now.addingTimeInterval(eventDeadline)
         while process.isRunning && Date.now < deadline { try? await Task.sleep(for: .milliseconds(20)) }
         guard !process.isRunning else { return nil }
         // A curl left behind would hold the output open; what was written by then is what counts.
