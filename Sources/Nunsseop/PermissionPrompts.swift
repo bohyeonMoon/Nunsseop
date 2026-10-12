@@ -728,6 +728,9 @@ struct PermissionPrompt: Identifiable, Equatable {
     let panel: PermissionLayout.Measure
     /// The questions of an `AskUserQuestion`, which the card shows in place of `detail` and the three buttons; nil for an approval.
     let asking: Asking?
+    /// The call is Codex's, not Claude Code's: the card says so and offers "Answer in terminal", since Codex shows its own prompt
+    /// only once the hook lets go.
+    let isCodex: Bool
 
     struct Flag: Equatable {
         let text: String
@@ -736,7 +739,7 @@ struct PermissionPrompt: Identifiable, Equatable {
     }
 
     init(id: UUID, title: String, symbol: String, detail: String, flags: [Flag] = [], secondary: String = "", folder: String,
-         grant: Grant?) {
+         grant: Grant?, codex: Bool = false) {
         self.id = id
         self.title = title
         self.symbol = symbol
@@ -746,7 +749,8 @@ struct PermissionPrompt: Identifiable, Equatable {
         self.folder = folder
         self.grant = grant
         asking = nil
-        toolLine = PermissionLayout.titleFits(title, folder: folder) ? "" : "tool: \(title)"
+        isCodex = codex
+        toolLine = PermissionLayout.titleFits(title, folder: folder, codex: codex) ? "" : "tool: \(title)"
         let text = PermissionText.isolated(Self.scrollText(toolLine: toolLine, flags: flags, detail: detail, secondary: secondary))
         card = PermissionLayout.measure(isolatedText: text, grant: grant, place: .card)
         panel = PermissionLayout.measure(isolatedText: text, grant: grant, place: .panel)
@@ -766,6 +770,7 @@ struct PermissionPrompt: Identifiable, Equatable {
         card = PermissionLayout.Measure(scroll: 0, rules: 0, caption: 0)
         panel = card
         self.asking = asking
+        isCodex = false
     }
 
     /// The scrolling text before its lines are isolated: the tool's name if needed, flags, detail and the rest, a line break between.
@@ -827,7 +832,8 @@ struct PermissionPrompt: Identifiable, Equatable {
         guard json["hook_event_name"] as? String == "PermissionRequest",
               let tool = json["tool_name"] as? String, !tool.isEmpty, !terminalOnly.contains(tool) else { return nil }
         let input = json["tool_input"] as? [String: Any] ?? [:]
-        let described = describe(tool: tool, input: input)
+        let codex = isCodex(json)
+        let described = describe(tool: tool, input: input, codex: codex)
         let detail = PermissionText.escape(described.detail, multiline: true)
         let note = PermissionText.escape(described.note, multiline: true)
         let rest = PermissionText.escape(described.secondary, multiline: true)
@@ -843,11 +849,17 @@ struct PermissionPrompt: Identifiable, Equatable {
         }
         let shown = detail.unicodeScalars.count + secondary.unicodeScalars.count + flags.reduce(0) { $0 + $1.text.unicodeScalars.count }
         guard shown <= detailLimit, shownTitle.unicodeScalars.count <= titleLimit else { return nil }
-        let suggestion = addRulesSuggestion(in: json["permission_suggestions"])
+        // Codex takes neither updated permissions nor input from a hook, so it is never offered "Always allow".
+        let suggestion = codex ? nil : addRulesSuggestion(in: json["permission_suggestions"])
         let grant = suggestion.flatMap(grant(from:))
         let prompt = PermissionPrompt(id: UUID(), title: shownTitle, symbol: described.symbol, detail: detail, flags: flags,
-                                      secondary: secondary, folder: folder, grant: grant)
+                                      secondary: secondary, folder: folder, grant: grant, codex: codex)
         return Parsed(prompt: prompt, suggestion: grant == nil ? nil : suggestion)
+    }
+
+    /// Whether the hook input is Codex's: it names the turn, which Claude Code's never does.
+    static func isCodex(_ json: [String: Any]) -> Bool {
+        (json["turn_id"] as? String).map { !$0.isEmpty } ?? false
     }
 
     /// The folder the session runs in, as the card shows it.
@@ -871,7 +883,7 @@ struct PermissionPrompt: Identifiable, Equatable {
     /// A known tool says what it does in plain words, shows the field that says what it acts on and the text it would put
     /// there, and lists every other field it was given; any other tool, or a known one whose field isn't the text it
     /// should be, shows its own name and its whole input.
-    private static func describe(tool: String, input: [String: Any]) -> Described {
+    private static func describe(tool: String, input: [String: Any], codex: Bool) -> Described {
         func label(_ name: String) -> String {
             switch name {
             case "old_string": "old"
@@ -920,21 +932,57 @@ struct PermissionPrompt: Identifiable, Equatable {
             described.secondary = listing(rest).joined(separator: "\n")
             return described
         }
-        let described: Described? = switch tool {
-        case "Bash": known("command", String(localized: "Run a command"), "terminal", flagged: true)
-        case "Edit", "MultiEdit": known("file_path", String(localized: "Edit a file"), "pencil", texts: ["old_string", "new_string"])
-        case "Write": known("file_path", String(localized: "Write a file"), "doc.badge.plus", texts: ["content"])
-        case "NotebookEdit": known("notebook_path", String(localized: "Edit a notebook"), "pencil", texts: ["new_source"])
-        case "Read": known("file_path", String(localized: "Read a file"), "doc.text")
-        case "WebFetch": known("url", String(localized: "Fetch a web page"), "globe")
-        case "WebSearch": known("query", String(localized: "Search the web"), "magnifyingglass")
-        default: nil
+        /// Codex's `apply_patch`: the files its headers name, then the patch itself.
+        func patch() -> Described? {
+            guard let text = input["command"] as? String, !text.isEmpty else { return nil }
+            var rest = input
+            rest["command"] = nil
+            let files = text.components(separatedBy: "\n").compactMap { line -> String? in
+                let line = line.hasSuffix("\r") ? String(line.dropLast()) : line
+                let header = line.unicodeScalars.drop { patchPadding.contains($0) }
+                for (prefix, word) in patchHeaders where header.starts(with: prefix.unicodeScalars) {
+                    return word + String(String.UnicodeScalarView(header.dropFirst(prefix.unicodeScalars.count)))
+                }
+                return nil
+            }
+            var described = Described(title: String(localized: "Edit files"), symbol: "pencil",
+                                      detail: files.isEmpty ? text : files.joined(separator: "\n") + "\npatch:\n" + text)
+            if let note = rest["description"] as? String, !note.isEmpty {
+                described.note = "description: \(note)"
+                rest["description"] = nil
+            }
+            described.secondary = listing(rest).joined(separator: "\n")
+            return described
+        }
+        let described: Described?
+        if codex {
+            described = tool == "Bash" ? known("command", String(localized: "Run a command"), "terminal", flagged: true)
+                : tool == "apply_patch" ? patch() : nil
+        } else {
+            described = switch tool {
+            case "Bash": known("command", String(localized: "Run a command"), "terminal", flagged: true)
+            case "Edit", "MultiEdit": known("file_path", String(localized: "Edit a file"), "pencil", texts: ["old_string", "new_string"])
+            case "Write": known("file_path", String(localized: "Write a file"), "doc.badge.plus", texts: ["content"])
+            case "NotebookEdit": known("notebook_path", String(localized: "Edit a notebook"), "pencil", texts: ["new_source"])
+            case "Read": known("file_path", String(localized: "Read a file"), "doc.text")
+            case "WebFetch": known("url", String(localized: "Fetch a web page"), "globe")
+            case "WebSearch": known("query", String(localized: "Search the web"), "magnifyingglass")
+            default: nil
+            }
         }
         if let described { return described }
         let json = (try? JSONSerialization.data(withJSONObject: input, options: [.sortedKeys, .withoutEscapingSlashes, .prettyPrinted]))
             .flatMap { String(data: $0, encoding: .utf8) } ?? ""
         return Described(title: tool, symbol: "puzzlepiece.extension", detail: input.isEmpty ? "" : json, namesTool: true)
     }
+
+    /// The headers of an `apply_patch` that name a file, and the word each is listed with.
+    private static let patchHeaders = [("*** Add File: ", "add "), ("*** Update File: ", "update "), ("*** Delete File: ", "delete "),
+                                       ("*** Move to: ", "move to ")]
+
+    /// What Codex trims off a patch line before it reads a header: Rust's `char::is_whitespace`.
+    private static let patchPadding = CharacterSet(charactersIn: "\u{9}\u{A}\u{B}\u{C}\u{D}\u{20}\u{85}\u{A0}\u{1680}\u{2028}\u{2029}\u{202F}\u{205F}\u{3000}")
+        .union(CharacterSet(charactersIn: "\u{2000}"..."\u{200A}"))
 
     /// A real JSON `true`.
     private static func isTrue(_ value: Any?) -> Bool {
@@ -1000,6 +1048,14 @@ struct PermissionPrompt: Identifiable, Equatable {
         PermissionPrompt(id: UUID(), title: String(localized: "Run a command"), symbol: "terminal",
                          detail: "npm run build && npm test -- --coverage", folder: "nunsseop-web",
                          grant: Grant(rules: ["Bash(npm run *)"], place: .localSettings))
+    }
+
+    /// `--demo-codex-permission` shows this.
+    static var demoCodex: PermissionPrompt {
+        let body = try! JSONSerialization.data(withJSONObject: [
+            "hook_event_name": "PermissionRequest", "turn_id": "demo", "tool_name": "Bash", "cwd": "/Users/me/nunsseop-web",
+            "tool_input": ["command": "touch /Users/me/nunsseop-web/notes.txt", "description": "May I create notes.txt as requested?"]])
+        return parse(body)!.prompt
     }
 
     /// `--demo-question` shows this: two questions, the second one with several answers.

@@ -38,7 +38,7 @@ struct PermissionInstallTests {
         let events = { (on: Bool) in self.on(on) { self.claude.hooks.map(\.event).filter { $0 == "PermissionRequest" } } }
         #expect(events(true) == ["PermissionRequest"])
         #expect(events(false).isEmpty)
-        #expect(on(true) { NotifyIntegration.codex.hooks.count } == on(false) { NotifyIntegration.codex.hooks.count })
+        #expect(on(true) { NotifyIntegration.codex.hooks.count } == on(false) { NotifyIntegration.codex.hooks.count } + 1)
         #expect(on(true) { NotifyIntegration.gemini.hooks.count } == 1)
     }
 

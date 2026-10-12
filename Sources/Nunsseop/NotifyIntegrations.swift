@@ -48,11 +48,16 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
         return FileManager.default.fileExists(atPath: folder.path)
     }
 
+    /// The tools among `present` whose permission prompts can be answered in the notch; each is explained under the setting.
+    static func askingForPermission(present: Set<NotifyIntegration>) -> Set<NotifyIntegration> {
+        present.intersection([.claudeCode, .codex])
+    }
+
     /// Where Codex reads lifecycle hooks, next to its config. Its notices stay with the notify command in `configURL`.
     var hooksURL: URL { configURL.deletingLastPathComponent().appendingPathComponent("hooks.json") }
 
     /// The hooks Nunsseop keeps in a JSON tool's settings. Claude Code and Codex also report their sessions for the
-    /// agents count; Gemini CLI's event names aren't known well enough for that.
+    /// agents count and ask for permission prompts; Gemini CLI's event names aren't known well enough for that.
     var hooks: JSONHook.Table {
         switch self {
         case .claudeCode:
@@ -64,6 +69,8 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
         case .codex:
             let agent = NotifyServer.agentHookCommand(for: .codex)
             return ["UserPromptSubmit", "PermissionRequest", "Stop", "Interrupt", "SessionEnd"].map { ($0, agent) }
+                // After the agent hooks, as a group of its own: Codex keys its trust of a hook by group and position.
+                + (Self.answersPermissions ? [("PermissionRequest", NotifyServer.permissionHookCommand)] : [])
         default:
             return [("Notification", NotifyServer.hookCommand(title: name))]
         }
@@ -332,28 +339,64 @@ enum JSONHook {
     /// The settings with exactly the hooks in `table`, replacing older ones of Nunsseop's; nil when that's already so.
     static func updating(_ table: Table, in settings: [String: Any]) throws -> [String: Any]? {
         guard !isCurrent(table, in: settings) else { return nil }
-        return try adding(table, to: removing(from: settings))
+        return try patching(table, in: settings) ?? adding(table, to: removing(from: settings))
+    }
+
+    /// The settings with the hooks of `table` that are missing added after the rest, or with the permission hooks taken out when
+    /// `table` has none, and every other group where it was; nil when more than that has to change. Codex keys its trust of a hook
+    /// by the position of its group, so a hook that is already there must not move.
+    private static func patching(_ table: Table, in settings: [String: Any]) throws -> [String: Any]? {
+        let have = counted(entries(in: settings)), keys = entries(of: table), wanted = counted(keys)
+        var seen: [Entry: Int] = [:]
+        let missing = zip(table, keys).filter { _, key in
+            seen[key, default: 0] += 1
+            return seen[key]! > (have[key] ?? 0)
+        }.map(\.0)
+        let surplus = have.filter { $0.value > (wanted[$0.key] ?? 0) }
+        if surplus.isEmpty { return try adding(missing, to: settings) }
+        guard missing.isEmpty, surplus.allSatisfy({ isPermission(command: $0.key.command) }),
+              !table.contains(where: { isPermission(command: $0.command) }) else { return nil }
+        return removing(from: settings) { hook, _ in isPermission(command: (hook as? [String: Any])?["command"] as? String ?? "") }
     }
 
     static func updating(_ command: String, in settings: [String: Any]) throws -> [String: Any]? {
         try updating([(noticeEvent, command)], in: settings)
     }
 
-    /// Whether, across all events, Nunsseop's hooks are exactly the ones in `table`.
-    static func isCurrent(_ table: Table, in settings: [String: Any]) -> Bool {
+    /// A hook of Nunsseop's as it stands in a settings file or a table, for comparing the two.
+    private struct Entry: Hashable {
+        let event: String
+        let matcher: String
+        let command: String
+        let timeout: Int?
+    }
+
+    private static func entries(in settings: [String: Any]) -> [Entry] {
         let events = settings["hooks"] as? [String: Any] ?? [:]
-        let ours = events.flatMap { event, groups in
+        return events.flatMap { event, groups in
             ((groups as? [Any]) ?? []).flatMap { group in
                 let matcher = (group as? [String: Any])?["matcher"] as? String ?? ""
                 return hooks(in: group).filter { isOurs(hook: $0, event: event) }.map { hook in
                     let hook = hook as? [String: Any]
-                    return "\(event)\n\(matcher)\n\(hook?["command"] as? String ?? "")\n\((hook?["timeout"] as? NSNumber)?.stringValue ?? "")"
+                    return Entry(event: event, matcher: matcher, command: hook?["command"] as? String ?? "",
+                                 timeout: (hook?["timeout"] as? NSNumber)?.intValue)
                 }
             }
         }
-        return ours.sorted() == table.map {
-            "\($0.event)\n\(matcher(event: $0.event, command: $0.command) ?? "")\n\($0.command)\n\(timeout(for: $0.command).map(String.init) ?? "")"
-        }.sorted()
+    }
+
+    private static func entries(of table: Table) -> [Entry] {
+        table.map { Entry(event: $0.event, matcher: matcher(event: $0.event, command: $0.command) ?? "", command: $0.command,
+                          timeout: timeout(for: $0.command)) }
+    }
+
+    private static func counted(_ entries: [Entry]) -> [Entry: Int] {
+        Dictionary(entries.map { ($0, 1) }, uniquingKeysWith: +)
+    }
+
+    /// Whether, across all events, Nunsseop's hooks are exactly the ones in `table`.
+    static func isCurrent(_ table: Table, in settings: [String: Any]) -> Bool {
+        counted(entries(in: settings)) == counted(entries(of: table))
     }
 
     static func isCurrent(_ command: String, in settings: [String: Any]) -> Bool {
@@ -391,19 +434,27 @@ enum JSONHook {
     /// entries that aren't objects stay; a group is dropped only when nothing is left in it, and keys only when
     /// they end up empty.
     static func removing(from settings: [String: Any]) -> [String: Any] {
+        removing(from: settings, matching: isOurs(hook:event:))
+    }
+
+    private static func removing(from settings: [String: Any], matching removed: (Any, String) -> Bool) -> [String: Any] {
         var settings = settings
-        guard var events = settings["hooks"] as? [String: Any], holdsAny(in: settings) else { return settings }
+        guard var events = settings["hooks"] as? [String: Any] else { return settings }
+        var changed = false
         for (event, value) in events {
-            guard let groups = value as? [Any], groups.contains(where: { holdsOurs($0, event: event) }) else { continue }
+            guard let groups = value as? [Any],
+                  groups.contains(where: { hooks(in: $0).contains { removed($0, event) } }) else { continue }
+            changed = true
             let kept = groups.compactMap { entry -> Any? in
-                guard var group = entry as? [String: Any], holdsOurs(group, event: event) else { return entry }
-                let others = hooks(in: group).filter { !isOurs(hook: $0, event: event) }
+                guard var group = entry as? [String: Any], hooks(in: group).contains(where: { removed($0, event) }) else { return entry }
+                let others = hooks(in: group).filter { !removed($0, event) }
                 guard !others.isEmpty else { return nil }
                 group["hooks"] = others
                 return group
             }
             events[event] = kept.isEmpty ? nil : kept
         }
+        guard changed else { return settings }
         settings["hooks"] = events.isEmpty ? nil : events
         return settings
     }

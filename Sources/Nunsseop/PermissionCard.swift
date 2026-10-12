@@ -75,10 +75,16 @@ enum PermissionLayout {
     }
     static let titleFont = NSFont.systemFont(ofSize: 11, weight: .semibold)
 
-    /// Whether the title and the folder after it show in full on one line.
-    static func titleFits(_ title: String, folder: String) -> Bool {
+    /// The label that says a call is Codex's, drawn before the title.
+    static let codexTag = "Codex"
+    static let codexTagFont = NSFont.systemFont(ofSize: 10, weight: .semibold)
+    static let codexTagPadding: CGFloat = 5
+
+    /// Whether the title and the folder after it show in full on one line, with the Codex label before them for Codex's calls.
+    static func titleFits(_ title: String, folder: String, codex: Bool = false) -> Bool {
         func width(_ text: String, _ font: NSFont) -> CGFloat { (text as NSString).size(withAttributes: [.font: font]).width }
-        return width(title, titleFont) + (folder.isEmpty ? 0 : 6 + width(folder, NSFont.systemFont(ofSize: 11))) <= titleRoom
+        let tag = codex ? 6 + width(codexTag, codexTagFont) + 2 * codexTagPadding : 0
+        return tag + width(title, titleFont) + (folder.isEmpty ? 0 : 6 + width(folder, NSFont.systemFont(ofSize: 11))) <= titleRoom
     }
 
     /// `isolatedText` is the scrolling text with its lines already isolated, as it is drawn.
@@ -119,6 +125,11 @@ enum PermissionLayout {
         hidden == 1 ? String(localized: "Scroll for the rest: 1 more line") : String(localized: "Scroll for the rest: \(hidden) more lines")
     }
 
+    /// Whether the buttons have a third one, "Always allow" or, for Codex, "Answer in terminal".
+    static func hasThirdButton(_ prompt: PermissionPrompt, _ place: Place) -> Bool {
+        prompt.isCodex || offered(prompt, place) != nil
+    }
+
     /// What the body takes below the top row.
     static func height(of prompt: PermissionPrompt, showsTitle: Bool, stacked: Bool, place: Place) -> CGFloat {
         var parts: [CGFloat] = []
@@ -131,13 +142,13 @@ enum PermissionLayout {
         let grant = offered(prompt, place)
         if grant != nil { parts.append(prompt.measure(place).rules + prompt.measure(place).caption) }
         parts.append(buttonHeight)
-        if grant != nil && stacked { parts.append(buttonHeight) }
+        if hasThirdButton(prompt, place) && stacked { parts.append(buttonHeight) }
         return parts.reduce(0, +) + gap * CGFloat(parts.count - 1) + (stacked ? bottomPad : 0)
     }
 }
 
 /// The question and its answers: what is asked in full, what "Always allow" would add and where, and Deny, Allow and,
-/// when it is offered, Always allow. The buttons ignore clicks while the gate says the card is new.
+/// when it is offered, Always allow; for Codex, which has no "Always allow", "Answer in terminal" instead. The buttons ignore clicks while the gate says the card is new.
 struct PermissionBody: View {
     let prompt: PermissionPrompt
     /// The tool and folder as a line of their own, for a layout whose top row doesn't carry them.
@@ -151,6 +162,7 @@ struct PermissionBody: View {
     var body: some View {
         let visible = PermissionLayout.visibleDetail(prompt, place)
         let grant = PermissionLayout.offered(prompt, place)
+        let third = PermissionLayout.hasThirdButton(prompt, place)
         VStack(alignment: .leading, spacing: PermissionLayout.gap) {
             if showsTitle { PermissionTitle(prompt: prompt) }
             if visible > 0 {
@@ -158,26 +170,31 @@ struct PermissionBody: View {
             }
             if let grant { PermissionGrantNote(grant: grant) }
             HStack(spacing: 6) {
-                pill("Deny", fill: .red.opacity(0.18), text: .red, width: grant != nil && !stacked ? 96 : nil) { answer(.deny) }
-                pill("Allow", fill: .white, text: .black, width: grant != nil && !stacked ? 96 : nil) { answer(.allow) }
-                if grant != nil, !stacked { always }
+                pill("Deny", fill: .red.opacity(0.18), text: .red, width: third && !stacked ? 96 : nil) { answer(.deny) }
+                pill("Allow", fill: .white, text: .black, width: third && !stacked ? 96 : nil) { answer(.allow) }
+                if third, !stacked { thirdButton }
             }
-            if grant != nil, stacked { always }
+            if third, stacked { thirdButton }
         }
         .onAppear { gate.arm() }
     }
 
-    private var always: some View {
-        pill("Always allow", fill: .white.opacity(0.15), text: .white) { answer(.always) }
+    @ViewBuilder private var thirdButton: some View {
+        if prompt.isCodex {
+            pill("Answer in terminal", fill: .white.opacity(0.15), text: .white, shrinks: true) { answer(.terminal) }
+        } else {
+            pill("Always allow", fill: .white.opacity(0.15), text: .white) { answer(.always) }
+        }
     }
 
-    private func pill(_ title: LocalizedStringKey, fill: Color, text: Color, width: CGFloat? = nil,
+    private func pill(_ title: LocalizedStringKey, fill: Color, text: Color, width: CGFloat? = nil, shrinks: Bool = false,
                       action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(text)
                 .lineLimit(1)
+                .minimumScaleFactor(shrinks ? 0.8 : 1)
                 .padding(.horizontal, 10)
                 .frame(width: width)
                 .frame(maxWidth: width == nil ? .infinity : nil, minHeight: PermissionLayout.buttonHeight, maxHeight: PermissionLayout.buttonHeight)
@@ -303,12 +320,21 @@ private struct PermissionGrantNote: View {
     }
 }
 
-/// "Run a command" and the folder the session runs in. A name too long for the line loses its middle, never its end.
+/// "Run a command" and the folder the session runs in, after "Codex" for Codex's calls. A name too long for the line loses
+/// its middle, never its end.
 struct PermissionTitle: View {
     let prompt: PermissionPrompt
 
     var body: some View {
         HStack(spacing: 6) {
+            if prompt.isCodex {
+                Text(verbatim: PermissionLayout.codexTag)
+                    .font(Font(PermissionLayout.codexTagFont))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .padding(.horizontal, PermissionLayout.codexTagPadding)
+                    .background(Capsule().fill(.white.opacity(0.15)))
+                    .fixedSize()
+            }
             Text(verbatim: PermissionText.isolated(prompt.title)).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
                 .truncationMode(PermissionLayout.titleTruncation)
             if !prompt.folder.isEmpty {
