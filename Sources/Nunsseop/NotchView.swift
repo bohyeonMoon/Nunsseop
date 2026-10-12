@@ -108,10 +108,11 @@ struct NotchView: View {
                                 CollapsedActivity(nowPlaying: nowPlaying, timer: model.timer, recorder: model.recorder, downloads: model.downloads,
                                                   privacy: model.settings.privacyIndicator ? model.privacy : nil, call: model.calls.call,
                                                   callMuted: model.callControls.state?.mic == .off,
-                                                  height: notchHeight, earWidth: model.earWidth,
+                                                  height: notchHeight,
                                                   showsMusic: model.settings.collapsedMusic, showsTimer: model.settings.collapsedTimer,
                                                   showsDownloads: model.settings.collapsedDownloads)
-                                .padding(.leading, earLead)
+                                // Sides of different widths shift the shape without hiding the left one.
+                                .padding(.leading, model.hidesLeftEar ? earLead : 0)
                             } else if model.showsIdleEars && !model.sneakPeekInline {
                                 IdleEars(model: model, height: notchHeight)
                                     .padding(.leading, model.idleFits
@@ -172,6 +173,8 @@ struct NotchView: View {
         // Each animation is picked by the state being entered: growing springs overshoot a little, shrinking ones don't.
         .animation(model.isExpanded ? motion.open : motion.close, value: model.isExpanded)
         .animation(model.showsLiveActivity ? motion.earsGrow : motion.earsShrink, value: model.showsLiveActivity)
+        // A clock gaining a digit, a download its percent, or the activity changing what a side holds.
+        .animation(model.liveEarSides == .zero ? motion.earsShrink : motion.earsGrow, value: model.liveEarSides)
         .animation(model.showsSneakPeek ? motion.earsGrow : motion.earsShrink, value: model.showsSneakPeek)
         .animation(model.showsIdleEars ? motion.earsGrow : motion.earsShrink, value: model.showsIdleEars)
         .animation(motion.earsGrow, value: model.inlinePeekWidth)
