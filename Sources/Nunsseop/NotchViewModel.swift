@@ -105,6 +105,7 @@ final class NotchViewModel: ObservableObject {
     let screenshots = ScreenshotWatcher()
     let capsLock = CapsLockWatcher()
     let notifyServer = NotifyServer()
+    let approvals = PermissionBoard()
     let muxy = MuxyWatcher()
     let notices = NoticeLog()
     let cmux = CmuxWatcher()
@@ -150,7 +151,7 @@ final class NotchViewModel: ObservableObject {
 
     /// Whether the eyebrow is faded out right now: hidden, and no HUD, live activity or sneak peek showing. Idle ears do not keep it up.
     var browFaded: Bool {
-        browHidden && !isExpanded && hud.event == nil && !showsLiveActivity && !showsSneakPeek
+        browHidden && !isExpanded && hud.event == nil && approvals.current == nil && !showsLiveActivity && !showsSneakPeek
     }
     private var cancellables: Set<AnyCancellable> = []
     private var sneakPeekWork: DispatchWorkItem?
@@ -160,6 +161,8 @@ final class NotchViewModel: ObservableObject {
     private var clockChangeDue: Date?
 
     static let sneakPeekHeight: CGFloat = 24
+    /// Room for a command and three buttons on a display without a camera, where the shape has no ears to widen it.
+    static let approvalWidth: CGFloat = 380
 
     init(geometry: NotchGeometry, settings: AppSettings) {
         self.geometry = geometry
@@ -235,6 +238,13 @@ final class NotchViewModel: ObservableObject {
         }
         // Claude Code and Codex sessions anywhere, through their hooks; kept only while the count or the tab is shown.
         notifyServer.onAgent = { [agentHooks] in agentHooks.apply($0) }
+        // Claude Code's permission prompts wait here until answered, or until their hook is gone.
+        PermissionLink.connect(board: approvals, gate: notifyServer.permissions, isOn: settings.$permissionPrompts.eraseToAnyPublisher(),
+                               enabled: { AppSettings.load("permissionPrompts", default: true) })
+            .forEach { $0.store(in: &cancellables) }
+        approvals.$prompts
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
         settings.$idleLeft.combineLatest(settings.$idleRight, settings.$agentsTab)
             .map { $0 == .agents || $1 == .agents || $2 }
             .removeDuplicates()
@@ -324,7 +334,9 @@ final class NotchViewModel: ObservableObject {
     var expandedSize: CGSize {
         var width = settings.expandedWidth
         if settings.widenForTabs { width = Self.widened(width, fitting: widthFittingTabs, limit: geometry.maxExpandedWidth) }
-        return CGSize(width: width, height: settings.expandedHeight)
+        // A permission prompt shows its command in full, so it takes all the height the panel has.
+        let height = approvals.current == nil ? settings.expandedHeight : max(settings.expandedHeight, AppSettings.expandedHeightRange.upperBound)
+        return CGSize(width: width, height: height)
     }
 
     /// The saved width, or the width that shows every tab when that is more, but never past the panel.
@@ -440,7 +452,7 @@ final class NotchViewModel: ObservableObject {
 
     /// On a display without a notch every HUD is one line: the symbol beside its text, level bar or percent.
     var hudSingleRow: Bool {
-        guard !geometry.hasNotch, let event = hud.event else { return false }
+        guard !geometry.hasNotch, approvals.current == nil, let event = hud.event else { return false }
         return HUDContent.line(for: event) != nil || HUDContent.compactValueWidth(for: event) != nil
     }
 
@@ -448,7 +460,8 @@ final class NotchViewModel: ObservableObject {
         Self.collapsedSize(base: geometry.collapsedSize, hasNotch: geometry.hasNotch, screenWidth: geometry.screenFrame.width,
                            event: hud.event, showsLiveActivity: showsLiveActivity, liveSides: liveEarSides,
                            idleGrowth: showsIdleEars ? (idleFittedSides.map { $0.left + $0.right } ?? 2 * Self.idleEarWidth) : nil,
-                           showsSneakPeek: showsSneakPeek, inlinePeekWidth: inlinePeekWidth)
+                           showsSneakPeek: showsSneakPeek, inlinePeekWidth: inlinePeekWidth,
+                           approvalHeight: approvals.current.map { PermissionCard.bodyHeight(for: $0, hasNotch: geometry.hasNotch) })
     }
 
     /// The closed shape's size from the display's own (`base`) and what the notch shows. `idleGrowth` is how much the
@@ -456,8 +469,14 @@ final class NotchViewModel: ObservableObject {
     static func collapsedSize(base: CGSize, hasNotch: Bool, screenWidth: CGFloat, event: HUDEvent?,
                               showsLiveActivity: Bool, liveSides: @autoclosure () -> LiveEars.Sides,
                               idleGrowth: @autoclosure () -> CGFloat?, showsSneakPeek: Bool,
-                              inlinePeekWidth: @autoclosure () -> CGFloat) -> CGSize {
+                              inlinePeekWidth: @autoclosure () -> CGFloat, approvalHeight: CGFloat? = nil) -> CGSize {
         var size = base
+        // A permission prompt covers whatever else the closed notch would show: it has buttons to reach.
+        if let approvalHeight {
+            size.width = max(size.width + 2 * hudEarWidth, approvalWidth)
+            size.height += approvalHeight
+            return size
+        }
         if !hasNotch, let event, let value = HUDContent.compactValueWidth(for: event) {
             size.width = max(size.width, 2 * 18 + HUDContent.lineSymbolWidth + HUDContent.lineGap + value)
             return size
@@ -537,7 +556,7 @@ final class NotchViewModel: ObservableObject {
 
     /// On a display without a notch, the idle values size the shape to fit them instead of taking a fixed ear each.
     var idleFits: Bool {
-        !geometry.hasNotch && hud.event == nil && !showsLiveActivity && !showsSneakPeek && showsIdleEars
+        !geometry.hasNotch && hud.event == nil && approvals.current == nil && !showsLiveActivity && !showsSneakPeek && showsIdleEars
     }
 
     private var idleFittedSides: (left: CGFloat, right: CGFloat)? {
@@ -547,11 +566,25 @@ final class NotchViewModel: ObservableObject {
 
     /// The widths the two sides are fitted to: the live activity's while it shows, otherwise the idle values'.
     private var fittedSides: (left: CGFloat, right: CGFloat)? {
-        if showsLiveActivity && hud.event == nil {
-            let sides = liveEarSides
+        Self.fittedSides(prompt: approvals.current != nil, liveShows: showsLiveActivity && hud.event == nil,
+                         live: liveEarSides, idle: idleFittedSides)
+    }
+
+    /// The widths the two sides are fitted to. A permission prompt is a symmetric card that covers the sides, so it
+    /// takes none: the live activity under it must not move the shape sideways.
+    nonisolated static func fittedSides(prompt: Bool, liveShows: Bool, live: @autoclosure () -> LiveEars.Sides,
+                                        idle: @autoclosure () -> (left: CGFloat, right: CGFloat)?) -> (left: CGFloat, right: CGFloat)? {
+        if prompt { return nil }
+        if liveShows {
+            let sides = live()
             return (sides.left, sides.right)
         }
-        return idleFittedSides
+        return idle()
+    }
+
+    /// How far the top row's content starts past the shape's left wall: past the camera when the shape moved right.
+    nonisolated static func earLead(shift: CGFloat, notch: CGFloat) -> CGFloat {
+        shift > 0 ? notch - 6 : 0
     }
 
     /// How far fitted idle values grow the shape on each side: each by its own value, nothing where there is none.
@@ -622,7 +655,7 @@ final class NotchViewModel: ObservableObject {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.browHideWork = nil
-                let idle = !self.isExpanded && !self.pointerOverCollapsed && self.hud.event == nil
+                let idle = !self.isExpanded && !self.pointerOverCollapsed && self.hud.event == nil && self.approvals.current == nil
                     && !self.showsLiveActivity && !self.showsSneakPeek
                 if idle { self.browHidden = true } else { self.resetBrowHide() }
             }

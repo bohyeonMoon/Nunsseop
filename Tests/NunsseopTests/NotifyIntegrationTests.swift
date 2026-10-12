@@ -37,7 +37,7 @@ struct JSONHookTests {
 }
 
 struct AgentHookInstallTests {
-    private let claude = NotifyIntegration.claudeCode.hooks
+    private let claude = NotifyIntegration.$permissionPromptsOverride.withValue(true) { NotifyIntegration.claudeCode.hooks }
     private let events = ["Notification", "UserPromptSubmit", "Stop", "StopFailure", "SessionEnd"]
 
     private func commands(_ settings: [String: Any], _ event: String) -> [[String]] {
@@ -48,13 +48,14 @@ struct AgentHookInstallTests {
 
     @Test func claudeCodeGetsTheNoticeHookAndTheAgentHooks() throws {
         let notice = NotifyServer.hookCommand(title: "Claude Code"), agent = NotifyServer.agentHookCommand
-        // The notice hook, then the agent hook under Notification and the four events.
-        #expect(claude.count == 6)
+        // The notice hook, then the agent hook under Notification and the four events, then the permission hook.
+        #expect(claude.count == 7)
         let settings = try JSONHook.adding(claude, to: [:])
         #expect(JSONHook.isInstalled(in: settings))
         #expect(JSONHook.isCurrent(claude, in: settings))
         #expect(commands(settings, "Notification") == [[notice], [agent]])
         for event in events.dropFirst() { #expect(commands(settings, event) == [[agent]]) }
+        #expect(commands(settings, "PermissionRequest") == [[NotifyServer.permissionHookCommand]])
         #expect(JSONHook.removing(from: settings).isEmpty)
     }
 

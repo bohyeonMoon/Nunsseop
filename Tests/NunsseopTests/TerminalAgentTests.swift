@@ -276,13 +276,18 @@ struct TerminalAgentWatcherTests {
         watcher.start()
         defer { watcher.stop() }
         let cli = temporary("cmux")
-        try "#!/bin/sh\nsleep 30\n".write(to: cli, atomically: true, encoding: .utf8)
+        // A stand-in that stays until the watcher stops it. One that ended on its own, as `sleep 30` did, would be started again by the retry
+        // the watcher is meant to make, and a test held up for more than those 30 s (a busy machine does that) would count the second start.
+        try "#!/bin/sh\nexec sleep 3600\n".write(to: cli, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: cli.path)
         defer { try? FileManager.default.removeItem(at: cli) }
         installed = cli
         let before = watcher.launches
+        // Found on the next retry, and started once...
+        await waitUntil { watcher.launches > before }
+        #expect(watcher.launches == before + 1)
+        // ...then running: a while of retry delays later, no more attempts.
         try await Task.sleep(for: .milliseconds(700))
-        // Found on the next retry, then running: no more attempts.
         #expect(watcher.launches == before + 1)
     }
 
@@ -292,7 +297,7 @@ struct TerminalAgentWatcherTests {
         #!/bin/sh
         if [ "$1" = events ]; then
           echo '{"type":"event","name":"notification.created","category":"notification","payload":{"notification_id":"N1","title":null}}'
-          sleep 30
+          exec sleep 3600
         elif [ "$1" = rpc ]; then
           echo '{"notifications":[{"id":"N1","title":"Pi","subtitle":"","body":"Turn complete","is_read":false}]}'
         fi
@@ -397,11 +402,11 @@ struct TmuxWatcherTests {
         let environment = ["HOME": home.path, "PATH": "\(home.path)/bin:/usr/bin:/bin", "TERM": "xterm"]
         // Names a program could set: braces, commas and ~ must arrive as typed, not expanded by sh.
         let names = ["x{a,claude}", "{z,claude}", "~root", "{1..5}"]
-        #expect(tmux(socket, environment: environment, "-f", "/dev/null", "new-session", "-d", "-s", "work", "-n", names[0], "sleep 60") != nil)
-        for name in names.dropFirst() { _ = tmux(socket, "new-window", "-d", "-t", "work", "-n", name, "sleep 60") }
+        #expect(tmux(socket, environment: environment, "-f", "/dev/null", "new-session", "-d", "-s", "work", "-n", names[0], "sleep 600") != nil)
+        for name in names.dropFirst() { _ = tmux(socket, "new-window", "-d", "-t", "work", "-n", name, "sleep 600") }
         // A split window: which pane rang isn't known, so no agent is named.
         // Windows are targeted by index: tmux reads `{…}` in a target as one of its own tokens.
-        _ = tmux(socket, "split-window", "-d", "-t", "work:2", "sleep 60")
+        _ = tmux(socket, "split-window", "-d", "-t", "work:2", "sleep 600")
 
         let watcher = TmuxWatcher(socketName: socket, scriptURL: home.appendingPathComponent("terminal-notify.sh"))
         watcher.start()
@@ -412,7 +417,7 @@ struct TmuxWatcherTests {
         await waitUntil { Tmux.isHooked(tmux(socket, "show-hooks", "-g") ?? "", command: command) }
         #expect(Tmux.isHooked(tmux(socket, "show-hooks", "-g") ?? "", command: command))
 
-        for index in names.indices { _ = tmux(socket, "respawn-pane", "-k", "-t", "work:\(index).0", "printf '\\a'; sleep 60") }
+        for index in names.indices { _ = tmux(socket, "respawn-pane", "-k", "-t", "work:\(index).0", "printf '\\a'; sleep 600") }
         let bodies = { (try? FileManager.default.contentsOfDirectory(atPath: requests.path))?.filter { $0.hasSuffix(".body") } ?? [] }
         let started = Date()
         await waitUntil { bodies().count >= names.count }
@@ -767,9 +772,9 @@ struct TmuxFocusTests {
             _ = tmux(socket, "kill-server")
             try? FileManager.default.removeItem(atPath: "/private/tmp/tmux-\(getuid())/\(socket)")
         }
-        _ = tmux(socket, "-f", "/dev/null", "new-session", "-d", "-s", "work", "-n", "one", "sleep 60")
-        _ = tmux(socket, "new-window", "-d", "-t", "work", "-n", "two", "sleep 60")
-        _ = tmux(socket, "split-window", "-d", "-t", "work:two", "sleep 60")
+        _ = tmux(socket, "-f", "/dev/null", "new-session", "-d", "-s", "work", "-n", "one", "sleep 600")
+        _ = tmux(socket, "new-window", "-d", "-t", "work", "-n", "two", "sleep 600")
+        _ = tmux(socket, "split-window", "-d", "-t", "work:two", "sleep 600")
         let panes = (tmux(socket, "list-panes", "-t", "work:two", "-F", "#{pane_id}") ?? "").split(separator: "\n").map(String.init)
         let target = try #require(panes.last)
         #expect(tmux(socket, "display-message", "-p", "#{window_name}")?.trimmingCharacters(in: .whitespacesAndNewlines) == "one")
@@ -805,7 +810,7 @@ struct TmuxSlotTests {
             _ = tmux(socket, "kill-server")
             try? FileManager.default.removeItem(atPath: "/private/tmp/tmux-\(getuid())/\(socket)")
         }
-        _ = tmux(socket, "-f", "/dev/null", "new-session", "-d", "-s", "w", "sleep 60")
+        _ = tmux(socket, "-f", "/dev/null", "new-session", "-d", "-s", "w", "sleep 600")
         try await body(socket)
     }
 

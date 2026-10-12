@@ -366,3 +366,28 @@
 "Full access" = "フルアクセス";
 "Connect Claude Code and Codex in Settings › Alerts to see their sessions here" = "設定 › 通知で Claude Code と Codex を接続すると、セッションがここに表示されます";
 "The Agents tab lists their sessions with folder, model, context used and permission mode, read from the tools' own session files on this Mac." = "エージェントタブには、セッションがフォルダ、モデル、使用中のコンテキスト、権限モードとともに表示されます。値はこの Mac にあるツール自身のセッションファイルから読み取ります。";
+
+/* Permission prompts */
+"Answer permission prompts in the notch" = "ノッチで権限の確認に答える";
+"Claude Code's permission prompts also show in the notch, where you can allow or deny them. Answer in the terminal and the notch lets go of it; if Nunsseop isn't running, the terminal asks as before. Works with Claude Code connected above. What a prompt asks is kept in memory only." = "Claude Code の権限の確認がノッチにも表示され、許可または拒否できます。ターミナルで先に答えると、ノッチの表示は消えます。Nunsseop が起動していないときは、これまでどおりターミナルで確認されます。上で Claude Code を接続しておく必要があります。確認の内容はメモリ内にのみ保持されます。";
+"Run a command" = "コマンドを実行";
+"Edit a file" = "ファイルを編集";
+"Write a file" = "ファイルに書き込み";
+"Edit a notebook" = "ノートブックを編集";
+"Read a file" = "ファイルを読み取り";
+"Fetch a web page" = "Web ページを取得";
+"Search the web" = "Web を検索";
+"Allow" = "許可";
+"Deny" = "拒否";
+"Always allow" = "常に許可";
+"Scroll for the rest: %lld more lines" = "続きはスクロール: あと %lld 行";
+"Scroll for the rest: 1 more line" = "続きはスクロール: あと 1 行";
+"Sandbox off" = "サンドボックスはオフ";
+"Runs in the background" = "バックグラウンドで実行";
+"Unusual characters" = "普通でない文字";
+"Always allow saves this %@" = "「常に許可」は、この規則を%@保存します";
+"in this project, just for you" = "このプロジェクトで、あなただけに";
+"in this project" = "このプロジェクトで";
+"everywhere" = "すべての場所で";
+"for this session" = "このセッションのみ";
+"1 of %lld" = "%lld 件中 1 件目";

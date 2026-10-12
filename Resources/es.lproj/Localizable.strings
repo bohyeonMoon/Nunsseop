@@ -366,3 +366,28 @@
 "Full access" = "Acceso total";
 "Connect Claude Code and Codex in Settings › Alerts to see their sessions here" = "Conecta Claude Code y Codex en Ajustes › Avisos para ver aquí sus sesiones";
 "The Agents tab lists their sessions with folder, model, context used and permission mode, read from the tools' own session files on this Mac." = "La pestaña Agentes enumera sus sesiones con carpeta, modelo, contexto usado y modo de permisos, leídos de los archivos de sesión de las propias herramientas en este Mac.";
+
+/* Permission prompts */
+"Answer permission prompts in the notch" = "Responder a las solicitudes de permiso en el notch";
+"Claude Code's permission prompts also show in the notch, where you can allow or deny them. Answer in the terminal and the notch lets go of it; if Nunsseop isn't running, the terminal asks as before. Works with Claude Code connected above. What a prompt asks is kept in memory only." = "Las solicitudes de permiso de Claude Code también aparecen en el notch, donde puedes permitirlas o denegarlas. Si respondes en el terminal, el notch la suelta; si Nunsseop no está en marcha, el terminal pregunta como siempre. Funciona con Claude Code conectado arriba. Lo que pregunta una solicitud se guarda solo en memoria.";
+"Run a command" = "Ejecutar un comando";
+"Edit a file" = "Editar un archivo";
+"Write a file" = "Escribir un archivo";
+"Edit a notebook" = "Editar un cuaderno";
+"Read a file" = "Leer un archivo";
+"Fetch a web page" = "Obtener una página web";
+"Search the web" = "Buscar en la web";
+"Allow" = "Permitir";
+"Deny" = "Denegar";
+"Always allow" = "Permitir siempre";
+"Scroll for the rest: %lld more lines" = "Desplázate para ver el resto: %lld líneas más";
+"Scroll for the rest: 1 more line" = "Desplázate para ver el resto: 1 línea más";
+"Sandbox off" = "Sandbox desactivado";
+"Runs in the background" = "Se ejecuta en segundo plano";
+"Unusual characters" = "Caracteres inusuales";
+"Always allow saves this %@" = "«Permitir siempre» guarda esto %@";
+"in this project, just for you" = "en este proyecto, solo para ti";
+"in this project" = "en este proyecto";
+"everywhere" = "en todas partes";
+"for this session" = "para esta sesión";
+"1 of %lld" = "1 de %lld";

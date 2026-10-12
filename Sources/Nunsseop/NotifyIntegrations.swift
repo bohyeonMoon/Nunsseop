@@ -21,6 +21,14 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
     /// Where tests point the tools' config folders (and, through `NotifyServer.tokenURL`, Application Support).
     @TaskLocal static var homeOverride: URL?
 
+    /// Where tests set whether Claude Code's permission prompts are answered in the notch; otherwise the setting decides.
+    @TaskLocal static var permissionPromptsOverride: Bool?
+
+    /// Read from the defaults, since the hooks are worked out off the main actor.
+    static var answersPermissions: Bool {
+        permissionPromptsOverride ?? AppSettings.load("permissionPrompts", default: true)
+    }
+
     static var home: URL { homeOverride ?? FileManager.default.homeDirectoryForCurrentUser }
 
     /// The file Nunsseop changes or adds.
@@ -51,6 +59,7 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
             let agent = NotifyServer.agentHookCommand
             return [("Notification", NotifyServer.hookCommand(title: name))]
                 + ["Notification", "UserPromptSubmit", "Stop", "StopFailure", "SessionEnd"].map { ($0, agent) }
+                + (Self.answersPermissions ? [("PermissionRequest", NotifyServer.permissionHookCommand)] : [])
         case .codex:
             let agent = NotifyServer.agentHookCommand(for: .codex)
             return ["UserPromptSubmit", "PermissionRequest", "Stop", "Interrupt", "SessionEnd"].map { ($0, agent) }
@@ -226,12 +235,19 @@ enum JSONHook {
 
     private static let noticeEvent = "Notification"
 
-    /// Any of Nunsseop's hooks: the one for the agents count (`/agent`), which is ours under any event, or the
-    /// notice one (`/notify`), which is ours only under Notification. Under another event it's a command the user
-    /// pasted from "Copy command for scripts", and stays.
+    /// Claude Code stops a hook that outlasts this; 10 minutes is its default, and the hook for permission prompts says so outright.
+    static let permissionTimeout = 600
+
+    private static func isPermission(command: String) -> Bool {
+        command.contains("127.0.0.1:\(NotifyServer.port)/permission")
+    }
+
+    /// Any of Nunsseop's hooks: the ones for the agents count (`/agent`) and for permission prompts (`/permission`),
+    /// which are ours under any event, or the notice one (`/notify`), which is ours only under Notification. Under
+    /// another event it's a command the user pasted from "Copy command for scripts", and stays.
     private static func isOurs(hook: Any, event: String) -> Bool {
         guard let command = (hook as? [String: Any])?["command"] as? String else { return false }
-        return command.contains("127.0.0.1:\(NotifyServer.port)/agent")
+        return command.contains("127.0.0.1:\(NotifyServer.port)/agent") || isPermission(command: command)
             || (event == noticeEvent && command.contains("127.0.0.1:\(NotifyServer.port)/notify"))
     }
 
@@ -278,13 +294,20 @@ enum JSONHook {
         let events = settings["hooks"] as? [String: Any] ?? [:]
         let ours = events.flatMap { event, groups in
             ((groups as? [Any]) ?? []).flatMap { hooks(in: $0).filter { isOurs(hook: $0, event: event) } }
-                .map { "\(event)\n\(($0 as? [String: Any])?["command"] as? String ?? "")" }
+                .map { hook in
+                    let hook = hook as? [String: Any]
+                    return "\(event)\n\(hook?["command"] as? String ?? "")\n\((hook?["timeout"] as? NSNumber)?.stringValue ?? "")"
+                }
         }
-        return ours.sorted() == table.map { "\($0.event)\n\($0.command)" }.sorted()
+        return ours.sorted() == table.map { "\($0.event)\n\($0.command)\n\(timeout(for: $0.command).map(String.init) ?? "")" }.sorted()
     }
 
     static func isCurrent(_ command: String, in settings: [String: Any]) -> Bool {
         isCurrent([(noticeEvent, command)], in: settings)
+    }
+
+    private static func timeout(for command: String) -> Int? {
+        isPermission(command: command) ? permissionTimeout : nil
     }
 
     /// The settings with the hooks added next to any hooks already under those events.
@@ -295,7 +318,9 @@ enum JSONHook {
         }
         for (event, command) in table {
             guard var groups = (hooks[event] ?? [Any]()) as? [Any] else { throw NotifyIntegration.IntegrationError.unreadableConfig }
-            groups.append(["hooks": [["type": "command", "command": command]]])
+            var hook: [String: Any] = ["type": "command", "command": command]
+            hook["timeout"] = timeout(for: command)
+            groups.append(["hooks": [hook]])
             hooks[event] = groups
         }
         settings["hooks"] = hooks

@@ -391,3 +391,28 @@
 "Full access" = "전체 액세스";
 "Connect Claude Code and Codex in Settings › Alerts to see their sessions here" = "설정 › 알림에서 Claude Code와 Codex를 연결하면 세션이 여기에 나타납니다";
 "The Agents tab lists their sessions with folder, model, context used and permission mode, read from the tools' own session files on this Mac." = "에이전트 탭에는 세션이 폴더, 모델, 사용한 컨텍스트, 권한 모드와 함께 표시됩니다. 값은 이 Mac에 있는 도구의 세션 파일에서 읽습니다.";
+
+/* Permission prompts */
+"Answer permission prompts in the notch" = "권한 요청에 노치에서 답하기";
+"Claude Code's permission prompts also show in the notch, where you can allow or deny them. Answer in the terminal and the notch lets go of it; if Nunsseop isn't running, the terminal asks as before. Works with Claude Code connected above. What a prompt asks is kept in memory only." = "Claude Code의 권한 요청이 노치에도 표시되어 허용하거나 거부할 수 있습니다. 터미널에서 먼저 답하면 노치의 요청은 사라지고, Nunsseop이 실행 중이 아니면 이전처럼 터미널에서 묻습니다. 위에서 Claude Code를 연결해야 동작합니다. 요청 내용은 메모리에만 보관됩니다.";
+"Run a command" = "명령 실행";
+"Edit a file" = "파일 편집";
+"Write a file" = "파일 쓰기";
+"Edit a notebook" = "노트북 편집";
+"Read a file" = "파일 읽기";
+"Fetch a web page" = "웹 페이지 가져오기";
+"Search the web" = "웹 검색";
+"Allow" = "허용";
+"Deny" = "거부";
+"Always allow" = "항상 허용";
+"Scroll for the rest: %lld more lines" = "나머지는 스크롤: %lld줄 더";
+"Scroll for the rest: 1 more line" = "나머지는 스크롤: 1줄 더";
+"Sandbox off" = "샌드박스 꺼짐";
+"Runs in the background" = "백그라운드에서 실행";
+"Unusual characters" = "확인 필요한 문자";
+"Always allow saves this %@" = "항상 허용은 이 규칙을 %@ 저장합니다";
+"in this project, just for you" = "이 프로젝트에서, 나에게만";
+"in this project" = "이 프로젝트에서";
+"everywhere" = "모든 곳에서";
+"for this session" = "이 세션에서만";
+"1 of %lld" = "%lld개 중 1번째";

@@ -306,6 +306,12 @@ private struct AlertsPane: View {
                     Text("Codex asks you to review Nunsseop's hooks the next time it starts. Trust them (\"Review hooks\" lets you trust only Nunsseop's; \"Trust all and continue\" trusts every tool's new hooks); until then its sessions don't count.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
+                if NotifyIntegration.claudeCode.isPresent {
+                    Toggle("Answer permission prompts in the notch", isOn: $settings.permissionPrompts)
+                        .disabled(!settings.localNotifications)
+                    Text("Claude Code's permission prompts also show in the notch, where you can allow or deny them. Answer in the terminal and the notch lets go of it; if Nunsseop isn't running, the terminal asks as before. Works with Claude Code connected above. What a prompt asks is kept in memory only.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 if let failed {
                     Text("Couldn't change \(failed.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")). Copy the hook command and add it by hand.")
                         .font(.caption).foregroundStyle(.red)
