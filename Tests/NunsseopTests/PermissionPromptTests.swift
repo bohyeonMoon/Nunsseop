@@ -763,9 +763,9 @@ struct PermissionBoardTests {
         let live = HUDEvent.notice(symbol: "bolt", title: "Hi", detail: nil)
         for (base, hasNotch) in [(notch, true), (brow, false)] {
             let plain = NotchViewModel.collapsedSize(base: base, hasNotch: hasNotch, screenWidth: 1440, event: nil, showsLiveActivity: false,
-                                                     earWidth: 38, idleGrowth: nil, showsSneakPeek: false, inlinePeekWidth: 240)
+                                                     liveSides: LiveEars.Sides(left: 38, right: 38), idleGrowth: nil, showsSneakPeek: false, inlinePeekWidth: 240)
             let asked = NotchViewModel.collapsedSize(base: base, hasNotch: hasNotch, screenWidth: 1440, event: live, showsLiveActivity: true,
-                                                     earWidth: 38, idleGrowth: 140, showsSneakPeek: true, inlinePeekWidth: 240,
+                                                     liveSides: LiveEars.Sides(left: 38, right: 38), idleGrowth: 140, showsSneakPeek: true, inlinePeekWidth: 240,
                                                      approvalHeight: 90)
             #expect(asked.height == plain.height + 90)
             #expect(asked.width >= NotchViewModel.approvalWidth)
