@@ -90,7 +90,7 @@ struct AgentHookInstallTests {
     }
 
     @Test func codexGetsTheAgentHooksForItsOwnEventsAndNoNoticeHook() throws {
-        let codex = NotifyIntegration.codex.hooks
+        let codex = NotifyIntegration.$permissionPromptsOverride.withValue(false) { NotifyIntegration.codex.hooks }
         #expect(codex.map(\.event) == ["UserPromptSubmit", "PermissionRequest", "Stop", "Interrupt", "SessionEnd"])
         #expect(codex.allSatisfy { $0.command == NotifyServer.agentHookCommand(for: .codex) })
         #expect(NotifyIntegration.codex.hooksURL.path.hasSuffix("/.codex/hooks.json"))

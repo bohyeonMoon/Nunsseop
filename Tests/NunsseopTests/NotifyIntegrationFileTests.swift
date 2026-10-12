@@ -189,8 +189,12 @@ struct NotifyIntegrationFileTests {
         ((settings["hooks"] as? [String: Any])?[event] as? [[String: Any]]) ?? []
     }
 
+    private func codexHome(permissions answers: Bool, _ body: (URL) throws -> Void) throws {
+        try withTempHome { home in try NotifyIntegration.$permissionPromptsOverride.withValue(answers) { try body(home) } }
+    }
+
     @Test func connectingCodexAddsItsHooksNextToTheOtherToolsAndKeepsTheirs() throws {
-        try withTempHome { home in
+        try codexHome(permissions: false) { home in
             let hooksURL = home.appendingPathComponent(".codex/hooks.json")
             try put("model = \"o3\"\n", at: codex.configURL)
             let others = othersHooks()
@@ -242,13 +246,13 @@ struct NotifyIntegrationFileTests {
     }
 
     @Test func connectingCodexCreatesHooksJSONAndDisconnectingLeavesNoneOfOurs() throws {
-        try withTempHome { home in
+        try codexHome(permissions: true) { home in
             let hooksURL = home.appendingPathComponent(".codex/hooks.json")
             try codex.installNow()
             let settings = try NotifyIntegration.loadJSON(at: hooksURL)
             #expect(JSONHook.isCurrent(codex.hooks, in: settings))
             #expect(!fileManager.fileExists(atPath: backup(of: hooksURL).path))
-            for event in codexEvents { #expect(groups(settings, event).count == 1, "\(event)") }
+            for event in codexEvents { #expect(groups(settings, event).count == (event == "PermissionRequest" ? 2 : 1), "\(event)") }
 
             // Again: nothing is rewritten.
             let installed = bytes(hooksURL), date = modified(hooksURL)

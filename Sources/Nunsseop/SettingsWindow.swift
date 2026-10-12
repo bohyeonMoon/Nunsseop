@@ -393,11 +393,18 @@ private struct AlertsPane: View {
                     Text("Codex asks you to review Nunsseop's hooks the next time it starts. Trust them (\"Review hooks\" lets you trust only Nunsseop's; \"Trust all and continue\" trusts every tool's new hooks); until then its sessions don't count.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                if NotifyIntegration.claudeCode.isPresent {
+                let asking = NotifyIntegration.askingForPermission(present: Set(NotifyIntegration.allCases.filter(\.isPresent)))
+                if !asking.isEmpty {
                     Toggle("Answer permission prompts and questions in the notch", isOn: $settings.permissionPrompts)
                         .disabled(!settings.localNotifications)
-                    Text("Claude Code's permission prompts and questions also show in the notch, where you can allow or deny a prompt and pick the answer to a question. Answer a prompt in the terminal and the notch lets go of it; a question is asked in the terminal once you press “Answer in terminal” in the notch. If Nunsseop isn't running, the terminal asks as before. Works with Claude Code connected above. What a prompt asks is kept in memory only.")
-                        .font(.caption).foregroundStyle(.secondary)
+                    if asking.contains(.claudeCode) {
+                        Text("Claude Code's permission prompts and questions also show in the notch, where you can allow or deny a prompt and pick the answer to a question. Answer a prompt in the terminal and the notch lets go of it; a question is asked in the terminal once you press “Answer in terminal” in the notch. If Nunsseop isn't running, the terminal asks as before. Works with Claude Code connected above. What a prompt asks is kept in memory only.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    if asking.contains(.codex) {
+                        Text("Codex's approvals (commands, file edits, tools) show in the notch too. Codex asks once to trust the new hook: review it in /hooks. While the notch holds an approval, Codex shows no prompt of its own; “Answer in terminal” hands it back.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
                 if let failed {
                     Text("Couldn't change \(failed.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")). Copy the hook command and add it by hand.")

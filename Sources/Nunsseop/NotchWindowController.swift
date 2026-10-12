@@ -201,6 +201,10 @@ final class NotchWindowController {
         if CommandLine.arguments.contains("--demo-permission") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.model.approvals.add(.demo) }
         }
+        // Debug: --demo-codex-permission shows Codex's prompt, which has "Answer in terminal" in place of "Always allow".
+        if CommandLine.arguments.contains("--demo-codex-permission") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.model.approvals.add(.demoCodex) }
+        }
         // Debug: --demo-question shows two questions, the second with several answers; answering only closes the card.
         if CommandLine.arguments.contains("--demo-question") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.model.approvals.add(.demoQuestion) }
