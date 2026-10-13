@@ -13,14 +13,20 @@ import AppKit
 ///
 /// Claude Code's `Stop` comes while a background subagent still runs, and the subagent's `SubagentStop` later. The running
 /// subagents are kept per session (`subagents`): a `Stop` with any left keeps the session working, and the last `SubagentStop`
-/// ends the turn as the `Stop` would have. A subagent that never says it stopped is forgotten `activeWindow` after its start.
+/// ends the turn as the `Stop` would have. A subagent that never says it stopped is forgotten `activeWindow` after its start,
+/// or `backgroundWindow` after the `Stop` or start that came once the turn was over.
 /// Background shell commands send no event, but Claude Code's `Stop` lists everything still running (`background_tasks`, sent
-/// as `X-Background-Tasks`): a count above 0 keeps the session working, and the `Stop` of the turn that follows the
-/// hand-back says the new count, 0 when all are done. That count includes the subagents, so it is the one shown when present.
+/// as `X-Background-Tasks`): a count above 0 keeps the session working for `backgroundWindow` after that `Stop`, and the `Stop`
+/// of the turn that follows the hand-back says the new count, 0 when all are done. That count includes the subagents, so it is
+/// the one shown when present. Only a turn that is over gets the longer window: one that is still running may have been cut
+/// short with Esc, which sends no event, so it keeps `activeWindow`.
 @MainActor
 final class AgentHooks {
     /// How long a session keeps counting as working, or as asking for input, after its last event.
     static let activeWindow: TimeInterval = 20 * 60
+    /// How long a session whose turn is over keeps counting as working while background tasks or subagents still run, with no
+    /// event to say when they end. Less than `AgentBoard.recentWindow`, so the session is still listed while it counts.
+    static let backgroundWindow: TimeInterval = 2 * 60 * 60
     /// How often the processes of the listed sessions are looked at.
     static let livenessInterval: TimeInterval = 60
     let source: String
@@ -45,9 +51,9 @@ final class AgentHooks {
         var since: Date
         /// When it stops counting and is idle.
         var idleFrom: Date?
-        /// The time of its latest event; it goes `AgentBoard.recentWindow` after.
+        /// The time of its latest event; it goes `AgentBoard.recentWindow` after, and never while it still counts as working.
         var lastUsed: Date
-        var expiresAt: Date { lastUsed.addingTimeInterval(AgentBoard.recentWindow) }
+        var expiresAt: Date { max(lastUsed.addingTimeInterval(AgentBoard.recentWindow), idleFrom ?? .distantPast) }
 
         /// What the board shows at `now`: idle from `idleFrom` on, since then.
         func settled(at now: Date) -> (state: AgentBoard.State, finished: Bool, since: Date) {
@@ -107,6 +113,7 @@ final class AgentHooks {
         }
         switch event.action {
         case .working:
+            limitSubagents(id, to: now.addingTimeInterval(Self.activeWindow))
             set(id, .working, idleFrom: later(now.addingTimeInterval(Self.activeWindow), id), event: event, now: now)
         case .needsInput:
             set(id, .waiting, idleFrom: now.addingTimeInterval(Self.activeWindow), event: event, now: now)
@@ -137,7 +144,7 @@ final class AgentHooks {
         case .subagentStarted(let subagent):
             // Only a session already listed: the event carries nothing of the terminal it runs in.
             guard var entry = entries[id] else { break }
-            subagents[id, default: [:]][subagent] = now.addingTimeInterval(Self.activeWindow)
+            subagents[id, default: [:]][subagent] = now.addingTimeInterval(entry.turnOver ? Self.backgroundWindow : Self.activeWindow)
             if entry.state == .working { entry.idleFrom = later(entry.idleFrom, id) }
             entry.lastUsed = now
             entries[id] = entry
@@ -163,9 +170,10 @@ final class AgentHooks {
     private func finish(_ id: String, event: AgentEvent, now: Date) {
         if event.backgroundTasks == 0 { subagents[id] = nil }
         if let tasks = event.backgroundTasks, tasks > 0 {
-            set(id, .working, idleFrom: later(now.addingTimeInterval(Self.activeWindow), id), turnOver: true, stopTasks: tasks,
+            set(id, .working, idleFrom: later(now.addingTimeInterval(Self.backgroundWindow), id), turnOver: true, stopTasks: tasks,
                 event: event, now: now)
         } else if subagents[id] != nil {
+            subagents[id] = subagents[id]?.mapValues { max($0, now.addingTimeInterval(Self.backgroundWindow)) }
             set(id, .working, idleFrom: later(nil, id), turnOver: true, event: event, now: now)
         } else if event.app != nil, event.app == frontmostApp() {
             // Finished in the app that's in front: it's being looked at.
@@ -178,6 +186,12 @@ final class AgentHooks {
     /// `date` or, if later, when the session's last running subagent is forgotten.
     private func later(_ date: Date?, _ id: String) -> Date? {
         [date, subagents[id]?.values.max()].compactMap { $0 }.max()
+    }
+
+    /// Brings the forgetting of a session's subagents forward to `date` at the latest: a turn that is running again has no
+    /// event to say it was cut short, so the longer wait that followed the last `Stop` doesn't carry over.
+    private func limitSubagents(_ id: String, to date: Date) {
+        subagents[id] = subagents[id]?.mapValues { min($0, date) }
     }
 
     /// Forgets the subagents that never said they stopped, and those of a session no longer listed.

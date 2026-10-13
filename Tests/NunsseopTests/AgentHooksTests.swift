@@ -381,16 +381,80 @@ struct AgentHooksTests {
         #expect(board.counts == AgentBoard.Counts(working: 1) && chip(board, 6) == 2)
     }
 
-    @Test func tasksThatNeverReportBackExpireAfterTheActiveWindow() {
+    @Test func tasksThatNeverReportBackExpireAfterTheBackgroundWindow() {
         let (hooks, board) = make()
         hooks.apply(event("a", .working), now: start)
         hooks.apply(event("a", .finished, tasks: 2), now: start.addingTimeInterval(5))
-        board.recount(now: start.addingTimeInterval(19 * 60))
-        #expect(board.counts == AgentBoard.Counts(working: 1) && chip(board, 19 * 60) == 2)
-        let late = start.addingTimeInterval(20 * 60 + 6)
+        for at in [19 * 60, 21 * 60, 119 * 60] as [TimeInterval] {
+            board.recount(now: start.addingTimeInterval(at))
+            #expect(board.counts == AgentBoard.Counts(working: 1) && chip(board, at) == 2)
+        }
+        let late = start.addingTimeInterval(AgentHooks.backgroundWindow + 6)
         board.recount(now: late)
         let row = listed(board, at: late)[0].agent
         #expect(board.counts.isEmpty && row.state == .idle && row.background == 0)
+        // Still listed, as an idle row, until the listing window is over.
+        #expect(AgentHooks.backgroundWindow < AgentBoard.recentWindow)
+        #expect(listed(board, at: start.addingTimeInterval(AgentBoard.recentWindow - 1)).count == 1)
+    }
+
+    @Test func aWorkingTurnWithNoBackgroundTasksStillIdlesAfterTheActiveWindow() {
+        let (hooks, board) = make()
+        hooks.apply(event("a", .working), now: start)
+        board.recount(now: start.addingTimeInterval(AgentHooks.activeWindow - 1))
+        #expect(board.counts == AgentBoard.Counts(working: 1))
+        board.recount(now: start.addingTimeInterval(AgentHooks.activeWindow + 1))
+        #expect(board.counts.isEmpty)
+        // A Stop that lists none, or a count of 0, is no background work either.
+        hooks.apply(event("a", .working), now: start)
+        hooks.apply(event("a", .needsInput), now: start.addingTimeInterval(5))
+        board.recount(now: start.addingTimeInterval(AgentHooks.activeWindow + 6))
+        #expect(board.counts.isEmpty)
+    }
+
+    @Test func aNewTurnAfterAStopWithTasksGoesBackToTheActiveWindow() {
+        let (hooks, board) = make()
+        hooks.apply(event("a", .working), now: start)
+        hooks.apply(self.start("x"), now: start.addingTimeInterval(1))
+        hooks.apply(event("a", .finished, tasks: 2), now: start.addingTimeInterval(5))
+        board.recount(now: start.addingTimeInterval(60 * 60))
+        #expect(board.counts == AgentBoard.Counts(working: 1))
+        // The hand-back turn is cut short with Esc: no event follows, and the long wait of the earlier Stop does not carry over.
+        hooks.apply(event("a", .working), now: start.addingTimeInterval(60 * 60))
+        board.recount(now: start.addingTimeInterval(60 * 60 + AgentHooks.activeWindow - 1))
+        #expect(board.counts == AgentBoard.Counts(working: 1))
+        board.recount(now: start.addingTimeInterval(60 * 60 + AgentHooks.activeWindow + 1))
+        #expect(board.counts.isEmpty)
+    }
+
+    @Test func aNewTurnAfterAStopWithRunningSubagentsDoesNotKeepTheirLongWait() {
+        let (hooks, board) = make()
+        hooks.apply(event("a", .working), now: start)
+        hooks.apply(self.start("x"), now: start.addingTimeInterval(1))
+        // A Stop that lists nothing: the subagent is waited for as long as the background window.
+        hooks.apply(event("a", .finished), now: start.addingTimeInterval(5))
+        board.recount(now: start.addingTimeInterval(60 * 60))
+        #expect(board.counts == AgentBoard.Counts(working: 1))
+        // A turn that runs again and is cut short with Esc sends no event: the subagent's long wait does not carry over.
+        let again = start.addingTimeInterval(60 * 60)
+        hooks.apply(event("a", .working), now: again)
+        board.recount(now: again.addingTimeInterval(AgentHooks.activeWindow - 1))
+        #expect(board.counts == AgentBoard.Counts(working: 1))
+        board.recount(now: again.addingTimeInterval(AgentHooks.activeWindow + 1))
+        #expect(board.counts.isEmpty)
+    }
+
+    @Test func aSubagentStartedAfterTheStopIsWaitedForAsLongAsTheBackgroundWindow() {
+        let (hooks, board) = make()
+        hooks.apply(event("a", .working), now: start)
+        hooks.apply(self.start("x"), now: start.addingTimeInterval(1))
+        hooks.apply(event("a", .finished, tasks: 1), now: start.addingTimeInterval(5))
+        let later = start.addingTimeInterval(90 * 60)
+        hooks.apply(self.start("y"), now: later)
+        board.recount(now: later.addingTimeInterval(AgentHooks.backgroundWindow - 1))
+        #expect(board.counts == AgentBoard.Counts(working: 1))
+        board.recount(now: later.addingTimeInterval(AgentHooks.backgroundWindow + 1))
+        #expect(board.counts.isEmpty)
     }
 
     @Test func theHandBackPromptAndTheSecondStopFollowTheProbedOrder() {
@@ -436,16 +500,18 @@ struct AgentHooksTests {
         #expect(listed(board, at: start.addingTimeInterval(91))[0].agent.background == 0)
     }
 
-    @Test func aSubagentThatNeverStopsIsForgottenAfterTheActiveWindow() {
+    @Test func aSubagentThatNeverStopsIsForgottenAfterTheBackgroundWindowOnceTheTurnIsOver() {
         let (hooks, board) = make()
         hooks.apply(event("a", .working), now: start)
         hooks.apply(self.start("x"), now: start)
         hooks.apply(event("a", .finished), now: start.addingTimeInterval(5))
-        board.recount(now: start.addingTimeInterval(19 * 60))
-        #expect(board.counts == AgentBoard.Counts(working: 1))
-        #expect(listed(board, at: start.addingTimeInterval(19 * 60))[0].agent.background == 1)
+        for at in [19 * 60, 21 * 60, 119 * 60] as [TimeInterval] {
+            board.recount(now: start.addingTimeInterval(at))
+            #expect(board.counts == AgentBoard.Counts(working: 1))
+            #expect(listed(board, at: start.addingTimeInterval(at))[0].agent.background == 1)
+        }
         // Past its window the row is idle by the clock, with no chip, and another event finds the set empty.
-        let late = start.addingTimeInterval(20 * 60 + 1)
+        let late = start.addingTimeInterval(AgentHooks.backgroundWindow + 6)
         board.recount(now: late)
         #expect(board.counts.isEmpty)
         let row = listed(board, at: late)[0].agent
