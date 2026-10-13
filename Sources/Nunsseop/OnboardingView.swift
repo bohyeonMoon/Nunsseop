@@ -107,7 +107,8 @@ struct OnboardingView: View {
     // MARK: Pages
 
     private var page: some View {
-        HStack(alignment: .top, spacing: OnboardingMetrics.rowGap) {
+        // No spacing of the stack's own: it would be added on both sides of the spacer, and the columns would be 8 points too wide.
+        HStack(alignment: .top, spacing: 0) {
             copy.frame(width: OnboardingMetrics.copyWidth, alignment: .topLeading)
             Spacer(minLength: 0)
             visual.frame(width: OnboardingMetrics.visualWidth, alignment: .topLeading)

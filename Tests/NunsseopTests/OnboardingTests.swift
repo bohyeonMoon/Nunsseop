@@ -1,6 +1,7 @@
 import AppKit
 import Carbon.HIToolbox
 import Foundation
+import SwiftUI
 import Testing
 @testable import Nunsseop
 
@@ -710,5 +711,52 @@ struct OnboardingFitTests {
                     "Find apps, files, commands and emoji, and do math."] {
             #expect(said.contains(key), Comment(rawValue: key))
         }
+    }
+}
+
+// MARK: - Drawn
+
+/// The tour drawn offscreen in the notch's content width, on black.
+@MainActor
+struct OnboardingRenderTests {
+    static let size = OnboardingTour.minimumSize
+    static let inset = NotchViewModel.headerInset
+
+    private func rendered(step: Int, tools: [NotifyIntegration]) -> NSBitmapImageRep {
+        withDefaults { defaults in
+            let tour = makeTour(defaults, tools: tools)
+            tour.start()
+            for _ in 0..<step { tour.next() }
+            let view = OnboardingView(tour: tour, settings: .shared, hasNotch: true, bandHeight: OnboardingMetrics.minimumBand)
+                .padding(.horizontal, Self.inset)
+                .padding(.bottom, 16)
+                .frame(width: Self.size.width, height: Self.size.height, alignment: .topLeading)
+                .background(Color.black)
+            return EarRender.pixels(view, width: Self.size.width, height: Self.size.height)
+        }
+    }
+
+    /// The rightmost point in the rows of y (points) that is lit, or nil when nothing is.
+    private func rightEdge(_ rep: NSBitmapImageRep, from top: CGFloat, to bottom: CGFloat) -> CGFloat? {
+        let scale = CGFloat(rep.pixelsWide) / rep.size.width
+        var edge: Int?
+        for y in Int(top * scale)..<Int(bottom * scale) {
+            for x in stride(from: rep.pixelsWide - 1, through: 0, by: -1) {
+                guard let c = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB), c.redComponent > 0.03 || c.blueComponent > 0.03 else { continue }
+                edge = max(edge ?? 0, x)
+                break
+            }
+        }
+        return edge.map { CGFloat($0 + 1) / scale }
+    }
+
+    @Test(arguments: [(1, [NotifyIntegration.claudeCode, .codex]), (2, [.claudeCode, .codex]), (3, [.claudeCode, .codex]),
+                      (3, [.claudeCode]), (3, [NotifyIntegration]())])
+    func theVisualColumnEndsWhereTheHeaderAndTheButtonsEnd(step: Int, tools: [NotifyIntegration]) throws {
+        let rep = rendered(step: step, tools: tools)
+        let margin = Self.size.width - Self.inset
+        let content = OnboardingMetrics.minimumBand + OnboardingMetrics.bandGap
+        let edge = try #require(rightEdge(rep, from: content, to: content + OnboardingMetrics.contentHeight))
+        #expect(edge <= margin + 0.5, Comment(rawValue: "step \(step + 1), \(tools.count) tools: the column ends at \(edge), the buttons at \(margin)"))
     }
 }
