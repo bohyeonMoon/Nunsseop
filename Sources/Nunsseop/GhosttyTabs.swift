@@ -46,6 +46,9 @@ enum Ghostty {
     /// The shortest session name that may tell tabs apart: a shorter one is in too many titles.
     static let shortestName = 4
 
+    /// The name as the scripts take it: itself when long enough to look for in other tabs' titles, else empty.
+    static func usableName(_ name: String?) -> String { name.flatMap { $0.count >= shortestName ? $0 : nil } ?? "" }
+
     /// A folder with `.` and `..` resolved, no repeated or trailing slash and no `/private` before `var`, `tmp` or `etc` (macOS's
     /// symlinks, which one side may spell out and the other not). nil for a path that isn't absolute or holds a control character.
     static func normalized(_ path: String) -> String? {

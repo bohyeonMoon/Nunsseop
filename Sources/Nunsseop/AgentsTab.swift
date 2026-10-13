@@ -3,18 +3,12 @@ import SwiftUI
 
 /// One coding agent session in the Agents tab.
 struct AgentRow: Identifiable, Equatable {
-    /// Where a click goes: the herdr pane, else the terminal app the session runs in. The hooks say nothing about a
-    /// tmux, WezTerm or Muxy pane, so those sessions get their app only.
+    /// Where a click goes when the session's terminal isn't known to be verified: the herdr pane, else the terminal app the session
+    /// runs in (the hook's, else the one found above its process). A verified terminal is gone to by its tab or pane instead (see
+    /// `AgentFocus.plan`).
     enum Target: Equatable {
         case herdr(pane: String, socket: String)
         case app(String)
-
-        func perform() {
-            switch self {
-            case .herdr(let pane, let socket): Herdr.focus(pane: pane, socket: URL(fileURLWithPath: socket))
-            case .app(let id): TerminalFocus.action(app: id, target: nil)?()
-            }
-        }
     }
 
     let id: String
@@ -105,7 +99,7 @@ struct AgentRow: Identifiable, Equatable {
         tokens = transcript?.tokens
         mode = transcript?.mode
         name = transcript?.name
-        target = Self.target(for: agent)
+        target = Self.target(for: agent) ?? Self.bundleID(hostApp).map(Target.app)
         input = agent.input
         pid = agent.pid
         self.inputVerified = inputVerified
@@ -136,6 +130,9 @@ struct AgentRow: Identifiable, Equatable {
         case .muxy, .cmux, .terminalApp, .iterm, .wezterm, .kitty, .ghostty: inputVerified
         }
     }
+
+    /// Whether a click does anything: there is an app or pane to go to, or a verified terminal to select the session's tab in.
+    var focusable: Bool { target != nil || offersInput }
 
     /// Whether text can be sent to the session now: its terminal has an input API and no prompt may be waiting there.
     var acceptsInput: Bool { offersInput && !promptOnTerminal && AgentSend.accepts(state: state, finished: finished) }
@@ -217,6 +214,12 @@ struct AgentRow: Identifiable, Equatable {
         return AgentTranscripts.Key(kind: kind, session: session)
     }
 
+    /// The app found above a process, if it is a bundle id (`AgentTargetCheck.hostApp` gives an app folder's name when the bundle is unreadable).
+    static func bundleID(_ app: String?) -> String? {
+        guard let app, app.contains("."), !app.contains(" ") else { return nil }
+        return app
+    }
+
     static func target(for agent: AgentBoard.Agent) -> Target? {
         if let pane = agent.pane, let socket = agent.socket { return .herdr(pane: pane, socket: socket) }
         return agent.app.map(Target.app)
@@ -286,6 +289,7 @@ final class AgentsTabModel: ObservableObject {
     private let targets: AgentTargetCheck
     private let environments: ProcessEnvironment
     private let scripts: AppleScriptRunner
+    private let focuser: AgentFocuser
     private var transcripts = AgentTranscripts()
     private var loading = false
     private var changedWhileLoading = false
@@ -335,10 +339,11 @@ final class AgentsTabModel: ObservableObject {
     /// - targets: how a session's terminal is verified; tests give it a made-up process tree.
     /// - environments: how the environment of a session's process is read; tests give it made-up ones.
     /// - scripts: what looks at Ghostty's tabs (the sends go through `sender`); tests give it one that answers from a made-up list.
+    /// - focuser: what a click on a row does to the terminals; by default the real tools, with the AppleScript steps through `scripts`.
     init(board: AgentBoard, home: @escaping () -> URL = { NotifyIntegration.home }, isConnected: (() -> Bool)? = nil,
          scratch: [String] = RecentConversations.scratch, onResume: @escaping (RecentConversation) -> Void = Resume.inChosenTerminal,
          sender: AgentSender = .live, clis: @escaping () -> TerminalCLIs = { .live }, targets: AgentTargetCheck = .live,
-         environments: ProcessEnvironment = .live, scripts: AppleScriptRunner = .live) {
+         environments: ProcessEnvironment = .live, scripts: AppleScriptRunner = .live, focuser: AgentFocuser? = nil) {
         self.board = board
         self.home = home
         self.isConnected = isConnected
@@ -349,6 +354,7 @@ final class AgentsTabModel: ObservableObject {
         self.targets = targets
         self.environments = environments
         self.scripts = scripts
+        self.focuser = focuser ?? .live(scripts: scripts)
         connected = checkConnected()
         #if DEBUG
         if CommandLine.arguments.contains("--demo-agents") {
@@ -570,6 +576,37 @@ final class AgentsTabModel: ObservableObject {
         return deliver(text, submit: false, to: row)
     }
 
+    /// Goes to the session: its tab or pane when its terminal is verified, else its app (see `AgentFocus.plan`). The calls run off the
+    /// main thread, after looking once more at where the session's process runs; a terminal that no longer holds it is not focused.
+    func focus(_ row: AgentRow) {
+        guard let current = rows.first(where: { $0.id == row.id }) else { return }
+        notes[row.id] = nil
+        switch AgentFocus.plan(for: current, clis: clis(), ghostty: ghosttyPicks[row.id]) {
+        case .herdr(let pane, let socket): focuser.herdr(pane, socket)
+        case .app(let app): focuser.activate(app)
+        case .nothing: break
+        case .terminal(let steps, let app):
+            guard let input = current.input else { return }
+            let focuser = focuser, targets = targets, pid = current.pid, id = row.id
+            let others = Set(board.entries(now: asOf).compactMap { $0.agent.pid })
+            Task.detached(priority: .userInitiated) { [weak self] in
+                let outcome = targets.hosted(input, pid: pid, others: others) ? focuser.run(steps) : .failed
+                await self?.focused(outcome, id, app)
+            }
+        }
+    }
+
+    /// The app comes forward whatever the calls came to. One that failed means the session may be gone, so its target is verified again;
+    /// one macOS refused leaves the note that says where to allow it.
+    private func focused(_ outcome: SendOutcome, _ id: String, _ app: String) {
+        focuser.activate(app)
+        switch outcome {
+        case .sent: return
+        case .failed: verifyTargets(board.entries(now: asOf))
+        case .notAllowed(let denied): note(TerminalScripts.notAllowedNote(denied), for: id)
+        }
+    }
+
     /// Checks the session as it is now, not as the row was drawn, and sends off the main thread, after looking once more at where its
     /// process runs.
     private func deliver(_ text: String, submit: Bool, to row: AgentRow) -> Bool {
@@ -755,24 +792,29 @@ private struct AgentRowView: View {
                 .contentShape(Rectangle())
                 .onTapGesture {
                     model.cancelCompose()
-                    row.target?.perform()
+                    model.focus(row)
                 }
             if model.composing == row.id {
                 AgentComposer(row: row, model: model)
                     .padding(.horizontal, 10).padding(.bottom, 6)
             }
         }
-        .surface(RoundedRectangle(cornerRadius: 10), opacity: (hovering && row.target != nil) || dropTargeted ? 0.14 : 0.08)
+        .surface(RoundedRectangle(cornerRadius: 10), opacity: (hovering && row.focusable) || dropTargeted ? 0.14 : 0.08)
         .overlay {
             if dropTargeted { RoundedRectangle(cornerRadius: 10).stroke(Color.accentColor.opacity(0.9), lineWidth: 1.5) }
         }
         .onHover { hovering = $0 }
+        // The hand shows only where a click does something.
+        .onChange(of: hovering && row.focusable) { _, pointing in
+            if pointing { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+        }
+        .onDisappear { if hovering && row.focusable { NSCursor.pop() } }
         // Only a session that takes input accepts files; otherwise the drop isn't taken at all.
         .onDrop(of: row.acceptsInput ? [.fileURL] : [], isTargeted: $dropTargeted) { providers in
             ShelfSharing.loadURLs(from: providers) { model.send(files: $0, to: row) }
             return true
         }
-        .help(row.path.map { Text(verbatim: $0) } ?? (row.target == nil ? Text(verbatim: "") : Text("Go to where it came from")))
+        .help(row.path.map { Text(verbatim: $0) } ?? (row.focusable ? Text("Go to where it came from") : Text(verbatim: "")))
     }
 
     private var content: some View {

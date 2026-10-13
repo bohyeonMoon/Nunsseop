@@ -96,6 +96,9 @@ enum AgentStep: Equatable {
     case runInput(URL, [String], stdin: String)
     /// Calls a handler of an AppleScript in a terminal app, which takes the text as an argument. Passes when it answers `expecting`.
     case script(AppleScriptCall)
+    /// Switches Muxy to the project of a session: looks the session up in `muxy session list`, then sends `switch-project` to the app's
+    /// socket. Passes when the list holds the session with a project id and the socket answers.
+    case muxyProject(URL, session: String, socket: String)
 }
 
 /// The command-line tools of the terminals that take input; nil for one that isn't installed.
@@ -208,7 +211,7 @@ enum AgentSend {
             // and types only if it still holds the folder and a Claude title (and the name, when that told it from the others). The
             // name goes in whenever it is long enough to look for in other tabs; `usesName` says whether this tab was found by it.
             guard let ghostty, let folder = Ghostty.normalized(cwd) else { return nil }
-            let usable = name.flatMap { $0.count >= Ghostty.shortestName ? $0 : nil } ?? ""
+            let usable = Ghostty.usableName(name)
             return [.script(TerminalScripts.ghosttySend(terminal: ghostty.terminal, folders: Ghostty.spellings(of: folder), name: usable,
                                                         needsName: ghostty.usesName && !usable.isEmpty, text: text, submit: submit))]
         }
@@ -251,6 +254,10 @@ enum AgentSend {
                 guard let reply = TerminalFocus.send([request], toSocket: path).first else { return false }
                 return ((try? JSONSerialization.jsonObject(with: Data(reply.utf8))) as? [String: Any]).map { $0["error"] == nil } ?? false
             } ? .sent : .failed
+        case .muxyProject(let cli, let session, let socket):
+            guard let listing = TerminalFocus.run(cli, ["session", "list"], environment: environment),
+                  let project = AgentFocus.muxyProject(of: session, in: listing) else { return .failed }
+            return MuxyNotice.send(["switch-project|\(project)"], toSocket: socket).isEmpty ? .failed : .sent
         case .script(let call):
             switch scripts.run(call) {
             case .value(let answer): return answer == call.expecting ? .sent : .failed

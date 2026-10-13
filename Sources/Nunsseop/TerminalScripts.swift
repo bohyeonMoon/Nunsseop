@@ -120,6 +120,57 @@ enum TerminalScripts {
             """, handler: "send_text", arguments: [tty, text, submit ? "1" : "0"], expecting: "sent", launches: false)
     }
 
+    /// Brings the tab on that device forward: selected in its window, the window raised (and restored when minimized). "missing" when no tab has it.
+    static func terminalFocus(tty: String) -> AppleScriptCall {
+        AppleScriptCall(bundleID: terminalID, source: """
+            on focus_tab(theTTY)
+            	tell application id "\(terminalID)"
+            		repeat with wi from 1 to count of windows
+            			set w to window wi
+            			repeat with ti from 1 to count of tabs of w
+            				set t to tab ti of w
+            				if tty of t is theTTY then
+            					if miniaturized of w then set miniaturized of w to false
+            					set selected of t to true
+            					set index of w to 1
+            					activate
+            					return "focused"
+            				end if
+            			end repeat
+            		end repeat
+            	end tell
+            	return "missing"
+            end focus_tab
+            """, handler: "focus_tab", arguments: [tty], expecting: "focused", launches: false)
+    }
+
+    /// Brings the session on that device forward: its window, tab and pane selected. "missing" when no session has it.
+    static func itermFocus(tty: String) -> AppleScriptCall {
+        AppleScriptCall(bundleID: itermID, source: """
+            on focus_session(theTTY)
+            	tell application id "\(itermID)"
+            		repeat with wi from 1 to count of windows
+            			set w to window wi
+            			repeat with ti from 1 to count of tabs of w
+            				set t to tab ti of w
+            				repeat with si from 1 to count of sessions of t
+            					set s to session si of t
+            					if tty of s is theTTY then
+            						tell w to select
+            						tell t to select
+            						tell s to select
+            						activate
+            						return "focused"
+            					end if
+            				end repeat
+            			end repeat
+            		end repeat
+            	end tell
+            	return "missing"
+            end focus_session
+            """, handler: "focus_session", arguments: [tty], expecting: "focused", launches: false)
+    }
+
     /// A new tab of the front iTerm2 window running the command, or a window of its own when there is none.
     static func itermTab(command: String) -> AppleScriptCall {
         AppleScriptCall(bundleID: itermID, source: """
@@ -190,8 +241,28 @@ enum TerminalScripts {
     /// only one in the folder yet another tab's Claude title holds `name` and its own doesn't (see `Ghostty.resolve`). "gone" when it
     /// no longer fits or isn't there, "ambiguous" when another fits too; nothing is typed then.
     static func ghosttySend(terminal: String, folders: [String], name: String, needsName: Bool, text: String, submit: Bool) -> AppleScriptCall {
-        AppleScriptCall(bundleID: ghosttyID, source: """
-            on send_text(theID, theFolders, theName, theNeedsName, theText, withReturn)
+        AppleScriptCall(bundleID: ghosttyID, source: ghosttyChecked(handler: "send_text", parameters: "theID, theFolders, theName, theNeedsName, theText, withReturn", action: """
+            \t\t\tinput text theText to found
+            \t\t\tif withReturn is "1" then send key "enter" to found
+            """), handler: "send_text",
+                          arguments: [terminal, folders.joined(separator: "\n"), name, needsName ? "1" : "0", text, submit ? "1" : "0"],
+                          expecting: "ok", launches: false)
+    }
+
+    /// Brings the terminal with that id forward (its tab selected, its window raised), after the same check as `ghosttySend`: nothing is
+    /// focused when it is "gone" or "ambiguous".
+    static func ghosttyFocus(terminal: String, folders: [String], name: String, needsName: Bool) -> AppleScriptCall {
+        AppleScriptCall(bundleID: ghosttyID, source: ghosttyChecked(handler: "focus_terminal", parameters: "theID, theFolders, theName, theNeedsName", action: """
+            \t\t\tfocus found
+            \t\t\tactivate
+            """), handler: "focus_terminal",
+                          arguments: [terminal, folders.joined(separator: "\n"), name, needsName ? "1" : "0"], expecting: "ok", launches: false)
+    }
+
+    /// The handler that finds the terminal again and runs `action` (lines inside the `tell`) on `found` only if it is the one picked.
+    private static func ghosttyChecked(handler: String, parameters: String, action: String) -> String {
+        """
+            on \(handler)(\(parameters))
             	set acceptedFolders to paragraphs of theFolders
             	with timeout of \(ghosttyTimeout + 2) seconds
             		tell application id "\(ghosttyID)"
@@ -226,12 +297,11 @@ enum TerminalScripts {
             				if inFolderCount is not 1 then return "ambiguous"
             				if not foundNamed and elsewhereNamed > 0 then return "ambiguous"
             			end if
-            			input text theText to found
-            			if withReturn is "1" then send key "enter" to found
+            \(action)
             		end tell
             	end timeout
             	return "ok"
-            end send_text
+            end \(handler)
             on text_of(v)
             	if v is missing value then return ""
             	return v as text
@@ -247,9 +317,7 @@ enum TerminalScripts {
             		return ""
             	end try
             end claude_title
-            """, handler: "send_text",
-                          arguments: [terminal, folders.joined(separator: "\n"), name, needsName ? "1" : "0", text, submit ? "1" : "0"],
-                          expecting: "ok", launches: false)
+            """
     }
 
     /// The name of a terminal app for a note, by bundle id.
