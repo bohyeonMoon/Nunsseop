@@ -23,6 +23,16 @@ struct AgentsTabTests {
         #expect(row.tokensLabel == "84k")
     }
 
+    @Test func aWorkingRowWhoseTurnEndedSaysHowManyTasksRunInTheBackground() {
+        let row = { (state: AgentBoard.State, count: Int) in self.rowFor(AgentBoard.Agent(state: state, tool: "claude", background: count)) }
+        #expect(row(.working, 3).backgroundChip == "Background · 3 tasks")
+        #expect(row(.working, 1).backgroundChip == "Background · 1 task")
+        // Nothing to say without a background task, and nothing once the row is no longer working.
+        #expect(row(.working, 0).backgroundChip == nil && row(.idle, 2).backgroundChip == nil && row(.waiting, 2).backgroundChip == nil)
+        // The meta line is the same; the chip is apart from it.
+        #expect(row(.working, 3).meta == row(.working, 0).meta)
+    }
+
     @Test func aNameIsTheTitleAndTheFolderMovesIntoTheDetails() {
         let transcript = AgentTranscript(cwd: "/Users/me/Projects/nunsseop", model: "claude-opus-5-5", tokens: 84_300, mode: .plan, name: "Agents tab")
         let row = rowFor(AgentBoard.Agent(state: .working, tool: "claude"), transcript)
@@ -167,7 +177,7 @@ struct AgentsTabTests {
         let resources = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Resources")
         let keys = ["Waiting for your answer", "Working", "%lld waiting", "%lld working", "%lld idle", "Drop files on a row", "Select", "Terminal", "To",
-                    "Message to %@", "Context %@ of %@", "Resume"]
+                    "Message to %@", "Context %@ of %@", "Resume", "Background · %lld task", "Background · %lld tasks"]
         for language in ["de", "es", "fr", "ja", "ko", "zh-Hans"] {
             let table = try #require(NSDictionary(contentsOfFile: resources.appendingPathComponent("\(language).lproj/Localizable.strings").path), Comment(rawValue: language))
             for key in keys {
@@ -177,6 +187,9 @@ struct AgentsTabTests {
                 if !["Terminal", "Working"].contains(key) { #expect(text != key, Comment(rawValue: "\(language): \(key)")) }
             }
             for key in ["%lld waiting", "%lld working", "%lld idle"] {
+                #expect((table[key] as? String)?.contains("%lld") == true, Comment(rawValue: "\(language): \(key)"))
+            }
+            for key in ["Background · %lld task", "Background · %lld tasks"] {
                 #expect((table[key] as? String)?.contains("%lld") == true, Comment(rawValue: "\(language): \(key)"))
             }
             #expect((table["Context %@ of %@"] as? String)?.components(separatedBy: "%@").count == 3, Comment(rawValue: language))

@@ -429,6 +429,8 @@
 "Working" = "工作中";
 "%lld waiting" = "%lld 个等待中";
 "%lld working" = "%lld 个运行中";
+"Background · %lld task" = "后台 · %lld 个任务";
+"Background · %lld tasks" = "后台 · %lld 个任务";
 "%lld idle" = "%lld 个空闲";
 "Drop files on a row" = "将文件拖到某一行上";
 "Select" = "选择";

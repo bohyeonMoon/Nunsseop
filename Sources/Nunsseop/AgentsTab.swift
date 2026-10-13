@@ -15,6 +15,8 @@ struct AgentRow: Identifiable, Equatable {
     let tool: String
     let state: AgentBoard.State
     let finished: Bool
+    /// The background tasks still running after the turn's end, for the "Background · 3 tasks" chip.
+    let background: Int
     let since: Date?
     let path: String?
     let model: String?
@@ -93,6 +95,7 @@ struct AgentRow: Identifiable, Equatable {
         tool = Self.toolName(agent.tool)
         state = agent.state
         finished = agent.finished
+        background = agent.background
         since = agent.since
         path = [agent.cwd, transcript?.cwd].lazy.compactMap { $0 }.first { !$0.isEmpty }
         model = transcript?.model
@@ -175,6 +178,12 @@ struct AgentRow: Identifiable, Equatable {
     }
 
     var meta: String { metaParts.joined(separator: " · ") }
+
+    /// "Background · 3 tasks" while the turn is over and background tasks keep the session working.
+    var backgroundChip: String? {
+        guard state == .working, background > 0 else { return nil }
+        return background == 1 ? String(localized: "Background · \(background) task") : String(localized: "Background · \(background) tasks")
+    }
 
     /// The chip after the meta when the mode isn't the default; `warns` when nothing asks before it acts.
     var modeChip: (text: String, warns: Bool)? { mode?.label.map { ($0, mode?.warns ?? false) } }
@@ -1084,6 +1093,12 @@ private struct AgentRowView: View {
                 Text(verbatim: row.meta).font(.system(size: 11)).foregroundStyle(.white.opacity(0.6))
                     .lineLimit(1).truncationMode(.tail)
                     .help(Text(verbatim: row.meta))
+                if let background = row.backgroundChip {
+                    Text(verbatim: background).font(.system(size: 11, weight: .medium)).foregroundStyle(Ink.working)
+                        .padding(.horizontal, 8).frame(height: 18)
+                        .background(Capsule().strokeBorder(Ink.working.opacity(0.7), lineWidth: 0.75))
+                        .fixedSize().layoutPriority(1)
+                }
                 if let chip = row.modeChip {
                     Text(verbatim: chip.text).font(.system(size: 11, weight: .medium))
                         .foregroundStyle(chip.warns ? Ink.waiting : .white.opacity(0.7))

@@ -99,6 +99,10 @@ enum AgentAction: Equatable {
     case opened
     /// The session is over.
     case remove
+    /// A subagent of the session started (its `agent_id`): background work that outlives the turn's `Stop`.
+    case subagentStarted(String)
+    /// A subagent of the session ended.
+    case subagentStopped(String)
 }
 
 /// The tools whose sessions the agents count and the Agents tab list. Each keeps its sessions apart from the others'. The raw
@@ -125,11 +129,15 @@ struct AgentEvent: Equatable {
     var input: AgentInput?
     /// Whether it runs inside tmux, zellij or screen (`X-Mux`), which no input API reaches.
     var inMultiplexer = false
+    /// How many background tasks (subagents and shell commands) a Claude Code `Stop` says still run (`X-Background-Tasks`): 0 is
+    /// "none", nil is "not said".
+    var backgroundTasks: Int?
 }
 
 /// The tools' hook events as the agents count reads them. The extension of the pi family and the OpenCode plugin send the same names.
 enum AgentHook {
-    /// What an event means; nil for the ones that say nothing about work (`auth_success`, `SubagentStop`).
+    /// What an event means; nil for the ones that say nothing about work (`auth_success`). `SubagentStart` and `SubagentStop` are
+    /// told by `event(headers:)`, which has the subagent's id.
     /// `PermissionRequest` and `Interrupt` are Codex's.
     static func action(event: String, type: String?) -> AgentAction? {
         switch event {
@@ -151,7 +159,8 @@ enum AgentHook {
     }
 
     /// The event a request's headers describe. The hook already trims its values; anything outside the
-    /// whitelist is refused here as well. A call from a subagent (`X-Subagent`) is the main session's business.
+    /// whitelist is refused here as well. A call from a subagent (`X-Subagent`) is the main session's business, except
+    /// `SubagentStart` and `SubagentStop`, which name the session they belong to and the subagent's id; they carry nothing else.
     /// A background session (`X-Background`, from `claude --bg`) runs in Claude Code's daemon, so the app and the herdr
     /// pane it seems to be in are only the daemon's, inherited from wherever it was first started, and its process may
     /// be one the daemon shares with other sessions.
@@ -164,9 +173,18 @@ enum AgentHook {
         // Claude Code's hook sends no X-Agent; a name that isn't a tool's is refused, not taken for Claude Code.
         let named = headers["x-agent"] ?? ""
         guard let agent = named.isEmpty ? AgentKind.claude : AgentKind(rawValue: named),
-              headers["x-subagent"]?.isEmpty ?? true,
-              let session = word("x-session"), let name = word("x-event"),
-              let action = action(event: name, type: word("x-type")) else { return nil }
+              let session = word("x-session"), let name = word("x-event") else { return nil }
+        if headers["x-subagent"]?.isEmpty == false {
+            guard let subagent = word("x-subagent") else { return nil }
+            let action: AgentAction
+            switch name {
+            case "SubagentStart": action = .subagentStarted(subagent)
+            case "SubagentStop": action = .subagentStopped(subagent)
+            default: return nil
+            }
+            return AgentEvent(session: session, action: action, inHerdr: headers["x-herdr"]?.isEmpty == false, agent: agent)
+        }
+        guard let action = action(event: name, type: word("x-type")) else { return nil }
         let background = headers["x-background"]?.isEmpty == false
         let app = background ? nil : headers["x-app"].flatMap { value in
             !value.isEmpty && value.count <= 80 && value.unicodeScalars.allSatisfy(CharacterSet.bundleIDCharacters.contains)
@@ -181,7 +199,13 @@ enum AgentHook {
             tty: { pid.flatMap { processes.lookup($0)?.tty } },
             hosted: { AgentTargetCheck(processes: processes).hosted($0, pid: pid) })
         return AgentEvent(session: session, action: action, app: app, inHerdr: inHerdr, agent: agent, pid: pid, input: target,
-                          inMultiplexer: inMultiplexer)
+                          inMultiplexer: inMultiplexer, backgroundTasks: backgroundTasks(headers["x-background-tasks"]))
+    }
+
+    /// A task count from `X-Background-Tasks`: ASCII digits only, 0 to 999; anything else (empty, signs, spaces, text) says nothing.
+    static func backgroundTasks(_ value: String?) -> Int? {
+        guard let value, (1...3).contains(value.utf8.count), value.utf8.allSatisfy({ (UInt8(ascii: "0")...UInt8(ascii: "9")).contains($0) }) else { return nil }
+        return Int(value)
     }
 
     /// Where text for the session can go. Muxy before cmux: a Muxy session started from a cmux terminal inherits its variables
@@ -295,6 +319,9 @@ final class NotifyServer: @unchecked Sendable {
     /// gone and whose terminal `AgentTargetCheck` looks up. `X-Muxy`, `X-Cmux`, `X-Wezterm` (with `X-Wezterm-Socket`), `X-Kitty` (with `X-Kitty-Socket`) and
     /// `X-Iterm` carry the ids of the terminal it runs in (empty when it isn't in one), which `AgentHook.event` checks again before they say where to type; `X-Mux` says it runs
     /// inside tmux, zellij or screen.
+    /// `X-Background-Tasks` is the number of entries in the `background_tasks` array of Claude Code's `Stop` (`plutil` prints an
+    /// array's count; the key is missing from other events, which gives an empty header): the subagents and shell commands still
+    /// running when the turn ended. Codex's command is pinned and doesn't send it.
     /// Nothing may reach stdout, which `UserPromptSubmit` and `SessionStart` add to Claude's context, and a closed or stuck
     /// Nunsseop costs a session at most a second.
     static var agentHookCommand: String { agentHookCommand(for: .claude) }
@@ -313,7 +340,7 @@ final class NotifyServer: @unchecked Sendable {
             + "-H \"X-Iterm: ${ITERM_SESSION_ID}\" "
             + "-H \"X-Background: ${CLAUDE_JOB_DIR:+1}\" "
             + "-H \"X-Pid: $PPID\" "
-            + (agent == .claude ? "" : "-H 'X-Agent: \(agent.rawValue)' ")
+            + (agent == .claude ? "-H \"X-Background-Tasks: $(k background_tasks)\" " : "-H 'X-Agent: \(agent.rawValue)' ")
             + ">/dev/null 2>&1 || true"
     }
 

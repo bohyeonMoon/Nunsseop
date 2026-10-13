@@ -429,6 +429,8 @@
 "Working" = "Trabajando";
 "%lld waiting" = "%lld esperando";
 "%lld working" = "%lld trabajando";
+"Background · %lld task" = "Segundo plano · %lld tarea";
+"Background · %lld tasks" = "Segundo plano · %lld tareas";
 "%lld idle" = "%lld en reposo";
 "Drop files on a row" = "Suelta archivos en una fila";
 "Select" = "Seleccionar";

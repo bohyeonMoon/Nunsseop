@@ -89,7 +89,7 @@ struct AgentHookShellTests {
             "-s", "-m", "1", "--connect-timeout", "1", "-X", "POST", "http://127.0.0.1:\(NotifyServer.port)/agent", "-d", "",
             "-H", sent.authArgument, "-H", "X-Session: abc-123", "-H", "X-Event: Stop",
             "-H", "X-Type: permission_prompt", "-H", "X-Subagent: ", "-H", "X-App: com.x",
-            "-H", "X-Herdr: ", "-H", "X-Muxy: ", "-H", "X-Cmux: ", "-H", "X-Mux: ", "-H", "X-Wezterm: ", "-H", "X-Wezterm-Socket: ", "-H", "X-Kitty: ", "-H", "X-Kitty-Socket: ", "-H", "X-Iterm: ", "-H", "X-Background: ", "-H", "X-Pid: \(getpid())",
+            "-H", "X-Herdr: ", "-H", "X-Muxy: ", "-H", "X-Cmux: ", "-H", "X-Mux: ", "-H", "X-Wezterm: ", "-H", "X-Wezterm-Socket: ", "-H", "X-Kitty: ", "-H", "X-Kitty-Socket: ", "-H", "X-Iterm: ", "-H", "X-Background: ", "-H", "X-Pid: \(getpid())", "-H", "X-Background-Tasks: ",
         ])
         #expect(sent.curlCalls == 1)
         #expect(sent.stdout.isEmpty)
@@ -150,6 +150,26 @@ struct AgentHookShellTests {
         #expect(sent.args.contains("X-Event: SessionStart") && sent.args.contains("X-Pid: \(getpid())"))
         // SessionStart's stdout goes into Claude's context.
         #expect(sent.stdout.isEmpty && sent.status == 0)
+    }
+
+    @Test func aStopSendsHowManyBackgroundTasksItListsAndOnlyTheCount() throws {
+        let tasks = #"[{"id":"a1","type":"subagent","status":"running","description":"secret plan"},{"id":"b2","type":"shell","status":"running","command":"rm -rf secret"}]"#
+        let two = try run(#"{"session_id":"s","hook_event_name":"Stop","background_tasks":\#(tasks)}"#)
+        #expect(two.args.contains("X-Background-Tasks: 2") && two.args.last == "X-Background-Tasks: 2")
+        #expect(!two.args.joined().contains("secret") && two.body.isEmpty)
+        // An empty list is a 0, which tells the hand-back's Stop that everything is done; no list and no key send nothing.
+        let none = try run(#"{"session_id":"s","hook_event_name":"Stop","background_tasks":[]}"#)
+        #expect(none.args.contains("X-Background-Tasks: 0"))
+        let absent = try run(json(["session_id": "s", "hook_event_name": "Stop"]))
+        #expect(absent.args.contains("X-Background-Tasks: "))
+        // Twelve tasks keep every digit of the count.
+        let many = try run(#"{"session_id":"s","hook_event_name":"Stop","background_tasks":[\#(Array(repeating: "{}", count: 12).joined(separator: ","))]}"#)
+        #expect(many.args.contains("X-Background-Tasks: 12"))
+        // Whatever the value, only characters of the safe set leave, and nothing is run.
+        let text = try run(json(["session_id": "s", "hook_event_name": "Stop", "background_tasks": "3$(touch pwn)"]))
+        #expect(text.args.contains("X-Background-Tasks: 3touchpwn"))
+        #expect(!FileManager.default.fileExists(atPath: text.dir.appendingPathComponent("pwn").path))
+        #expect(two.status == 0 && two.stdout.isEmpty)
     }
 
     @Test func aSubagentCallCarriesItsId() throws {

@@ -66,6 +66,8 @@ final class AgentBoard: ObservableObject {
         var pid: Int32? = nil
         /// Whether the hook said it runs in tmux, zellij or screen: the terminal around it isn't where its text would go.
         var inMultiplexer = false
+        /// How many background tasks (subagents, shell commands) still run after the turn's own end, which keeps the agent working: "Background · 3 tasks".
+        var background = 0
 
         /// Set by `effective(at:)`: asking for input when last told, so its dialog may be open still, however long ago. Going idle
         /// by the clock doesn't close a dialog; only a later event does.
@@ -76,7 +78,7 @@ final class AgentBoard: ObservableObject {
             var agent = self
             agent.promptMayBeOpen = state == .waiting && !finished
             guard state != .idle, let idleFrom, idleFrom <= now else { return agent }
-            (agent.state, agent.finished, agent.since) = (.idle, false, idleFrom)
+            (agent.state, agent.finished, agent.since, agent.background) = (.idle, false, idleFrom, 0)
             return agent
         }
     }

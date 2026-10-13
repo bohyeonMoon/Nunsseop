@@ -454,6 +454,8 @@
 "Working" = "작업 중";
 "%lld waiting" = "%lld개 대기";
 "%lld working" = "%lld개 작업 중";
+"Background · %lld task" = "백그라운드 · 작업 %lld개";
+"Background · %lld tasks" = "백그라운드 · 작업 %lld개";
 "%lld idle" = "%lld개 쉬는 중";
 "Drop files on a row" = "파일을 세션 위로 끌어다 놓기";
 "Select" = "선택";

@@ -19,7 +19,8 @@ struct AgentHookEventTests {
         for type in ["auth_success", "agent_completed", "quota_low", "", nil] {
             #expect(AgentHook.action(event: "Notification", type: type) == nil)
         }
-        #expect(AgentHook.action(event: "SubagentStop", type: nil) == nil)
+        // The subagent events need the subagent's id, which only `event(headers:)` has.
+        #expect(AgentHook.action(event: "SubagentStop", type: nil) == nil && AgentHook.action(event: "SubagentStart", type: nil) == nil)
         #expect(AgentHook.action(event: "PostToolUse", type: nil) == nil)
         // A type means something only on a Notification.
         #expect(AgentHook.action(event: "Stop", type: "idle_prompt") == .finished)
@@ -89,6 +90,29 @@ struct AgentHookEventTests {
         #expect(AgentHook.event(headers: ["x-session": "s", "x-event": "Stop", "x-subagent": ""]) != nil)
     }
 
+    @Test func onlySubagentStartAndStopAreAcceptedFromASubagentAndNameItsSession() {
+        let base = ["x-session": "parent", "x-event": "SubagentStart", "x-subagent": "a1a568d83b4b320fd"]
+        #expect(AgentHook.event(headers: base) == AgentEvent(session: "parent", action: .subagentStarted("a1a568d83b4b320fd")))
+        #expect(AgentHook.event(headers: base.merging(["x-event": "SubagentStop"]) { $1 })
+                == AgentEvent(session: "parent", action: .subagentStopped("a1a568d83b4b320fd")))
+        // Nothing of the terminal travels with them: the hook's process may not be the session's.
+        let full = base.merging(["x-app": "com.apple.Terminal", "x-pid": "4242", "x-muxy": "42", "x-mux": "1", "x-herdr": "1"]) { $1 }
+        #expect(AgentHook.event(headers: full) == AgentEvent(session: "parent", action: .subagentStarted("a1a568d83b4b320fd"), inHerdr: true))
+        // Every other event of a subagent is still the main session's business, whatever it is.
+        for event in ["Stop", "StopFailure", "UserPromptSubmit", "SessionEnd", "SessionStart", "Notification", "PermissionRequest", "TaskCreated", "TaskCompleted"] {
+            #expect(AgentHook.event(headers: base.merging(["x-event": event, "x-type": "permission_prompt"]) { $1 }) == nil, "\(event)")
+        }
+        // The two events need the subagent's id, and it must be a plain one.
+        for event in ["SubagentStart", "SubagentStop"] {
+            #expect(AgentHook.event(headers: ["x-session": "parent", "x-event": event]) == nil)
+            #expect(AgentHook.event(headers: ["x-session": "parent", "x-event": event, "x-subagent": ""]) == nil)
+            #expect(AgentHook.event(headers: ["x-session": "parent", "x-event": event, "x-subagent": "a\nb"]) == nil)
+            #expect(AgentHook.event(headers: ["x-session": "parent", "x-event": event, "x-subagent": String(repeating: "a", count: 65)]) == nil)
+        }
+        #expect(AgentHook.event(headers: base.merging(["x-session": ""]) { $1 }) == nil)
+        #expect(AgentHook.event(headers: base.merging(["x-agent": "gemini"]) { $1 }) == nil)
+    }
+
     @Test func codexEventsAsTheCountReadsThem() {
         #expect(AgentHook.action(event: "UserPromptSubmit", type: nil) == .working)
         #expect(AgentHook.action(event: "PermissionRequest", type: nil) == .needsInput)
@@ -155,6 +179,28 @@ struct AgentHookEventTests {
         #expect(NotifyServer.agentHookCommand(for: .codex, port: 47750) == pinned)
     }
 
+    @Test func claudeCodesHookSendsTheCountOfBackgroundTasksAndCodexsDoesNot() {
+        let claude = NotifyServer.agentHookCommand(for: .claude)
+        #expect(claude.contains(#"-H "X-Background-Tasks: $(k background_tasks)""#))
+        #expect(claude.contains(#"plutil -extract "$1" raw -o - -"#) && claude.contains("tr -cd 'A-Za-z0-9_.-'"))
+        #expect(!NotifyServer.agentHookCommand(for: .codex).contains("Background-Tasks"))
+        // Only the count leaves: not the list's ids, commands or descriptions.
+        for private_ in ["command", "description", "--data-binary"] { #expect(!claude.contains(private_)) }
+    }
+
+    @Test func theBackgroundTasksHeaderIsReadStrictlyAsZeroTo999() {
+        let base = ["x-session": "s", "x-event": "Stop"]
+        let tasks = { (value: String?) in AgentHook.event(headers: value.map { base.merging(["x-background-tasks": $0]) { $1 } } ?? base)?.backgroundTasks }
+        #expect(tasks("0") == 0 && tasks("1") == 1 && tasks("12") == 12 && tasks("999") == 999 && tasks("007") == 7)
+        // Missing, empty, too long, signed, spaced, fractional, non-ASCII digits and text say nothing.
+        for bad in [nil, "", "1000", "0000", "-1", "+1", " 1", "1 ", "1\n", "1.5", "3e2", "x", "ab", "０５", "٣", "0x1"] as [String?] {
+            #expect(tasks(bad) == nil, "\(bad ?? "nil")")
+        }
+        #expect(AgentHook.event(headers: base.merging(["x-event": "StopFailure", "x-background-tasks": "2"]) { $1 })?.backgroundTasks == 2)
+        // A subagent's own call carries no count.
+        #expect(AgentHook.event(headers: ["x-session": "s", "x-event": "SubagentStop", "x-subagent": "a1", "x-background-tasks": "2"])?.backgroundTasks == nil)
+    }
+
     @Test func claudeCodesHookSendsItsProcessAndPrintsNothing() {
         let command = NotifyServer.agentHookCommand(for: .claude)
         #expect(command.contains(#"-H "X-Pid: $PPID""#))
@@ -184,12 +230,275 @@ struct AgentHooksTests {
         return (AgentHooks(board: board, agent: agent, isOn: { on }, watchesHerdr: { herdr }, frontmostApp: { frontmost }, isAlive: isAlive), board)
     }
 
-    private func event(_ session: String, _ action: AgentAction, app: String? = nil, inHerdr: Bool = false, pid: Int32? = nil) -> AgentEvent {
-        AgentEvent(session: session, action: action, app: app, inHerdr: inHerdr, pid: pid)
+    private func event(_ session: String, _ action: AgentAction, app: String? = nil, inHerdr: Bool = false, pid: Int32? = nil,
+                       tasks: Int? = nil) -> AgentEvent {
+        AgentEvent(session: session, action: action, app: app, inHerdr: inHerdr, pid: pid, backgroundTasks: tasks)
     }
 
     private func listed(_ board: AgentBoard, at now: Date, _ id: String? = nil) -> [AgentBoard.Entry] {
         board.entries(now: now).filter { id == nil || $0.id == id }.sorted { $0.id < $1.id }
+    }
+
+    // MARK: Background subagents
+
+    private func start(_ id: String, in session: String = "a") -> AgentEvent { event(session, .subagentStarted(id)) }
+    private func stop(_ id: String, in session: String = "a") -> AgentEvent { event(session, .subagentStopped(id)) }
+
+    @Test func aStopWithABackgroundSubagentRunningKeepsTheSessionWorkingUntilTheLastOneStops() {
+        let (hooks, board) = make()
+        hooks.apply(event("a", .working, app: "com.apple.Terminal", pid: 7), now: start)
+        hooks.apply(self.start("x"), now: start.addingTimeInterval(4))
+        hooks.apply(self.start("y"), now: start.addingTimeInterval(5))
+        hooks.apply(event("a", .finished, app: "com.apple.Terminal", pid: 7), now: start.addingTimeInterval(6))
+        var row = listed(board, at: start.addingTimeInterval(7))[0].agent
+        #expect(board.counts == AgentBoard.Counts(working: 1))
+        #expect(row.state == .working && !row.finished && row.background == 2)
+        // The turn started at `start` and has not changed state since.
+        #expect(row.since == start)
+        // The terminal it runs in survives the subagent events, which carry none.
+        #expect(row.app == "com.apple.Terminal" && row.pid == 7)
+
+        hooks.apply(stop("x"), now: start.addingTimeInterval(30))
+        row = listed(board, at: start.addingTimeInterval(31))[0].agent
+        #expect(row.state == .working && row.background == 1)
+        hooks.apply(stop("y"), now: start.addingTimeInterval(40))
+        row = listed(board, at: start.addingTimeInterval(41))[0].agent
+        #expect(board.counts == AgentBoard.Counts(waiting: 1))
+        #expect(row.state == .waiting && row.finished && row.background == 0 && row.app == "com.apple.Terminal" && row.pid == 7)
+    }
+
+    @Test func theLastSubagentEndingInTheFrontAppLeavesTheSessionIdle() {
+        let (hooks, board) = make(frontmost: "com.apple.Terminal")
+        hooks.apply(event("a", .working, app: "com.apple.Terminal"), now: start)
+        hooks.apply(self.start("x"), now: start)
+        hooks.apply(event("a", .finished, app: "com.apple.Terminal"), now: start)
+        #expect(board.counts == AgentBoard.Counts(working: 1))
+        hooks.apply(stop("x"), now: start.addingTimeInterval(9))
+        #expect(board.counts.isEmpty)
+        #expect(listed(board, at: start.addingTimeInterval(10))[0].agent.state == .idle)
+    }
+
+    @Test func subagentsThatEndBeforeTheStopChangeNothing() {
+        let (hooks, board) = make()
+        hooks.apply(event("a", .working), now: start)
+        hooks.apply(self.start("x"), now: start)
+        hooks.apply(stop("x"), now: start.addingTimeInterval(10))
+        #expect(board.counts == AgentBoard.Counts(working: 1))
+        #expect(listed(board, at: start.addingTimeInterval(11))[0].agent.background == 0)
+        hooks.apply(event("a", .finished), now: start.addingTimeInterval(12))
+        #expect(board.counts == AgentBoard.Counts(waiting: 1))
+        // A stop nobody started, or of a session that isn't listed, is nothing.
+        hooks.apply(stop("ghost"), now: start.addingTimeInterval(13))
+        hooks.apply(stop("x", in: "unknown"), now: start.addingTimeInterval(13))
+        hooks.apply(self.start("x", in: "unknown"), now: start.addingTimeInterval(13))
+        #expect(board.entries(now: start.addingTimeInterval(14)).map(\.id) == ["a"] && board.counts == AgentBoard.Counts(waiting: 1))
+    }
+
+    // MARK: Background tasks counted by the Stop
+
+    private func chip(_ board: AgentBoard, _ at: TimeInterval) -> Int { listed(board, at: start.addingTimeInterval(at))[0].agent.background }
+
+    @Test func aStopListingBackgroundTasksKeepsTheSessionWorkingWithoutAnySubagentEvent() {
+        let (hooks, board) = make()
+        hooks.apply(event("a", .working, app: "com.apple.Terminal", pid: 7), now: start)
+        hooks.apply(event("a", .finished, app: "com.apple.Terminal", pid: 7, tasks: 2), now: start.addingTimeInterval(5))
+        var row = listed(board, at: start.addingTimeInterval(6))[0].agent
+        #expect(board.counts == AgentBoard.Counts(working: 1))
+        #expect(row.state == .working && !row.finished && row.background == 2 && row.since == start)
+        #expect(row.app == "com.apple.Terminal" && row.pid == 7)
+        // The notification that follows a quiet minute does not end it.
+        hooks.apply(event("a", .idle), now: start.addingTimeInterval(65))
+        #expect(board.counts == AgentBoard.Counts(working: 1))
+        // The hand-back starts a turn (no chip), and its Stop says all are done.
+        hooks.apply(event("a", .working), now: start.addingTimeInterval(90))
+        #expect(chip(board, 91) == 0 && board.counts == AgentBoard.Counts(working: 1))
+        hooks.apply(event("a", .finished, tasks: 0), now: start.addingTimeInterval(120))
+        row = listed(board, at: start.addingTimeInterval(121))[0].agent
+        #expect(board.counts == AgentBoard.Counts(waiting: 1))
+        #expect(row.state == .waiting && row.finished && row.background == 0)
+    }
+
+    @Test func aLaterStopWithFewerTasksUpdatesTheChipAndZeroFinishes() {
+        let (hooks, board) = make()
+        hooks.apply(event("a", .working), now: start)
+        hooks.apply(event("a", .finished, tasks: 3), now: start.addingTimeInterval(5))
+        #expect(chip(board, 6) == 3)
+        hooks.apply(event("a", .working), now: start.addingTimeInterval(40))
+        hooks.apply(event("a", .finished, tasks: 1), now: start.addingTimeInterval(45))
+        #expect(chip(board, 46) == 1 && board.counts == AgentBoard.Counts(working: 1))
+        hooks.apply(event("a", .working), now: start.addingTimeInterval(80))
+        hooks.apply(event("a", .finished, tasks: 0), now: start.addingTimeInterval(85))
+        #expect(chip(board, 86) == 0 && board.counts == AgentBoard.Counts(waiting: 1))
+    }
+
+    @Test func aStopCountIncludesSubagentsSoItIsTheOneShownAndSubagentEventsDoNotEndTheWait() {
+        let (hooks, board) = make()
+        hooks.apply(event("a", .working), now: start)
+        hooks.apply(self.start("x"), now: start.addingTimeInterval(1))
+        // One subagent and two shell commands: the Stop's 3, not the 1 the events show.
+        hooks.apply(event("a", .finished, tasks: 3), now: start.addingTimeInterval(5))
+        #expect(chip(board, 6) == 3)
+        // The subagent ends, but the Stop's tasks are not all subagents: still waiting for the next Stop.
+        hooks.apply(stop("x"), now: start.addingTimeInterval(30))
+        #expect(chip(board, 31) == 3 && board.counts == AgentBoard.Counts(working: 1))
+    }
+
+    @Test func aStopWithoutACountFallsBackToTheSubagentsSeen() {
+        let (hooks, board) = make()
+        hooks.apply(event("a", .working), now: start)
+        hooks.apply(self.start("x"), now: start.addingTimeInterval(1))
+        hooks.apply(event("a", .finished, tasks: nil), now: start.addingTimeInterval(5))
+        #expect(chip(board, 6) == 1)
+        hooks.apply(stop("x"), now: start.addingTimeInterval(30))
+        #expect(board.counts == AgentBoard.Counts(waiting: 1) && chip(board, 31) == 0)
+    }
+
+    @Test func aStopSayingZeroIsFinalEvenWhenASubagentWasNeverReportedStopped() {
+        let (hooks, board) = make()
+        hooks.apply(event("a", .working), now: start)
+        hooks.apply(self.start("x"), now: start.addingTimeInterval(1))
+        hooks.apply(event("a", .finished, tasks: 0), now: start.addingTimeInterval(5))
+        #expect(board.counts == AgentBoard.Counts(waiting: 1) && chip(board, 6) == 0)
+    }
+
+    @Test func aStopWithTasksInTheFrontAppStillWorksAndTheZeroOneThenIdlesIt() {
+        let (hooks, board) = make(frontmost: "com.apple.Terminal")
+        hooks.apply(event("a", .working, app: "com.apple.Terminal"), now: start)
+        hooks.apply(event("a", .finished, app: "com.apple.Terminal", tasks: 1), now: start.addingTimeInterval(5))
+        #expect(board.counts == AgentBoard.Counts(working: 1))
+        hooks.apply(event("a", .working, app: "com.apple.Terminal"), now: start.addingTimeInterval(20))
+        hooks.apply(event("a", .finished, app: "com.apple.Terminal", tasks: 0), now: start.addingTimeInterval(25))
+        #expect(board.counts.isEmpty && listed(board, at: start.addingTimeInterval(26))[0].agent.state == .idle)
+    }
+
+    @Test func aStopFailureWithTasksAlsoKeepsTheSessionWorking() {
+        // StopFailure is read as a Stop (see `eventsAsTheCountReadsThem`), so its count counts the same.
+        let event = AgentHook.event(headers: ["x-session": "a", "x-event": "StopFailure", "x-background-tasks": "2"])
+        #expect(event?.action == .finished && event?.backgroundTasks == 2)
+        let (hooks, board) = make()
+        hooks.apply(self.event("a", .working), now: start)
+        hooks.apply(event!, now: start.addingTimeInterval(5))
+        #expect(board.counts == AgentBoard.Counts(working: 1) && chip(board, 6) == 2)
+    }
+
+    @Test func tasksThatNeverReportBackExpireAfterTheActiveWindow() {
+        let (hooks, board) = make()
+        hooks.apply(event("a", .working), now: start)
+        hooks.apply(event("a", .finished, tasks: 2), now: start.addingTimeInterval(5))
+        board.recount(now: start.addingTimeInterval(19 * 60))
+        #expect(board.counts == AgentBoard.Counts(working: 1) && chip(board, 19 * 60) == 2)
+        let late = start.addingTimeInterval(20 * 60 + 6)
+        board.recount(now: late)
+        let row = listed(board, at: late)[0].agent
+        #expect(board.counts.isEmpty && row.state == .idle && row.background == 0)
+    }
+
+    @Test func theHandBackPromptAndTheSecondStopFollowTheProbedOrder() {
+        // Stop while the subagent runs, a synthetic prompt when it hands back, its SubagentStop, then the second Stop.
+        let (hooks, board) = make()
+        hooks.apply(event("a", .working), now: start)
+        hooks.apply(self.start("x"), now: start.addingTimeInterval(4))
+        hooks.apply(event("a", .finished), now: start.addingTimeInterval(6))
+        #expect(listed(board, at: start.addingTimeInterval(7))[0].agent.background == 1)
+        hooks.apply(event("a", .working), now: start.addingTimeInterval(30))
+        // Working on the hand-back: the turn is not over, so the chip is gone.
+        #expect(listed(board, at: start.addingTimeInterval(31))[0].agent.background == 0)
+        hooks.apply(stop("x"), now: start.addingTimeInterval(30.4))
+        #expect(board.counts == AgentBoard.Counts(working: 1))
+        hooks.apply(event("a", .finished), now: start.addingTimeInterval(33))
+        #expect(board.counts == AgentBoard.Counts(waiting: 1))
+    }
+
+    @Test func theIdlePromptNotificationDoesNotEndWhatSubagentsKeepWorking() {
+        let (hooks, board) = make()
+        hooks.apply(event("a", .working), now: start)
+        hooks.apply(self.start("x"), now: start)
+        hooks.apply(event("a", .finished), now: start)
+        hooks.apply(event("a", .idle), now: start.addingTimeInterval(60))
+        #expect(board.counts == AgentBoard.Counts(working: 1))
+        hooks.apply(stop("x"), now: start.addingTimeInterval(70))
+        hooks.apply(event("a", .idle), now: start.addingTimeInterval(71))
+        // A finished hand stays, as ever.
+        #expect(board.counts == AgentBoard.Counts(waiting: 1))
+    }
+
+    @Test func theIdlePromptNotificationEndsAnInterruptedTurnWhoseSubagentNeverStopped() {
+        let (hooks, board) = make()
+        hooks.apply(event("a", .working), now: start)
+        hooks.apply(self.start("x"), now: start.addingTimeInterval(4))
+        // Interrupted: no Stop, and the subagent says nothing more. The turn is not over, so nothing is kept working.
+        hooks.apply(event("a", .idle), now: start.addingTimeInterval(70))
+        #expect(board.counts.isEmpty)
+        // The next turn's Stop is not held back by the forgotten subagent.
+        hooks.apply(event("a", .working), now: start.addingTimeInterval(80))
+        hooks.apply(event("a", .finished), now: start.addingTimeInterval(90))
+        #expect(board.counts == AgentBoard.Counts(waiting: 1))
+        #expect(listed(board, at: start.addingTimeInterval(91))[0].agent.background == 0)
+    }
+
+    @Test func aSubagentThatNeverStopsIsForgottenAfterTheActiveWindow() {
+        let (hooks, board) = make()
+        hooks.apply(event("a", .working), now: start)
+        hooks.apply(self.start("x"), now: start)
+        hooks.apply(event("a", .finished), now: start.addingTimeInterval(5))
+        board.recount(now: start.addingTimeInterval(19 * 60))
+        #expect(board.counts == AgentBoard.Counts(working: 1))
+        #expect(listed(board, at: start.addingTimeInterval(19 * 60))[0].agent.background == 1)
+        // Past its window the row is idle by the clock, with no chip, and another event finds the set empty.
+        let late = start.addingTimeInterval(20 * 60 + 1)
+        board.recount(now: late)
+        #expect(board.counts.isEmpty)
+        let row = listed(board, at: late)[0].agent
+        #expect(row.state == .idle && row.background == 0)
+        hooks.apply(event("a", .opened), now: late)
+        hooks.apply(event("a", .finished), now: late.addingTimeInterval(1))
+        #expect(board.counts == AgentBoard.Counts(waiting: 1))
+    }
+
+    @Test func aLaterSubagentExtendsWhatTheTurnCountsFor() {
+        let (hooks, board) = make()
+        hooks.apply(event("a", .working), now: start)
+        hooks.apply(self.start("x"), now: start.addingTimeInterval(18 * 60))
+        // The turn alone would be idle at 20 minutes; the subagent keeps it working until its own window is over.
+        board.recount(now: start.addingTimeInterval(25 * 60))
+        #expect(board.counts == AgentBoard.Counts(working: 1))
+        board.recount(now: start.addingTimeInterval(38 * 60 + 1))
+        #expect(board.counts.isEmpty)
+    }
+
+    @Test func subagentsBelongToTheirSessionAndGoWithIt() {
+        let (hooks, board) = make()
+        hooks.apply(event("a", .working), now: start)
+        hooks.apply(event("b", .working), now: start)
+        hooks.apply(self.start("x", in: "a"), now: start)
+        hooks.apply(event("a", .finished), now: start)
+        hooks.apply(event("b", .finished), now: start)
+        #expect(board.counts == AgentBoard.Counts(working: 1, waiting: 1))
+        #expect(listed(board, at: start, "b")[0].agent.state == .waiting)
+        // The same id stopping in the other session does nothing to this one.
+        hooks.apply(stop("x", in: "b"), now: start)
+        #expect(listed(board, at: start, "a")[0].agent.state == .working)
+        // The session ending takes them along: a new one with the same id starts clean.
+        hooks.apply(event("a", .remove), now: start)
+        hooks.apply(event("a", .working), now: start)
+        hooks.apply(event("a", .finished), now: start)
+        #expect(listed(board, at: start, "a")[0].agent.state == .waiting)
+    }
+
+    @Test func aSessionWhoseProcessIsGoneDropsItsSubagentsToo() {
+        var alive = true
+        let (hooks, board) = make(isAlive: { _ in alive })
+        hooks.apply(event("a", .working, pid: 7), now: start)
+        hooks.apply(self.start("x"), now: start)
+        hooks.apply(event("a", .finished, pid: 7), now: start)
+        #expect(board.counts == AgentBoard.Counts(working: 1))
+        alive = false
+        hooks.pruneDead(now: start.addingTimeInterval(60))
+        #expect(board.counts.isEmpty && board.entries(now: start.addingTimeInterval(60)).isEmpty)
+        alive = true
+        hooks.apply(event("a", .working, pid: 7), now: start.addingTimeInterval(70))
+        hooks.apply(event("a", .finished, pid: 7), now: start.addingTimeInterval(71))
+        #expect(board.counts == AgentBoard.Counts(waiting: 1))
     }
 
     @Test func workingExpiresAndEveryEventRefreshesIt() {

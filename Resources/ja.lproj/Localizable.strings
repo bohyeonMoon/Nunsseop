@@ -429,6 +429,8 @@
 "Working" = "作業中";
 "%lld waiting" = "入力待ち %lld";
 "%lld working" = "作業中 %lld";
+"Background · %lld task" = "バックグラウンド · タスク %lld件";
+"Background · %lld tasks" = "バックグラウンド · タスク %lld件";
 "%lld idle" = "待機中 %lld";
 "Drop files on a row" = "行にファイルをドロップ";
 "Select" = "選択";

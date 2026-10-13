@@ -92,6 +92,34 @@ struct NotifyIntegrationFileTests {
         }
     }
 
+    @Test func launchAddsTheBackgroundTasksHeaderToAClaudeCodeAgentCommandInPlaceAndLeavesCodexsAlone() throws {
+        try withTempHome { _ in
+            let current = NotifyServer.agentHookCommand
+            let old = current.replacingOccurrences(of: #"-H "X-Background-Tasks: $(k background_tasks)" "#, with: "")
+            #expect(old != current && !old.contains("Background-Tasks") && old.hasSuffix(">/dev/null 2>&1 || true"))
+            let mine: [String: Any] = ["hooks": [["type": "command", "command": "mine.sh"]]]
+            let table: JSONHook.Table = [("Notification", NotifyServer.hookCommand(title: "Claude Code"))]
+                + ["Notification", "UserPromptSubmit", "Stop", "StopFailure", "SessionEnd", "SessionStart", "SubagentStart", "SubagentStop"].map { ($0, old) }
+            try NotifyIntegration.writeJSON(JSONHook.adding(table, to: ["hooks": ["Stop": [mine]]]), to: claude.configURL)
+            #expect(!JSONHook.isCurrent(claude.hooks, in: try NotifyIntegration.loadJSON(at: claude.configURL)))
+
+            NotifyIntegration.updateConnectedNow()
+
+            let settings = try NotifyIntegration.loadJSON(at: claude.configURL)
+            #expect(JSONHook.isCurrent(claude.hooks, in: settings))
+            let hooks = try #require(settings["hooks"] as? [String: Any])
+            let commands = { (event: String) in
+                ((hooks[event] as? [[String: Any]]) ?? []).flatMap { ($0["hooks"] as? [[String: Any]] ?? []).compactMap { $0["command"] as? String } }
+            }
+            #expect(commands("Stop") == ["mine.sh", current] && commands("StopFailure") == [current] && commands("SubagentStop") == [current])
+            #expect(hooks.values.allSatisfy { value in
+                ((value as? [[String: Any]]) ?? []).allSatisfy { ($0["hooks"] as? [[String: Any]] ?? []).allSatisfy { ($0["command"] as? String) != old } }
+            })
+        }
+        // Codex's text is pinned (a change asks to trust it again), so it is the same with or without this.
+        #expect(!NotifyServer.agentHookCommand(for: .codex).contains("Background-Tasks"))
+    }
+
     @Test func installCreatesTheFileAndFolderWhenThereIsNone() throws {
         try withTempHome { home in
             try claude.installNow()
