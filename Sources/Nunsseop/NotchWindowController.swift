@@ -71,6 +71,23 @@ struct SwipeRecognizer {
     }
 }
 
+/// How an open notch treats the pointer leaving it.
+enum OpenNotchHold: Equatable {
+    /// A message is being typed: open wherever the pointer goes, and the panel takes every click.
+    case composing
+    /// The tour runs: open wherever the pointer goes, but a click outside the shape still reaches what is under it.
+    case touring
+    /// Opened by a shortcut: open until the pointer has visited it, then it follows the pointer again.
+    case pinned
+    case followsPointer
+
+    static func of(composing: Bool, touring: Bool, pinned: Bool) -> OpenNotchHold {
+        if composing { return .composing }
+        if touring { return .touring }
+        return pinned ? .pinned : .followsPointer
+    }
+}
+
 @MainActor
 final class NotchWindowController {
     private let model: NotchViewModel
@@ -78,6 +95,7 @@ final class NotchWindowController {
     private var monitors: [Any] = []
     private var collapseWork: DispatchWorkItem?
     private var openWork: DispatchWorkItem?
+    private var tourWork: DispatchWorkItem?
     /// Whether the notch was open at the last pointer move.
     private var wasExpanded = false
     /// Set when the notch closed with the pointer still over it (Escape, a swipe up, a click elsewhere);
@@ -163,7 +181,8 @@ final class NotchWindowController {
 
     /// Opens the notch on the Search tab with the keyboard focus in the search field.
     private func openSearch() {
-        guard panel.isVisible else { return }
+        // The tour has the notch, and shows the shortcut itself.
+        guard panel.isVisible, !model.onboarding.isActive else { return }
         if model.isExpanded && model.tab == .search {
             model.collapse()
             panel.ignoresMouseEvents = true
@@ -180,7 +199,10 @@ final class NotchWindowController {
     init() {
         let geometry = NotchGeometry.pickScreen(preferredName: AppSettings.shared.displayName).map { NotchGeometry(screen: $0) }
             ?? NotchGeometry()
+        // Before the view model exists: its notification server writes the token this looks for.
+        let freshInstall = OnboardingTour.isFreshInstall()
         model = NotchViewModel(geometry: geometry, settings: .shared)
+        model.onboarding.prepare(freshInstall: freshInstall)
         panel = NotchPanel(frame: geometry.panelFrame)
 
         let hosting = FirstMouseHostingView(rootView: NotchView(model: model))
@@ -213,6 +235,50 @@ final class NotchWindowController {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { SettingsWindowController.shared.show() }
         }
         #endif
+        SettingsWindowController.shared.onReplayTour = { [weak self] in self?.beginTour() }
+    }
+
+    // MARK: Tour
+
+    /// Opens the notch on the tour's first step, whatever it is doing, and has the keyboard for the tour's keys.
+    private func beginTour() {
+        model.onboarding.start()
+        model.expand()
+        engageTour()
+    }
+
+    /// Pinned, so that a click elsewhere closes the notch (the tour waits where it is), and key, for Return, the arrows and Escape.
+    private func engageTour() {
+        guard panel.isVisible else { return }
+        model.pinned = true
+        panel.ignoresMouseEvents = false
+        panel.makeKey()
+    }
+
+    /// The tour starts a moment after launch, once nothing needs answering first.
+    private func scheduleTourStart(after delay: TimeInterval) {
+        tourWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.model.onboarding.isPending else { return }
+                if OnboardingTour.canBegin(panelVisible: self.panel.isVisible, approvalShowing: self.model.approvals.current != nil,
+                                           noticeClickable: self.model.hud.action != nil) {
+                    self.beginTour()
+                } else {
+                    self.scheduleTourStart(after: 1)
+                }
+            }
+        }
+        tourWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    /// Return, the arrows and Escape, while the notch shows the tour and is the key window.
+    private func handlesTourKey(_ event: NSEvent) -> Bool {
+        guard event.window === panel, model.onboarding.shows(expanded: model.isExpanded, approvalShowing: model.approvals.current != nil),
+              let command = OnboardingTour.command(keyCode: event.keyCode, modifiers: event.modifierFlags) else { return false }
+        model.onboarding.perform(command)
+        return true
     }
 
     #if DEBUG
@@ -249,6 +315,22 @@ final class NotchWindowController {
                 }
             }
         }
+        // Debug: --demo-onboarding <1-4|ready|nonotch> shows that step pinned.
+        let demoSteps = ["1": 0, "2": 1, "3": 2, "4": 3, "ready": 3, "nonotch": 0]
+        if let i = CommandLine.arguments.firstIndex(of: "--demo-onboarding"), i + 1 < CommandLine.arguments.count,
+           let step = demoSteps[CommandLine.arguments[i + 1]] {
+            let name = CommandLine.arguments[i + 1]
+            // The demo is what shows, not the real first-run tour.
+            model.onboarding.prepare(freshInstall: false)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                guard let self else { return }
+                self.model.onboarding.startDemo(step: step, tools: name == "ready" ? [] : [.claudeCode, .codex],
+                                                connected: [.claudeCode], withoutNotch: name == "nonotch")
+                self.model.expand()
+                self.engageTour()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { self.snapshotter?.capture(label: "onboarding") }
+            }
+        }
         if let i = CommandLine.arguments.firstIndex(of: "--demo-search"), i + 1 < CommandLine.arguments.count {
             let query = CommandLine.arguments[i + 1]
             model.search.loadApps()
@@ -266,6 +348,7 @@ final class NotchWindowController {
             }
         }
         #endif
+        scheduleTourStart(after: 1)
         model.nowPlaying.start()
         model.hud.start()
         model.appMenus.start()
@@ -326,6 +409,17 @@ final class NotchWindowController {
                 self.panel.ignoresMouseEvents = true
             }
         }
+        // The tour waits where it is when the notch closes, and takes the notch again whenever it opens.
+        settingsObservers.append(model.$isExpanded.removeDuplicates().sink { [weak self] expanded in
+            guard let self, expanded, self.model.onboarding.isActive else { return }
+            self.engageTour()
+        })
+        // Finishing or skipping puts the notch back to its tabs.
+        settingsObservers.append(model.onboarding.$isActive.removeDuplicates().sink { [weak self] active in
+            guard let self, !active, self.model.isExpanded else { return }
+            self.model.collapse()
+            self.panel.ignoresMouseEvents = true
+        })
         // The field needs the keyboard, which a panel that never activates gets by becoming key.
         settingsObservers.append(model.agentList.$composing.sink { [weak self] row in
             guard row != nil else { return }
@@ -352,6 +446,7 @@ final class NotchWindowController {
         }
         if let keys = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { [weak self] event in
             guard let self else { return event }
+            if MainActor.assumeIsolated({ self.handlesTourKey(event) }) { return nil }
             guard event.keyCode == 53 else { return MainActor.assumeIsolated { self.handlesAgentKey(event) } ? nil : event }
             MainActor.assumeIsolated {
                 // Escape closes the message field first, and the notch only the next time.
@@ -546,6 +641,8 @@ final class NotchWindowController {
     private func scrolled(_ event: NSEvent) {
         let settings = model.settings
         guard settings.swipeToOpen || settings.swipeForTracks else { return }
+        // Scrolling a long list of tools in the tour must not close it.
+        if model.isExpanded && model.onboarding.isActive { return }
         guard SwipeRecognizer.accepts(overPanel: event.window === panel, precise: event.hasPreciseScrollingDeltas,
                                       momentum: !event.momentumPhase.isEmpty) else { return }
         // Scrolling over the timer's time changes its length instead.
@@ -622,17 +719,24 @@ final class NotchWindowController {
 
         if model.isExpanded {
             let inside = nearPanel && model.geometry.shapeRect(size: model.expandedSize, inset: 0).insetBy(dx: -6, dy: -6).contains(point)
-            // Typing a message to an agent: the notch stays open wherever the pointer goes, until the field closes.
-            if model.agentList.composing != nil {
+            switch OpenNotchHold.of(composing: model.agentList.composing != nil, touring: model.onboarding.isActive, pinned: model.pinned) {
+            case .composing:
+                // Typing a message to an agent: the notch stays open wherever the pointer goes, until the field closes.
                 collapseWork?.cancel()
                 collapseWork = nil
                 panel.ignoresMouseEvents = false
                 return
-            }
-            if model.pinned {
+            case .touring:
+                collapseWork?.cancel()
+                collapseWork = nil
+                panel.ignoresMouseEvents = !inside
+                return
+            case .pinned:
                 if inside { model.pinned = false }
                 panel.ignoresMouseEvents = false
                 return
+            case .followsPointer:
+                break
             }
             panel.ignoresMouseEvents = !inside
             if inside {

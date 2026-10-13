@@ -44,7 +44,14 @@ struct NotchView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
 
-                if model.isExpanded {
+                if model.onboarding.shows(expanded: model.isExpanded, approvalShowing: model.approvals.current != nil) {
+                    OnboardingView(tour: model.onboarding, settings: model.settings,
+                                   hasNotch: model.geometry.hasNotch && !model.onboarding.showsWithoutNotch,
+                                   bandHeight: OnboardingTour.band(notchHeight: notchHeight))
+                        .padding(.horizontal, topRadius + 14)
+                        .padding(.bottom, 16)
+                        .transition(motion.expandedContent)
+                } else if model.isExpanded {
                     VStack(spacing: 0) {
                         HeaderBar(model: model, height: notchHeight)
                         // The tab stays where it is under a permission prompt, so what was typed in it is still there after.

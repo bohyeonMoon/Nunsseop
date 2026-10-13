@@ -106,6 +106,7 @@ final class NotchViewModel: ObservableObject {
     let capsLock = CapsLockWatcher()
     let notifyServer = NotifyServer()
     let approvals = PermissionBoard()
+    let onboarding = OnboardingTour()
     let muxy: MuxyActivityWatcher
     let notices = NoticeLog()
     let cmux = CmuxWatcher()
@@ -261,6 +262,9 @@ final class NotchViewModel: ObservableObject {
         approvals.$prompts
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
+        onboarding.objectWillChange
+            .sink { [weak self] in self?.objectWillChange.send() }
+            .store(in: &cancellables)
         approvals.$drafts
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
@@ -358,7 +362,13 @@ final class NotchViewModel: ObservableObject {
         var width = settings.expandedWidth
         if settings.widenForTabs { width = Self.widened(width, fitting: widthFittingTabs, limit: geometry.maxExpandedWidth) }
         // A permission prompt shows its command in full, so it takes all the height the panel has.
-        let height = approvals.current == nil ? settings.expandedHeight : max(settings.expandedHeight, AppSettings.expandedHeightRange.upperBound)
+        var height = approvals.current == nil ? settings.expandedHeight : max(settings.expandedHeight, AppSettings.expandedHeightRange.upperBound)
+        // The tour is laid out for this much room.
+        if onboarding.isActive {
+            let frame = OnboardingTour.minimumFrame(notchHeight: geometry.collapsedSize.height)
+            width = max(width, frame.width)
+            height = max(height, frame.height)
+        }
         return CGSize(width: width, height: height)
     }
 
