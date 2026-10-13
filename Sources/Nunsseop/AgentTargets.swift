@@ -92,6 +92,30 @@ struct AgentTargetCheck: Sendable {
         return false
     }
 
+    /// The app the session's process runs under, for a hook that named none: the nearest ancestor in an app bundle (the outermost
+    /// one, a helper app sits inside its main app), as its bundle id, else the bundle's name. nil when no ancestor is in one.
+    func hostApp(pid: Int32) -> String? {
+        var current = pid
+        var seen = Set<Int32>()
+        for _ in 0..<64 {
+            guard seen.insert(current).inserted, let record = processes.lookup(current) else { return nil }
+            if current != pid, let path = record.executable, let range = path.range(of: ".app/Contents/") {
+                let bundle = String(path[..<range.lowerBound]) + ".app"
+                if let id = Bundle(path: bundle)?.bundleIdentifier { return id }
+                // An unreadable bundle (the app was replaced while running) must not make a terminal we can type into look unsupported.
+                return Self.hostsInput(path) ? nil : ((bundle as NSString).lastPathComponent as NSString).deletingPathExtension
+            }
+            guard record.parent > 1 else { return nil }
+            current = record.parent
+        }
+        return nil
+    }
+
+    /// Whether the executable is the process of a terminal that has an input API (see `AgentRow.inputApps`).
+    static func hostsInput(_ path: String) -> Bool {
+        isMuxyServer(path) || isCmuxApp(path) || isTerminalApp(path) || isITerm(path) || isWezTerm(path) || isKitty(path)
+    }
+
     /// Muxy's server, the parent of its terminals' shells: `Muxy.app/Contents/MacOS/muxy-server`.
     static func isMuxyServer(_ path: String) -> Bool { path.hasSuffix("/Muxy.app/Contents/MacOS/muxy-server") }
 

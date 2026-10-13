@@ -37,8 +37,56 @@ struct AgentRow: Identifiable, Equatable {
     /// A prompt may be open in the terminal this row types into: the session's own, however long it has waited, or that of
     /// another listed session sharing the terminal (`claude -p` started from it, a Codex session it replaced).
     private(set) var promptOnTerminal: Bool
+    /// Why the row offers no input, decided from what the board and the verification know; nil when it does (see `inputBlock`).
+    private let notOffered: InputBlock?
 
-    init(_ entry: AgentBoard.Entry, transcript: AgentTranscript?, inputVerified: Bool = false) {
+    /// Why a session can't be sent a message, for the tooltip of its button.
+    enum InputBlock: Equatable {
+        /// A prompt or question may be open on its terminal; typing could answer it.
+        case prompt
+        /// It runs inside tmux, zellij or screen, which no input API reaches.
+        case multiplexer
+        /// Its terminal app is known (bundle id, or the name of its bundle) and has no input API Nunsseop supports.
+        case unsupportedApp(String)
+        /// No process to verify: its hook predates `X-Pid`, or it is a background session.
+        case noProcess
+        /// The terminal supports input, but the session couldn't be shown to be in it.
+        case unconfirmed
+        /// The check of its terminal hasn't covered the row yet; the reason may turn out to be none.
+        case checking
+
+        var message: String {
+            switch self {
+            case .prompt: String(localized: "Answer the prompt first")
+            case .multiplexer: String(localized: "Can't send into tmux, zellij or screen")
+            case .unsupportedApp(let app): String(localized: "\(AgentRow.appName(app)) doesn't let Nunsseop type into it")
+            case .noProcess: String(localized: "Restart this session to send to it")
+            case .unconfirmed: String(localized: "Couldn't confirm which terminal this session is in")
+            case .checking: String(localized: "Checking…")
+            }
+        }
+    }
+
+    /// The terminals that have an input API (see `AgentInput`); the other apps a session can run in have none.
+    static let inputApps: Set<String> = [TerminalScripts.terminalID, TerminalScripts.itermID, MuxyNotice.bundleID, Cmux.bundleID,
+                                         WezTerm.bundleID, Kitty.bundleID]
+
+    /// An app's name for the tooltip: the installed app's own, else the last part of its bundle id; a name with a space or no dot is
+    /// an app folder's (see `AgentTargetCheck.hostApp`) and stays whole. `installed` finds the name by bundle id.
+    static func appName(_ bundleID: String, installed: (String) -> String? = { id in
+        NSWorkspace.shared.urlForApplication(withBundleIdentifier: id).map { FileManager.default.displayName(atPath: $0.path) }
+    }) -> String {
+        if let name = installed(bundleID)?.replacingOccurrences(of: ".app", with: "", options: [.anchored, .backwards]), !name.isEmpty { return name }
+        guard !bundleID.contains(" "), bundleID.contains(".") else { return bundleID }
+        return bundleID.split(separator: ".").last.map(String.init) ?? bundleID
+    }
+
+    /// - multiplexed: the session's own environment says tmux, zellij or screen (for a hook that didn't).
+    /// - hostApp: the app found above its process, for a hook that named none (see `AgentTargetCheck.hostApp`).
+    /// - checked: whether a verification pass has covered the entry's key and process; until it has, a row with a process that
+    ///   isn't sendable reads `.checking`, not a reason a pass may still overturn.
+    init(_ entry: AgentBoard.Entry, transcript: AgentTranscript?, inputVerified: Bool = false, multiplexed: Bool = false, hostApp: String? = nil,
+         checked: Bool = true) {
         let agent = entry.agent
         id = entry.key
         tool = Self.toolName(agent.tool)
@@ -55,6 +103,19 @@ struct AgentRow: Identifiable, Equatable {
         pid = agent.pid
         self.inputVerified = inputVerified
         promptOnTerminal = agent.promptMayBeOpen
+        // Only a hook session can be restarted, and only its hook names an app or a multiplexer; any other source (gjc, a herdr
+        // pane without its socket) can only be unconfirmed.
+        let hook = entry.source.hasPrefix("hooks:")
+        if agent.inMultiplexer || multiplexed {
+            notOffered = .multiplexer
+        } else if !checked && agent.pid != nil {
+            // The process environment may still say tmux, and the process tree may still name another app.
+            notOffered = .checking
+        } else if hook, let app = agent.app ?? hostApp, !Self.inputApps.contains(app) {
+            notOffered = .unsupportedApp(app)
+        } else {
+            notOffered = hook && agent.pid == nil ? .noProcess : .unconfirmed
+        }
     }
 
     /// Whether the row offers the message bubble and takes drops: its terminal has an input API and the session is in it. A herdr
@@ -72,6 +133,13 @@ struct AgentRow: Identifiable, Equatable {
 
     /// Its terminal takes input, but a prompt waits for the answer first.
     var inputBlocked: Bool { offersInput && !acceptsInput }
+
+    /// Why the message button is dimmed, nil when it works. A prompt only counts for a row that could be typed into: answering it
+    /// would not make any other row sendable.
+    var inputBlock: InputBlock? { offersInput ? (acceptsInput ? nil : .prompt) : notOffered }
+
+    /// The tooltip of the message button.
+    var sendHelp: String { inputBlock?.message ?? String(localized: "Send a message") }
 
     /// The rows with `promptOnTerminal` set on every one whose terminal another row's prompt may be open in: text typed there
     /// answers that dialog, whichever session the row it was typed from belongs to.
@@ -207,6 +275,7 @@ final class AgentsTabModel: ObservableObject {
     private let sender: AgentSender
     private let clis: () -> TerminalCLIs
     private let targets: AgentTargetCheck
+    private let environments: ProcessEnvironment
     private var transcripts = AgentTranscripts()
     private var loading = false
     private var changedWhileLoading = false
@@ -222,6 +291,16 @@ final class AgentsTabModel: ObservableObject {
         let input: AgentInput
         let pid: Int32?
     }
+    /// The targets found in the own environment of the sessions whose hook named none, by `Entry.key`, for the process they were
+    /// found for; they take the place of the hook's until it names one.
+    private var derivedTargets: [String: VerifiedTarget] = [:]
+    /// What `ProcessEnvironment` read of each such session's process, by pid. A process's environment doesn't change, so it is read
+    /// once; only the pids on the board are kept.
+    private var environmentCache: [Int32: [String: String]] = [:]
+    /// The app found above the process of each session whose hook named none, by `Entry.key`; for the tooltip of a row that can't be typed into.
+    private var hostApps: [String: String] = [:]
+    /// The entries a verification pass has covered: `Entry.key` and process, see `checkedKey`. A row outside it is still being checked.
+    private var checked: Set<String> = []
     private var scanner = RecentConversations()
     private var scanning = false
     private var scanWanted = false
@@ -237,9 +316,11 @@ final class AgentsTabModel: ObservableObject {
     /// - sender: what puts text into a terminal; tests give it one that records instead.
     /// - clis: where the terminals' command-line tools are, looked up on every send.
     /// - targets: how a session's terminal is verified; tests give it a made-up process tree.
+    /// - environments: how the environment of a session's process is read; tests give it made-up ones.
     init(board: AgentBoard, home: @escaping () -> URL = { NotifyIntegration.home }, isConnected: (() -> Bool)? = nil,
          scratch: [String] = RecentConversations.scratch, onResume: @escaping (RecentConversation) -> Void = Resume.inChosenTerminal,
-         sender: AgentSender = .live, clis: @escaping () -> TerminalCLIs = { .live }, targets: AgentTargetCheck = .live) {
+         sender: AgentSender = .live, clis: @escaping () -> TerminalCLIs = { .live }, targets: AgentTargetCheck = .live,
+         environments: ProcessEnvironment = .live) {
         self.board = board
         self.home = home
         self.isConnected = isConnected
@@ -248,6 +329,7 @@ final class AgentsTabModel: ObservableObject {
         self.sender = sender
         self.clis = clis
         self.targets = targets
+        self.environments = environments
         connected = checkConnected()
         #if DEBUG
         if CommandLine.arguments.contains("--demo-agents") {
@@ -301,30 +383,65 @@ final class AgentsTabModel: ObservableObject {
         }
     }
 
+    private static func checkedKey(_ key: String, _ pid: Int32) -> String { "\(key)|\(pid)" }
+
     /// Checks, off the main thread, that each session's process runs in the terminal its hook named (see `AgentTargetCheck`); until
-    /// then, or when it doesn't, the row offers no input. Muxy's session list is read once for all of them.
+    /// then, or when it doesn't, the row offers no input. Muxy's session list is read once for all of them. A session whose hook named
+    /// none (it started before the hook sent the terminal's variables) is looked at through its process's own environment.
     private func verifyTargets(_ entries: [AgentBoard.Entry]) {
-        let candidates = entries.compactMap { entry -> (key: String, target: VerifiedTarget)? in
+        let named = entries.compactMap { entry -> (key: String, target: VerifiedTarget)? in
             guard let input = entry.agent.input, !isHerdr(input) else { return nil }
             return (entry.key, VerifiedTarget(input: input, pid: entry.agent.pid))
         }
-        guard !candidates.isEmpty else {
+        let unnamed = entries.compactMap { entry -> (key: String, pid: Int32, app: String?)? in
+            guard entry.agent.input == nil, let pid = entry.agent.pid else { return nil }
+            return (entry.key, pid, entry.agent.app)
+        }
+        guard !named.isEmpty || !unnamed.isEmpty else {
             if !verifiedTargets.isEmpty { verifiedTargets = [:] }
+            if !derivedTargets.isEmpty { derivedTargets = [:] }
+            if !environmentCache.isEmpty { environmentCache = [:] }
+            if !hostApps.isEmpty { hostApps = [:] }
+            if !checked.isEmpty { checked = [] }
             return
         }
         guard !verifying else { verifyWanted = true; return }
         verifying = true
-        let targets = targets, muxy = clis().muxy, others = Set(entries.compactMap { $0.agent.pid })
+        let targets = targets, environments = environments, muxy = clis().muxy, others = Set(entries.compactMap { $0.agent.pid })
+        let pids = Set(unnamed.map(\.pid))
+        let covered = Set(entries.compactMap { entry in entry.agent.pid.map { Self.checkedKey(entry.key, $0) } })
+        let unplaced = entries.compactMap { entry -> (key: String, pid: Int32)? in
+            guard entry.agent.app == nil, entry.agent.pane == nil, let pid = entry.agent.pid else { return nil }
+            return (entry.key, pid)
+        }
+        let cached = environmentCache.filter { pids.contains($0.key) }
         Task.detached(priority: .utility) { [weak self] in
+            var cache = cached
+            var derived: [String: VerifiedTarget] = [:]
+            for session in unnamed {
+                let variables = cache[session.pid] ?? environments.variables(of: session.pid)
+                cache[session.pid] = variables
+                let found = AgentHook.input(environment: variables, app: session.app, tty: { targets.processes.lookup(session.pid)?.tty },
+                                            hosted: { targets.hosted($0, pid: session.pid) })
+                if let found { derived[session.key] = VerifiedTarget(input: found, pid: session.pid) }
+            }
+            let candidates = named + derived.map { (key: $0.key, target: $0.value) }
             let wantsList = candidates.contains { if case .muxy = $0.target.input { true } else { false } }
             let sessions = wantsList ? targets.muxySessions(cli: muxy) : nil
             let verified = candidates.filter { targets.verified($0.target.input, pid: $0.target.pid, muxySessions: sessions, others: others) }
-            await self?.verified(Dictionary(uniqueKeysWithValues: verified.map { ($0.key, $0.target) }))
+            var hosts: [String: String] = [:]
+            for session in unplaced { hosts[session.key] = targets.hostApp(pid: session.pid) }
+            await self?.verified(Dictionary(uniqueKeysWithValues: verified.map { ($0.key, $0.target) }), derived: derived, environments: cache, hosts: hosts, covered: covered)
         }
     }
 
-    private func verified(_ targets: [String: VerifiedTarget]) {
+    private func verified(_ targets: [String: VerifiedTarget], derived: [String: VerifiedTarget], environments: [Int32: [String: String]],
+                          hosts: [String: String], covered: Set<String>) {
+        checked = covered
         verifiedTargets = targets
+        hostApps = hosts
+        derivedTargets = derived
+        environmentCache = environments
         verifying = false
         rebuild(board.entries(now: asOf))
         if verifyWanted {
@@ -469,10 +586,21 @@ final class AgentsTabModel: ObservableObject {
                   : String(localized: "Connect Claude Code and Codex in Settings › Alerts to see their sessions here")
     }
 
+    /// The entry with the target found in its process's environment when its hook named none.
+    private func withDerivedInput(_ entry: AgentBoard.Entry) -> AgentBoard.Entry {
+        guard entry.agent.input == nil, let derived = derivedTargets[entry.key], derived.pid == entry.agent.pid else { return entry }
+        var agent = entry.agent
+        agent.input = derived.input
+        return AgentBoard.Entry(source: entry.source, id: entry.id, agent: agent)
+    }
+
     private func rebuild(_ entries: [AgentBoard.Entry]) {
-        let next = AgentRow.sorted(AgentRow.sharingTerminals(entries.map { entry in
+        let next = AgentRow.sorted(AgentRow.sharingTerminals(entries.map(withDerivedInput).map { entry in
             AgentRow(entry, transcript: fixed[entry.key] ?? AgentRow.transcriptKey(entry.agent).flatMap(transcripts.transcript),
-                     inputVerified: entry.agent.input.map { verifiedTargets[entry.key] == VerifiedTarget(input: $0, pid: entry.agent.pid) } ?? false)
+                     inputVerified: entry.agent.input.map { verifiedTargets[entry.key] == VerifiedTarget(input: $0, pid: entry.agent.pid) } ?? false,
+                     multiplexed: entry.agent.pid.flatMap { environmentCache[$0] }.map(AgentHook.inMultiplexer) ?? false,
+                     hostApp: hostApps[entry.key],
+                     checked: entry.agent.pid.map { checked.contains(Self.checkedKey(entry.key, $0)) } ?? true)
         }))
         if next != rows { rows = next }
         // The field closes with its row, or when the session starts waiting on a prompt: typing could answer it.
@@ -568,7 +696,7 @@ private struct AgentRowView: View {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(verbatim: row.title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
                     Spacer(minLength: 4)
-                    if row.offersInput && (hovering || model.composing == row.id) { sendButton }
+                    if hovering || model.composing == row.id { sendButton }
                     if let elapsed = AgentRow.elapsed(since: row.since, now: now) {
                         Text(verbatim: elapsed).font(.system(size: 10).monospacedDigit()).foregroundStyle(.white.opacity(0.4))
                     }
@@ -587,7 +715,7 @@ private struct AgentRowView: View {
         }
     }
 
-    /// Opens the message field; not usable while a prompt waits for its answer.
+    /// Opens the message field. Dimmed when the session can't be typed into, and the tooltip says why.
     private var sendButton: some View {
         Button { model.compose(row) } label: {
             Image(systemName: "bubble.left.fill")
@@ -598,7 +726,7 @@ private struct AgentRowView: View {
         }
         .buttonStyle(.plain)
         .disabled(!row.acceptsInput)
-        .help(row.inputBlocked ? Text("Answer the prompt first") : Text("Send a message"))
+        .help(Text(verbatim: row.sendHelp))
     }
 }
 

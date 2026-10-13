@@ -28,6 +28,8 @@ final class AgentHooks {
         /// Where the terminal it runs in takes input, when its latest event says: a session resumed in another terminal has no claim
         /// on the old one.
         var input: AgentInput?
+        /// Whether its latest event says it runs in tmux, zellij or screen.
+        var inMultiplexer = false
         /// When it entered this state; another event in the same state keeps it.
         var since: Date
         /// When it stops counting and is idle.
@@ -111,6 +113,7 @@ final class AgentHooks {
                 entry.app = event.app ?? entry.app
                 entry.pid = event.pid ?? entry.pid
                 entry.input = event.input
+                entry.inMultiplexer = event.inMultiplexer
                 entry.lastUsed = now
                 entries[id] = entry
             } else {
@@ -139,7 +142,8 @@ final class AgentHooks {
         let unseen = entries.filter { $0.value.app == app && $0.value.settled(at: now).finished }
         guard app != nil, !unseen.isEmpty else { return }
         for (id, entry) in unseen {
-            entries[id] = Entry(state: .idle, app: app, pid: entry.pid, input: entry.input, since: now, lastUsed: entry.lastUsed)
+            entries[id] = Entry(state: .idle, app: app, pid: entry.pid, input: entry.input, inMultiplexer: entry.inMultiplexer, since: now,
+                                 lastUsed: entry.lastUsed)
         }
         publish(now: now)
     }
@@ -150,7 +154,7 @@ final class AgentHooks {
         let shown = old?.settled(at: now)
         let same = shown.map { $0.state == state && $0.finished == finished } ?? false
         entries[id] = Entry(state: state, finished: finished, app: event.app, pid: event.pid ?? old?.pid,
-                            input: event.input, since: same ? shown!.since : now, idleFrom: idleFrom, lastUsed: now)
+                            input: event.input, inMultiplexer: event.inMultiplexer, since: same ? shown!.since : now, idleFrom: idleFrom, lastUsed: now)
     }
 
     /// Drops the sessions that have expired or whose process is gone.
@@ -163,7 +167,8 @@ final class AgentHooks {
             let (id, value) = entry
             agents[id] = AgentBoard.Agent(state: value.state, expiresAt: value.expiresAt, since: value.since,
                                           finished: value.finished, tool: kind.rawValue, app: value.app, session: id,
-                                          idleFrom: value.idleFrom, input: value.input, pid: value.pid)
+                                          idleFrom: value.idleFrom, input: value.input, pid: value.pid,
+                                          inMultiplexer: value.inMultiplexer)
         }, now: now)
         // A session's process can end without a word, so the ones that report theirs are looked at now and then.
         if entries.values.contains(where: { $0.pid != nil }) {

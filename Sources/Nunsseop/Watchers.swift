@@ -123,6 +123,8 @@ struct AgentEvent: Equatable {
     var pid: Int32?
     /// The input API of the terminal it runs in, when the hook says one.
     var input: AgentInput?
+    /// Whether it runs inside tmux, zellij or screen (`X-Mux`), which no input API reaches.
+    var inMultiplexer = false
 }
 
 /// The tools' hook events as the agents count reads them. The extension of the pi family and the OpenCode plugin send the same names.
@@ -178,7 +180,8 @@ enum AgentHook {
             kitty: headers["x-kitty"], kittySocket: headers["x-kitty-socket"], iterm: headers["x-iterm"], app: app,
             tty: { pid.flatMap { processes.lookup($0)?.tty } },
             hosted: { AgentTargetCheck(processes: processes).hosted($0, pid: pid) })
-        return AgentEvent(session: session, action: action, app: app, inHerdr: inHerdr, agent: agent, pid: pid, input: target)
+        return AgentEvent(session: session, action: action, app: app, inHerdr: inHerdr, agent: agent, pid: pid, input: target,
+                          inMultiplexer: inMultiplexer)
     }
 
     /// Where text for the session can go. Muxy before cmux: a Muxy session started from a cmux terminal inherits its variables
@@ -200,6 +203,23 @@ enum AgentHook {
         if app == TerminalScripts.itermID, AgentInput.itermSession(iterm) != nil, let device = AgentInput.ttyDevice(tty()) { candidates.append(.iterm(tty: device)) }
         if app == TerminalScripts.terminalID, let device = AgentInput.ttyDevice(tty()) { candidates.append(.terminalApp(tty: device)) }
         return candidates.first(where: hosted) ?? candidates.first
+    }
+
+    /// The target for a session whose hook named none, from the variables of its own process (see `ProcessEnvironment`): the same
+    /// parsers, priority and `hosted` check as the hook's headers. A herdr pane, tmux, zellij or screen means none, as `X-Herdr` and
+    /// `X-Mux` do.
+    static func input(environment: [String: String], app: String?, tty: () -> String? = { nil },
+                      hosted: (AgentInput) -> Bool = { _ in true }) -> AgentInput? {
+        guard !inMultiplexer(environment: environment), environment["HERDR_PANE_ID"]?.isEmpty != false else { return nil }
+        return input(muxy: environment["MUXY_SESSION_ID"], cmux: environment["CMUX_SURFACE_ID"],
+                     wezterm: environment["WEZTERM_PANE"], weztermSocket: environment["WEZTERM_UNIX_SOCKET"],
+                     kitty: environment["KITTY_WINDOW_ID"], kittySocket: environment["KITTY_LISTEN_ON"],
+                     iterm: environment["ITERM_SESSION_ID"], app: app, tty: tty, hosted: hosted)
+    }
+
+    /// Whether a process's own variables say it runs in tmux, zellij or screen, as `X-Mux` does.
+    static func inMultiplexer(environment: [String: String]) -> Bool {
+        ["TMUX", "ZELLIJ", "STY"].contains { environment[$0]?.isEmpty == false }
     }
 
     /// A process id from `X-Pid`: ASCII digits only, up to 10 of them, past 1 (init) and no more than a `pid_t` holds.

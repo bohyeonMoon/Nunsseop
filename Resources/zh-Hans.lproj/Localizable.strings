@@ -417,3 +417,7 @@
 "OpenCode's permission prompts show in the notch too, where you can allow or deny them. OpenCode's own prompt stays in its terminal: answer in either place and the other lets go. Works with OpenCode connected above." = "OpenCode 的权限请求也会显示在刘海中，你可以允许或拒绝。OpenCode 自己的提示仍留在终端里：在任一处回答，另一处就会放开。需要已在上方连接 OpenCode。";
 "Allow Nunsseop to control %@ in System Settings › Privacy & Security › Automation" = "请在系统设置 › 隐私与安全性 › 自动化中允许 Nunsseop 控制 %@";
 "Terminal can't take text without running it" = "Terminal 无法在不运行的情况下接收文本";
+"Can't send into tmux, zellij or screen" = "无法发送到 tmux、zellij 或 screen 中的会话";
+"%@ doesn't let Nunsseop type into it" = "%@不允许 Nunsseop 向其输入文字";
+"Restart this session to send to it" = "重新启动此会话后即可发送";
+"Couldn't confirm which terminal this session is in" = "无法确认此会话位于哪个终端";

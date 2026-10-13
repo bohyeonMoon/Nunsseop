@@ -417,3 +417,7 @@
 "OpenCode's permission prompts show in the notch too, where you can allow or deny them. OpenCode's own prompt stays in its terminal: answer in either place and the other lets go. Works with OpenCode connected above." = "Die Berechtigungsanfragen von OpenCode erscheinen auch im Notch, wo du sie erlauben oder ablehnen kannst. Die eigene Anfrage von OpenCode bleibt im Terminal: Antworte an einem der beiden Orte, der andere gibt sie dann frei. Funktioniert mit oben verbundenem OpenCode.";
 "Allow Nunsseop to control %@ in System Settings › Privacy & Security › Automation" = "Erlaube Nunsseop, %@ zu steuern, unter Systemeinstellungen › Datenschutz & Sicherheit › Automation";
 "Terminal can't take text without running it" = "Terminal kann Text nicht annehmen, ohne ihn auszuführen";
+"Can't send into tmux, zellij or screen" = "In tmux, zellij oder screen kann nicht gesendet werden";
+"%@ doesn't let Nunsseop type into it" = "%@ lässt Nunsseop keine Eingabe zu";
+"Restart this session to send to it" = "Starte diese Sitzung neu, um an sie zu senden";
+"Couldn't confirm which terminal this session is in" = "Konnte nicht bestätigen, in welchem Terminal diese Sitzung läuft";

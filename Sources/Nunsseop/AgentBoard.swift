@@ -64,6 +64,8 @@ final class AgentBoard: ObservableObject {
         var input: AgentInput? = nil
         /// The tool's process, which `input` is checked against: only a session whose process is in that terminal is typed into.
         var pid: Int32? = nil
+        /// Whether the hook said it runs in tmux, zellij or screen: the terminal around it isn't where its text would go.
+        var inMultiplexer = false
 
         /// Set by `effective(at:)`: asking for input when last told, so its dialog may be open still, however long ago. Going idle
         /// by the clock doesn't close a dialog; only a later event does.
