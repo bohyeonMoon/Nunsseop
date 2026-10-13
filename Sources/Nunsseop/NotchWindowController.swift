@@ -275,10 +275,9 @@ final class NotchWindowController {
 
     /// Return, the arrows and Escape, while the notch shows the tour and is the key window.
     private func handlesTourKey(_ event: NSEvent) -> Bool {
-        guard event.window === panel, model.onboarding.shows(expanded: model.isExpanded, approvalShowing: model.approvals.current != nil),
-              let command = OnboardingTour.command(keyCode: event.keyCode, modifiers: event.modifierFlags) else { return false }
-        model.onboarding.perform(command)
-        return true
+        guard event.window === panel, model.onboarding.shows(expanded: model.isExpanded, approvalShowing: model.approvals.current != nil)
+        else { return false }
+        return model.onboarding.handle(keyCode: event.keyCode, modifiers: event.modifierFlags, isRepeat: event.isARepeat)
     }
 
     #if DEBUG

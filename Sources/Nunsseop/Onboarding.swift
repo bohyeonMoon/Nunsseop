@@ -149,6 +149,14 @@ final class OnboardingTour: ObservableObject {
         }
     }
 
+    /// Whether a key press is the tour's, and does what it says unless the key is only being held down: a held Return
+    /// would otherwise walk through all the steps and finish.
+    func handle(keyCode: UInt16, modifiers: NSEvent.ModifierFlags, isRepeat: Bool) -> Bool {
+        guard let command = Self.command(keyCode: keyCode, modifiers: modifiers) else { return false }
+        if !isRepeat { perform(command) }
+        return true
+    }
+
     // MARK: Connecting tools
 
     /// Connects the tool the way Settings does, and keeps a failure to show it.

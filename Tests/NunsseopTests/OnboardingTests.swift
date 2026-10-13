@@ -323,6 +323,19 @@ struct OnboardingKeyTests {
         }
     }
 
+    @Test func aHeldKeyMovesOneStepAndIsStillTheTours() {
+        withDefaults { defaults in
+            let tour = makeTour(defaults)
+            tour.start()
+            #expect(tour.handle(keyCode: 36, modifiers: [], isRepeat: false))
+            for _ in 0..<5 { #expect(tour.handle(keyCode: 36, modifiers: [], isRepeat: true)) }
+            #expect(tour.index == 1 && tour.isActive)
+            #expect(tour.handle(keyCode: 53, modifiers: [], isRepeat: false))
+            #expect(!tour.isActive)
+            #expect(!tour.handle(keyCode: 0, modifiers: [], isRepeat: false))
+        }
+    }
+
     @Test func returnOnTheLastStepFinishes() {
         withDefaults { defaults in
             let tour = makeTour(defaults)
