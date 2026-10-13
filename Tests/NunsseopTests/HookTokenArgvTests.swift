@@ -193,8 +193,10 @@ struct HookTokenArgvTests {
         for spawning in ["child_process", "spawn", "exec", "Bun.$", "Bun.spawn", "$`", "system("] {
             #expect(!plugin.contains(spawning), "\(spawning)")
         }
-        // Its imports are the two it reads the token and the home folder with.
-        #expect(plugin.components(separatedBy: "\n").filter { $0.hasPrefix("import ") }.count == 2)
+        // Its imports are the three it reads the token and the home folder with and proves a permission answer with.
+        #expect(plugin.components(separatedBy: "\n").filter { $0.hasPrefix("import ") }
+                == ["import { createHash, createHmac, randomBytes, timingSafeEqual } from \"node:crypto\"",
+                    "import { readFileSync } from \"node:fs\"", "import { homedir } from \"node:os\""])
     }
 
     @Test func theHeaderFileHoldsExactlyOneHeaderLineAndIsPrivate() throws {

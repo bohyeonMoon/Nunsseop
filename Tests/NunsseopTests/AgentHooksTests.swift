@@ -176,10 +176,10 @@ struct AgentHookEventTests {
 struct AgentHooksTests {
     let start = Date(timeIntervalSinceReferenceDate: 800_000_000)
 
-    private func make(on: Bool = true, herdr: Bool = false, frontmost: String? = nil, isAlive: @escaping (Int32) -> Bool = { _ in true })
-        -> (hooks: AgentHooks, board: AgentBoard) {
+    private func make(agent: AgentKind = .claude, on: Bool = true, herdr: Bool = false, frontmost: String? = nil,
+                      isAlive: @escaping (Int32) -> Bool = { _ in true }) -> (hooks: AgentHooks, board: AgentBoard) {
         let board = AgentBoard()
-        return (AgentHooks(board: board, isOn: { on }, watchesHerdr: { herdr }, frontmostApp: { frontmost }, isAlive: isAlive), board)
+        return (AgentHooks(board: board, agent: agent, isOn: { on }, watchesHerdr: { herdr }, frontmostApp: { frontmost }, isAlive: isAlive), board)
     }
 
     private func event(_ session: String, _ action: AgentAction, app: String? = nil, inHerdr: Bool = false, pid: Int32? = nil) -> AgentEvent {
@@ -611,6 +611,21 @@ struct AgentHooksTests {
         hooks.apply(event("new", .working, pid: 900), now: start.addingTimeInterval(6))
         #expect(listed(board, at: start.addingTimeInterval(6)).map(\.id) == ["new", "nopid", "other"])
         #expect(board.counts == AgentBoard.Counts(working: 3))
+    }
+
+    /// OpenCode's plugin lives in the server (`opencode serve`, or a TUI that opens a second session), so one pid has several.
+    @Test func openCodeKeepsEverySessionOfOneProcess() {
+        let (hooks, board) = make(agent: .opencode)
+        hooks.apply(event("a", .working, pid: 900), now: start)
+        hooks.apply(event("b", .working, pid: 900), now: start.addingTimeInterval(1))
+        #expect(listed(board, at: start.addingTimeInterval(1)).map(\.id) == ["a", "b"] && board.counts == AgentBoard.Counts(working: 2))
+        // A finishes while B still works: B stays working.
+        hooks.apply(event("a", .finished, pid: 900), now: start.addingTimeInterval(2))
+        #expect(listed(board, at: start.addingTimeInterval(2)).map(\.id) == ["a", "b"])
+        #expect(listed(board, at: start.addingTimeInterval(2), "b").first?.agent.state == .working)
+        // The process still bounds them all.
+        hooks.apply(event("a", .remove, pid: 900), now: start.addingTimeInterval(3))
+        #expect(listed(board, at: start.addingTimeInterval(3)).map(\.id) == ["b"])
     }
 
     @Test func anEndingSessionDoesNotTakeItsSuccessorsWithIt() {

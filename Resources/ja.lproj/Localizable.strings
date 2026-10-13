@@ -410,3 +410,8 @@
 "Send a message" = "メッセージを送信";
 "Answer the prompt first" = "先にプロンプトに答えてください";
 "Couldn't send to this session" = "このセッションに送信できませんでした";
+
+/* More tools in the Agents tab */
+"Use files outside the project" = "プロジェクト外のファイルを使う";
+"Connecting omp, omo or pi adds a file to the extensions folder of the tool. Sessions started afterwards report to the agents count and the Agents tab; Disconnect removes the file. gjc needs no setup: its sessions are read from its own state files while the count or the Agents tab is showing." = "omp、omo、piを接続すると、そのツールの拡張機能フォルダにファイルが追加されます。その後に開始したセッションがエージェント数とエージェントタブに表示されます。接続を解除するとファイルは削除されます。gjcは設定不要で、カウントまたはエージェントタブの表示中、gjc自身の状態ファイルからセッションを読み取ります。";
+"OpenCode's permission prompts show in the notch too, where you can allow or deny them. OpenCode's own prompt stays in its terminal: answer in either place and the other lets go. Works with OpenCode connected above." = "OpenCodeの権限リクエストもノッチに表示され、許可または拒否できます。OpenCode自身のプロンプトはターミナルに残ります。どちらかで答えるともう一方は閉じられます。上でOpenCodeを接続している場合に動作します。";

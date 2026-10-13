@@ -382,6 +382,10 @@ private struct AlertsPane: View {
                 }
                 Text("Connecting changes the tool's own settings file and keeps the old one with a `.nunsseop-backup` extension. Sessions started afterwards send their notifications here. Claude Code and Codex also report their sessions for the agents count in the closed notch, which works while notifications from local tools are on.")
                     .font(.caption).foregroundStyle(.secondary)
+                if NotifyIntegration.allCases.contains(where: { $0.piAgent != nil && $0.isPresent }) {
+                    Text("Connecting omp, omo or pi adds a file to the extensions folder of the tool. Sessions started afterwards report to the agents count and the Agents tab; Disconnect removes the file. gjc needs no setup: its sessions are read from its own state files while the count or the Agents tab is showing.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 Text("The Agents tab lists their sessions and recent conversations with name, folder, model, context used, permission mode and last prompt, read from the tools' own session files on this Mac.")
                     .font(.caption).foregroundStyle(.secondary)
                 Picker("Resume conversations in", selection: Binding(
@@ -399,6 +403,10 @@ private struct AlertsPane: View {
                         .disabled(!settings.localNotifications)
                     if asking.contains(.claudeCode) {
                         Text("Claude Code's permission prompts and questions also show in the notch, where you can allow or deny a prompt and pick the answer to a question. Answer a prompt in the terminal and the notch lets go of it; a question is asked in the terminal once you press “Answer in terminal” in the notch. If Nunsseop isn't running, the terminal asks as before. Works with Claude Code connected above. What a prompt asks is kept in memory only.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    if asking.contains(.openCode) {
+                        Text("OpenCode's permission prompts show in the notch too, where you can allow or deny them. OpenCode's own prompt stays in its terminal: answer in either place and the other lets go. Works with OpenCode connected above.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     if asking.contains(.codex) {

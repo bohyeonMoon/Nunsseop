@@ -101,12 +101,16 @@ enum AgentAction: Equatable {
     case remove
 }
 
-/// The tools whose hooks report sessions for the agents count. Each keeps its sessions apart from the others'.
-enum AgentKind: String {
+/// The tools whose sessions the agents count and the Agents tab list. Each keeps its sessions apart from the others'. The raw
+/// value is what `X-Agent` carries; Claude Code's own hook sends none.
+enum AgentKind: String, CaseIterable {
     case claude, codex
+    /// pi and the forks that share its session files and extension API (see `PiSessions`), and gajae-code, which has no extension.
+    case pi, omp, gjc, omo
+    case opencode
 }
 
-/// One hook call from a Claude Code or Codex session, reduced to what the count needs.
+/// One hook call (or extension or plugin event) from a session of one of the tools, reduced to what the count needs.
 struct AgentEvent: Equatable {
     let session: String
     let action: AgentAction
@@ -121,7 +125,7 @@ struct AgentEvent: Equatable {
     var input: AgentInput?
 }
 
-/// Claude Code's and Codex's hook events as the agents count reads them.
+/// The tools' hook events as the agents count reads them. The extension of the pi family and the OpenCode plugin send the same names.
 enum AgentHook {
     /// What an event means; nil for the ones that say nothing about work (`auth_success`, `SubagentStop`).
     /// `PermissionRequest` and `Interrupt` are Codex's.
@@ -155,7 +159,7 @@ enum AgentHook {
                   value.unicodeScalars.allSatisfy(CharacterSet.agentIDCharacters.contains) else { return nil }
             return value
         }
-        // Claude Code's hook sends no X-Agent; any other name than Codex's is refused, not taken for Claude Code.
+        // Claude Code's hook sends no X-Agent; a name that isn't a tool's is refused, not taken for Claude Code.
         let named = headers["x-agent"] ?? ""
         guard let agent = named.isEmpty ? AgentKind.claude : AgentKind(rawValue: named),
               headers["x-subagent"]?.isEmpty ?? true,
@@ -195,8 +199,8 @@ enum AgentHook {
 /// notify token is in no argument list, which `ps` would show to every user. It does go to whatever listens on the port,
 /// so a stranger who binds 47750 while Nunsseop is off can learn it and fake notices, and nothing more: it authenticates
 /// `/notify` and `/agent` only. Prompts are answered under the permission key (permission-key), which is never sent.
-/// `POST /agent` takes Claude Code's and Codex's session events for the agents count, as headers only (see `agentHookCommand`).
-/// `POST /permission` holds a Claude Code permission prompt until it is answered in the notch (see `PermissionGate`).
+/// `POST /agent` takes the tools' session events for the agents count, as headers only (see `agentHookCommand`, `PiExtension`, `OpenCodePlugin`).
+/// `POST /permission` holds a permission prompt (Claude Code's, Codex's or OpenCode's) until it is answered in the notch (see `PermissionGate`).
 final class NotifyServer: @unchecked Sendable {
     static let port: UInt16 = 47750
     /// A notification a local tool sent, with where it came from when the tool said so.

@@ -435,3 +435,8 @@
 "Send a message" = "메시지 보내기";
 "Answer the prompt first" = "먼저 질문에 답하세요";
 "Couldn't send to this session" = "이 세션으로 보내지 못했습니다";
+
+/* More tools in the Agents tab */
+"Use files outside the project" = "프로젝트 밖의 파일 사용";
+"Connecting omp, omo or pi adds a file to the extensions folder of the tool. Sessions started afterwards report to the agents count and the Agents tab; Disconnect removes the file. gjc needs no setup: its sessions are read from its own state files while the count or the Agents tab is showing." = "omp, omo, pi를 연결하면 해당 도구의 확장 폴더에 파일이 추가됩니다. 이후 시작한 세션이 에이전트 수와 에이전트 탭에 표시되며, 연결 해제를 누르면 파일이 지워집니다. gjc는 설정이 필요 없습니다. 에이전트 수나 에이전트 탭이 보이는 동안 gjc 자체의 상태 파일에서 세션을 읽습니다.";
+"OpenCode's permission prompts show in the notch too, where you can allow or deny them. OpenCode's own prompt stays in its terminal: answer in either place and the other lets go. Works with OpenCode connected above." = "OpenCode의 권한 요청도 노치에 표시되어 허용하거나 거부할 수 있습니다. OpenCode 자체 프롬프트는 터미널에 남아 있으며, 어느 쪽에서 답해도 다른 쪽은 닫힙니다. 위에서 OpenCode를 연결해야 작동합니다.";

@@ -47,7 +47,7 @@ final class AgentBoard: ObservableObject {
         var since: Date? = nil
         /// Waiting because its turn ended, as opposed to asking for input.
         var finished = false
-        /// `claude` or `codex` for the hooks, the agent's own name in a herdr pane.
+        /// The tool's `AgentKind` name for the hooks, the agent's own name in a herdr pane.
         var tool: String? = nil
         /// The bundle id of the terminal app it runs in.
         var app: String? = nil

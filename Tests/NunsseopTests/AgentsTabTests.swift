@@ -160,7 +160,8 @@ struct AgentsTabTests {
                 == AgentTranscripts.Key(kind: .codex, session: "s2"))
         // herdr names its agent; one it doesn't know the files of, or without a session id, has none.
         #expect(AgentRow.transcriptKey(AgentBoard.Agent(state: .working, tool: "claude-code", session: "s3"))?.kind == .claude)
-        #expect(AgentRow.transcriptKey(AgentBoard.Agent(state: .working, tool: "pi", session: "s4")) == nil)
+        #expect(AgentRow.transcriptKey(AgentBoard.Agent(state: .working, tool: "pi", session: "s4")) == AgentTranscripts.Key(kind: .pi, session: "s4"))
+        #expect(AgentRow.transcriptKey(AgentBoard.Agent(state: .working, tool: "hermes", session: "s5")) == nil)
         #expect(AgentRow.transcriptKey(AgentBoard.Agent(state: .working, tool: "claude")) == nil)
     }
 }

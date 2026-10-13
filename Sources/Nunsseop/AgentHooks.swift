@@ -1,7 +1,7 @@
 import AppKit
 
-/// Claude Code or Codex sessions for the agents count and the Agents tab, told by the hooks Nunsseop installs, so one
-/// running in Muxy or a plain terminal shows up as well as one in herdr. Every session is an entry that stays listed for
+/// One tool's sessions (Claude Code's, Codex's, pi's, omp's, omo's or OpenCode's) for the agents count and the Agents tab, told by the
+/// hooks, extension or plugin Nunsseop installs, so one running in Muxy or a plain terminal shows up as well as one in herdr. Every session is an entry that stays listed for
 /// `AgentBoard.recentWindow` after its latest event, because a hook can't say when a turn is cut short with Esc or the
 /// tool is killed: neither sends an event (Codex does send Interrupt). One that reports its process (`pid`) is dropped as
 /// soon as that process is gone. One instance per tool, each a source of its own, so two tools' session ids can't meet.
@@ -84,8 +84,9 @@ final class AgentHooks {
         guard isOn(), !(event.inHerdr && watchesHerdr()) else { return }
         entries = entries.filter { $0.value.expiresAt > now }
         let id = event.session
-        // One process has one session at a time: /resume or /clear inside it starts another id.
-        if let pid = event.pid, event.action != .remove {
+        // One process has one session at a time: /resume or /clear inside it starts another id. Not OpenCode, whose plugin lives in
+        // the server, where one process hosts several sessions at once.
+        if let pid = event.pid, event.action != .remove, kind != .opencode {
             entries = entries.filter { $0.key == id || $0.value.pid != pid }
         }
         switch event.action {
@@ -186,18 +187,28 @@ final class AgentHooks {
     }
 }
 
-/// The hooks of both tools: an event goes to the tool it names, and hiding the count clears both.
+/// The hooks of every tool that reports through `/agent`: an event goes to the tool it names, and hiding the count clears all.
 @MainActor
 struct ToolHooks {
-    let claude: AgentHooks
-    let codex: AgentHooks
+    private let byKind: [AgentKind: AgentHooks]
+
+    /// - others: the hooks of the tools besides Claude Code and Codex.
+    init(claude: AgentHooks, codex: AgentHooks, others: [AgentKind: AgentHooks] = [:]) {
+        byKind = others.merging([.claude: claude, .codex: codex]) { $1 }
+    }
+
+    /// One `AgentHooks` for each tool that sends events.
+    init(board: AgentBoard, isOn: @escaping () -> Bool, watchesHerdr: @escaping () -> Bool) {
+        byKind = Dictionary(uniqueKeysWithValues: AgentKind.allCases.map {
+            ($0, AgentHooks(board: board, agent: $0, isOn: isOn, watchesHerdr: watchesHerdr))
+        })
+    }
 
     func apply(_ event: AgentEvent, now: Date = .now) {
-        (event.agent == .codex ? codex : claude).apply(event, now: now)
+        byKind[event.agent]?.apply(event, now: now)
     }
 
     func reset() {
-        claude.reset()
-        codex.reset()
+        byKind.values.forEach { $0.reset() }
     }
 }

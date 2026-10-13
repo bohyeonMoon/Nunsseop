@@ -126,22 +126,13 @@ struct AgentRow: Identifiable, Equatable {
         }
     }
 
-    /// "Claude Code" and "Codex" for the hooks; herdr's own name for its agent.
+    /// The tool's name as it presents itself; herdr's own name for an agent that isn't one of ours.
     static func toolName(_ raw: String?) -> String {
-        switch kind(raw) {
-        case .claude: return "Claude Code"
-        case .codex: return "Codex"
-        case nil: return raw.flatMap { $0.isEmpty ? nil : $0 } ?? "herdr"
-        }
+        if let kind = kind(raw) { return kind.displayName }
+        return raw.flatMap { $0.isEmpty ? nil : $0 } ?? "herdr"
     }
 
-    static func kind(_ tool: String?) -> AgentKind? {
-        switch tool?.lowercased() {
-        case "claude", "claude-code": .claude
-        case "codex": .codex
-        default: nil
-        }
-    }
+    static func kind(_ tool: String?) -> AgentKind? { AgentKind(tool: tool) }
 
     /// Where the transcript is looked for; herdr gives the session id of the agent in a pane.
     static func transcriptKey(_ agent: AgentBoard.Agent) -> AgentTranscripts.Key? {
@@ -186,7 +177,7 @@ final class AgentsTabModel: ObservableObject {
     @Published private(set) var recent: [RecentConversation] = []
     /// Whether the first look for them is done; until then an empty list doesn't mean there are none.
     @Published private(set) var recentLoaded = false
-    /// Whether Claude Code or Codex is connected, which tells an empty tab from one waiting for a connection.
+    /// Whether a tool that reports its sessions is connected, which tells an empty tab from one waiting for a connection.
     @Published private(set) var connected = false
     /// The row whose message field is open; one at a time.
     @Published private(set) var composing: String?
@@ -237,7 +228,7 @@ final class AgentsTabModel: ObservableObject {
     /// How long a click on the same conversation is ignored: the terminal takes a while to start, cmux up to 10 s.
     static let openingWindow: TimeInterval = 15
 
-    /// - isConnected: whether a tool is connected; by default, whether Claude Code's or Codex's settings under `home` say so.
+    /// - isConnected: whether a tool is connected; by default, whether the tools' settings or files under `home` say so.
     /// - scratch: folders whose conversations are left out.
     /// - onResume: what clicking a recent conversation does; by default, opens it in the terminal chosen in Settings.
     /// - sender: what puts text into a terminal; tests give it one that records instead.
@@ -438,7 +429,11 @@ final class AgentsTabModel: ObservableObject {
 
     private func checkConnected() -> Bool {
         if let isConnected { return isConnected() }
-        return NotifyIntegration.$homeOverride.withValue(home()) { NotifyIntegration.claudeCode.isInstalled || NotifyIntegration.codex.isInstalled }
+        // gjc needs no connection: its sessions are read from its own files.
+        return NotifyIntegration.$homeOverride.withValue(home()) {
+            NotifyIntegration.reportingSessions.contains(where: \.isInstalled)
+                || FileManager.default.fileExists(atPath: home().appendingPathComponent(".gjc").path)
+        }
     }
 
     /// Whether the tab says it has nothing: no session is listed and no recent conversation turned up.

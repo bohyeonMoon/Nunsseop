@@ -35,7 +35,7 @@ enum ResumeTerminal: String, CaseIterable, Identifiable {
     }
 }
 
-/// Opens a conversation again with `claude --resume` or `codex resume` in a new terminal window in its folder.
+/// Opens a conversation again (`claude --resume`, `codex resume`, `omp --resume=`...: see `AgentKind.resumeCommand`) in a new terminal window in its folder.
 /// Programs started by an app don't get the shell's PATH, so the command runs through the user's login shell.
 enum Resume {
     /// What the terminals are run with, so a test can run none.
@@ -84,9 +84,12 @@ enum Resume {
 
     // MARK: Safe pieces
 
-    /// Session ids are hex digits and dashes (UUIDs, Codex's too), 8 to 64 of them.
+    /// Session ids are hex digits and dashes (UUIDs, Codex's and the pi family's too), 8 to 64 of them; OpenCode's are
+    /// `ses_` and letters and digits.
     static func isSafeSession(_ id: String) -> Bool {
-        (8...64).contains(id.count) && id.allSatisfy { $0.isASCII && ($0.isHexDigit || $0 == "-") }
+        guard (8...64).contains(id.count) else { return false }
+        if id.hasPrefix("ses_") { return id.dropFirst(4).allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber) } }
+        return id.allSatisfy { $0.isASCII && ($0.isHexDigit || $0 == "-") }
     }
 
     /// An absolute path without control or line-breaking characters.
@@ -118,8 +121,7 @@ enum Resume {
     /// `cd -- '<folder>' && exec claude --resume '<id>'`; nil when the folder or the id could be anything but what they should be.
     static func line(_ conversation: RecentConversation) -> String? {
         guard isSafeSession(conversation.session), isSafeFolder(conversation.cwd) else { return nil }
-        let command = conversation.kind == .claude ? "claude --resume" : "codex resume"
-        return "cd -- \(quote(conversation.cwd)) && exec \(command) \(quote(conversation.session))"
+        return "cd -- \(quote(conversation.cwd)) && exec \(conversation.kind.resumeCommand(session: conversation.session))"
     }
 
     // MARK: Terminals

@@ -304,7 +304,9 @@ struct PermissionSettingToolsTests {
     @Test func aToolIsExplainedOnlyWhenItIsOnThisMac() {
         #expect(NotifyIntegration.askingForPermission(present: [.codex]) == [.codex])
         #expect(NotifyIntegration.askingForPermission(present: [.claudeCode]) == [.claudeCode])
-        #expect(NotifyIntegration.askingForPermission(present: [.claudeCode, .codex, .openCode]) == [.claudeCode, .codex])
-        #expect(NotifyIntegration.askingForPermission(present: [.openCode]).isEmpty)
+        #expect(NotifyIntegration.askingForPermission(present: [.openCode]) == [.openCode])
+        #expect(NotifyIntegration.askingForPermission(present: [.claudeCode, .codex, .openCode, .gemini, .omp, .omo, .pi])
+                == [.claudeCode, .codex, .openCode])
+        #expect(NotifyIntegration.askingForPermission(present: [.gemini, .omp, .omo, .pi]).isEmpty)
     }
 }

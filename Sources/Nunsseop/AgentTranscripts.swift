@@ -56,7 +56,8 @@ struct AgentTranscript: Equatable {
     /// and `permission-mode` lines the `permissionMode`; Codex's `session_meta` and `turn_context` carry `cwd` and
     /// `model`, `turn_context` also the sandbox and collaboration mode, and its `token_count` events the usage. The first
     /// folder is the one the session started in (the shell can move on later); for the rest the later line wins. A line
-    /// that doesn't parse (a half-written last one, or the cut one a tail starts with) is skipped.
+    /// that doesn't parse (a half-written last one, or the cut one a tail starts with) is skipped. The pi family's `session` header
+    /// carries the folder (and, for omp and gjc, a title); `model_change` the model; assistant messages their model and usage.
     static func parse(_ kind: AgentKind, head: Data = Data(), tail: Data) -> AgentTranscript {
         var result = AgentTranscript()
         for chunk in [head, tail] {
@@ -65,6 +66,9 @@ struct AgentTranscript: Equatable {
                 switch kind {
                 case .claude: result.absorbClaude(object)
                 case .codex: result.absorbCodex(object)
+                case .pi, .omp, .gjc, .omo: result.absorbPi(object)
+                // OpenCode keeps no file to read; its database is (see `OpenCodeDB`).
+                case .opencode: break
                 }
             }
         }
@@ -107,6 +111,30 @@ struct AgentTranscript: Equatable {
         }
     }
 
+    private mutating func absorbPi(_ object: [String: Any]) {
+        switch object["type"] as? String {
+        case "session":
+            if self.cwd == nil, let cwd = object["cwd"] as? String, !cwd.isEmpty { self.cwd = cwd }
+            if name == nil, let title = (object["title"] as? String).flatMap(Self.cleanName) { name = title }
+        case "title":
+            // omp's first line, rewritten as the title changes: newer than the header's, whichever comes first.
+            if let title = (object["title"] as? String).flatMap(Self.cleanName) { name = title }
+        case "model_change":
+            // `modelId` in pi and omo, `provider/model` in omp and gjc.
+            if let model = (object["modelId"] as? String) ?? (object["model"] as? String).map({ String($0.split(separator: "/").last ?? "") }),
+               !model.isEmpty { self.model = model }
+        case "message":
+            guard let message = object["message"] as? [String: Any], message["role"] as? String == "assistant" else { return }
+            if let model = message["model"] as? String, !model.isEmpty { self.model = model }
+            // A failed request has no usage; the context is what the last real one sent, cached or not.
+            guard let usage = message["usage"] as? [String: Any] else { return }
+            let context = ["input", "cacheRead", "cacheWrite"].reduce(0) { $0 + ((usage[$1] as? NSNumber)?.intValue ?? 0) }
+            if context > 0 { tokens = context }
+        default:
+            break
+        }
+    }
+
     /// Where a read starts from the end of a file, and how far it widens when the last assistant message, token count
     /// or mode isn't in it (one line can be megabytes, and only a Claude Code prompt says the mode); the start of the file is read for the folder the session began in.
     static let firstWindow = 256 << 10
@@ -122,14 +150,15 @@ struct AgentTranscript: Equatable {
             guard (try? handle.seek(toOffset: start)) != nil,
                   let tail = end == start ? Data() : try? handle.read(upToCount: Int(end - start)) else { return nil }
             var result = parse(kind, tail: tail)
-            guard (result.model != nil && result.tokens != nil && result.mode != nil) || start == 0 || window >= UInt64(lastWindow) else {
+            guard (result.model != nil && result.tokens != nil && (result.mode != nil || !kind.reportsMode)) || start == 0
+                    || window >= UInt64(lastWindow) else {
                 window *= 4
                 continue
             }
-            if start > 0, (try? handle.seek(toOffset: 0)) != nil,
-               let head = try? handle.read(upToCount: min(Int(start), headWindow)),
-               let first = parse(kind, head: head, tail: Data()).cwd {
-                result.cwd = first
+            if start > 0, (try? handle.seek(toOffset: 0)) != nil, let head = try? handle.read(upToCount: min(Int(start), headWindow)) {
+                let first = parse(kind, head: head, tail: Data())
+                if let cwd = first.cwd { result.cwd = cwd }
+                if result.name == nil { result.name = first.name }
             }
             return result
         }
@@ -161,10 +190,20 @@ struct AgentTranscript: Equatable {
     }
 }
 
-/// A Claude Code session's name. `custom-title` lines (from /rename) win over `agent-name` ones, those over the
-/// automatic `ai-title` ones, the latest of each kind. They can sit anywhere in a file of tens of megabytes, so the file
-/// is read whole once and after that only what was appended.
+/// A session's name. In Claude Code's files `custom-title` lines (from /rename) win over `agent-name` ones, those over the
+/// automatic `ai-title` ones, the latest of each kind; in the pi family's the latest `session_info` (pi, omo) or `title_change`
+/// (omp, gjc) line. They can sit anywhere in a file of tens of megabytes, so the file is read whole once and after that only
+/// what was appended.
 struct AgentNameScan: Equatable {
+    enum Family: Equatable {
+        case claude, pi
+
+        var markers: [[UInt8]] {
+            (self == .claude ? ["custom-title", "agent-name", "ai-title"] : ["session_info", "title_change"]).map { Array($0.utf8) }
+        }
+    }
+
+    let family: Family
     var custom: String?
     var agent: String?
     var ai: String?
@@ -177,15 +216,17 @@ struct AgentNameScan: Equatable {
 
     static let chunk = 4 << 20
     private static let anchorLength = 64
-    private static let markers = ["custom-title", "agent-name", "ai-title"].map { Array($0.utf8) }
-    private static let longest = markers.map(\.count).max() ?? 0
+
+    init(family: Family = .claude) { self.family = family }
 
     /// Reads from `offset` to the end of the file in pieces of `size` bytes; a smaller or different file is read from the start.
     mutating func advance(_ url: URL, chunk size: Int = AgentNameScan.chunk) {
         guard let handle = try? FileHandle(forReadingFrom: url), let end = try? handle.seekToEnd() else { return }
         defer { try? handle.close() }
-        if offset > end || !anchorHolds(handle) { self = AgentNameScan() }
+        if offset > end || !anchorHolds(handle) { self = AgentNameScan(family: family) }
         guard (try? handle.seek(toOffset: offset)) != nil else { return }
+        let markers = family.markers
+        let longest = markers.map(\.count).max() ?? 0
         var position = offset
         var lineStart = offset
         // A line that has no marker keeps only its last bytes, for a marker that straddles two pieces. When the marker
@@ -198,8 +239,8 @@ struct AgentNameScan: Equatable {
                 if !truncated { line.append(contentsOf: piece) }
                 return
             }
-            let keep = Self.longest - 1
-            if line.isEmpty, !Self.hasMarker(piece) {
+            let keep = longest - 1
+            if line.isEmpty, !Self.hasMarker(piece, markers) {
                 if !ended {
                     line = Data(piece.suffix(keep))
                     truncated = piece.count > keep
@@ -207,7 +248,7 @@ struct AgentNameScan: Equatable {
                 return
             }
             line.append(contentsOf: piece)
-            if Self.hasMarker(line) {
+            if Self.hasMarker(line, markers) {
                 marked = true
                 if truncated { line = Data() }
             } else if ended {
@@ -263,9 +304,9 @@ struct AgentNameScan: Equatable {
         return (try? handle.read(upToCount: Int(length))) ?? Data()
     }
 
-    private static func hasMarker(_ bytes: Data) -> Bool { bytes.withUnsafeBytes { hasMarker($0) } }
+    private static func hasMarker(_ bytes: Data, _ markers: [[UInt8]]) -> Bool { bytes.withUnsafeBytes { hasMarker($0, markers) } }
 
-    private static func hasMarker(_ bytes: UnsafeRawBufferPointer) -> Bool {
+    private static func hasMarker(_ bytes: UnsafeRawBufferPointer, _ markers: [[UInt8]]) -> Bool {
         guard let base = bytes.baseAddress else { return false }
         return markers.contains { marker in marker.withUnsafeBytes { memmem(base, bytes.count, $0.baseAddress, marker.count) != nil } }
     }
@@ -277,6 +318,8 @@ struct AgentNameScan: Equatable {
         case "custom-title": custom = value("customTitle") ?? custom
         case "agent-name": agent = value("agentName") ?? agent
         case "ai-title": ai = value("aiTitle") ?? ai
+        case "session_info": custom = value("name") ?? custom
+        case "title_change": custom = value("title") ?? custom
         default: break
         }
     }
@@ -333,10 +376,17 @@ struct AgentTranscripts {
         var size: Int
         var transcript: AgentTranscript?
         var scan = AgentNameScan()
+
+        init(kind: AgentKind) {
+            (url, checked, modified, size, transcript) = (nil, .distantPast, nil, 0, nil)
+            scan = AgentNameScan(family: kind.isPiFamily ? .pi : .claude)
+        }
     }
 
     /// How long a transcript that wasn't found waits before it is looked for again.
     static let retryInterval: TimeInterval = 30
+    /// How long OpenCode's database is left alone after a look: it has no file whose size and time tell a change.
+    static let databaseInterval: TimeInterval = 5
     private var entries: [Key: Entry] = [:]
     private var codexNames = CodexSessionNames()
 
@@ -349,7 +399,14 @@ struct AgentTranscripts {
         entries = entries.filter { keys.contains($0.key) }
         if keys.contains(where: { $0.kind == .codex }) { codexNames.refresh(home: home) }
         for key in keys where Self.isSafe(key.session) {
-            var entry = entries[key] ?? Entry(url: nil, checked: .distantPast, modified: nil, size: 0, transcript: nil)
+            var entry = entries[key] ?? Entry(kind: key.kind)
+            if key.kind == .opencode {
+                guard now.timeIntervalSince(entry.checked) >= Self.databaseInterval else { continue }
+                entry.checked = now
+                entry.transcript = OpenCodeDB.transcript(session: key.session, home: home) ?? entry.transcript
+                entries[key] = entry
+                continue
+            }
             if let url = entry.url {
                 if let stamp = Self.stamp(url) {
                     if stamp.modified != entry.modified || stamp.size != entry.size {
@@ -359,7 +416,7 @@ struct AgentTranscripts {
                     entries[key] = named(entry, key)
                     continue
                 }
-                entry = Entry(url: nil, checked: .distantPast, modified: nil, size: 0, transcript: nil)
+                entry = Entry(kind: key.kind)
             }
             guard now.timeIntervalSince(entry.checked) >= Self.retryInterval else { continue }
             entry.checked = now
@@ -374,12 +431,14 @@ struct AgentTranscripts {
 
     private func load(_ entry: inout Entry, key: Key, url: URL) {
         entry.transcript = AgentTranscript.read(url, kind: key.kind)
-        if key.kind == .claude { entry.scan.advance(url) }
+        if key.kind != .codex { entry.scan.advance(url) }
     }
 
+    /// The name from the title lines (the pi family's header title when there are none) or Codex's index.
     private func named(_ entry: Entry, _ key: Key) -> Entry {
         var entry = entry
-        entry.transcript?.name = key.kind == .claude ? entry.scan.name : codexNames.names[key.session]
+        let name = key.kind == .codex ? codexNames.names[key.session] : entry.scan.name ?? entry.transcript?.name
+        entry.transcript?.name = name
         return entry
     }
 
@@ -397,13 +456,18 @@ struct AgentTranscripts {
 
     /// Claude Code keeps `~/.claude/projects/<folder encoded in a name>/<session>.jsonl`. The folder can change in a
     /// session, so every project folder is looked in, and the newest file wins. Codex keeps
-    /// `~/.codex/sessions/YYYY/MM/DD/rollout-<time>-<session>.jsonl`, looked for from the newest day.
+    /// `~/.codex/sessions/YYYY/MM/DD/rollout-<time>-<session>.jsonl`, looked for from the newest day. The pi family's are in
+    /// `PiSessions`; OpenCode has none.
     static func locate(_ key: Key, home: URL) -> URL? {
         let files = FileManager.default
         func children(_ url: URL) -> [URL] {
             (try? files.contentsOfDirectory(at: url, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)) ?? []
         }
         switch key.kind {
+        case .pi, .omp, .gjc, .omo:
+            return PiSessions.locate(key.kind, session: key.session, home: home)
+        case .opencode:
+            return nil
         case .claude:
             let candidates = children(home.appendingPathComponent(".claude/projects"))
                 .map { $0.appendingPathComponent("\(key.session).jsonl") }

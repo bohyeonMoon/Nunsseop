@@ -113,6 +113,8 @@ final class NotchViewModel: ObservableObject {
     let agents = AgentBoard()
     let agentList: AgentsTabModel
     let agentHooks: ToolHooks
+    /// gjc has no hook to send events, so its state files are polled.
+    let gjcWatcher: GjcWatcher
     let tmux = TmuxWatcher()
     let stats = SystemStats()
     let launcher = AppLauncher()
@@ -170,9 +172,10 @@ final class NotchViewModel: ObservableObject {
         self.hud = HUDCenter(settings: settings)
         let isOn = { settings.idleLeft == .agents || settings.idleRight == .agents || settings.agentsTab }
         self.agentList = AgentsTabModel(board: agents)
-        self.agentHooks = ToolHooks(claude: AgentHooks(board: agents, isOn: isOn, watchesHerdr: { settings.watchesHerdr }),
-                                    codex: AgentHooks(board: agents, agent: .codex, isOn: isOn,
-                                                      watchesHerdr: { settings.watchesHerdr }))
+        self.agentHooks = ToolHooks(board: agents, isOn: isOn, watchesHerdr: { settings.watchesHerdr })
+        self.gjcWatcher = GjcWatcher(board: agents, isOn: isOn)
+        // Looks only while the count or the tab is showing (every poll asks `isOn`).
+        gjcWatcher.start()
         Publishers.CombineLatest4(nowPlaying.$track.map { $0?.isPlaying == true }, timer.$anchor.map { $0 != nil },
                                   settings.$collapsedMusic, settings.$collapsedTimer)
             .map { music, timer, showMusic, showTimer in (music && showMusic) || (timer && showTimer) }
@@ -252,7 +255,10 @@ final class NotchViewModel: ObservableObject {
             .map { $0 == .agents || $1 == .agents || $2 }
             .removeDuplicates()
             .filter { !$0 }
-            .sink { [weak self] _ in self?.agentHooks.reset() }
+            .sink { [weak self] _ in
+                self?.agentHooks.reset()
+                self?.gjcWatcher.reset()
+            }
             .store(in: &cancellables)
         agents.$counts
             .removeDuplicates()

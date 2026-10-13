@@ -1,9 +1,10 @@
 import Foundation
 
 /// Command-line tools whose notifications Nunsseop can show, each wired up by editing that tool's own config.
-/// Every change keeps the tool's other settings, and the JSON and TOML files are backed up first.
+/// Every change keeps the tool's other settings, and the JSON and TOML files are backed up first. omp, omo and pi are
+/// connected by a file of Nunsseop's in their extensions folder (see `PiExtension`).
 enum NotifyIntegration: String, CaseIterable, Identifiable {
-    case claudeCode, codex, gemini, openCode
+    case claudeCode, codex, gemini, openCode, omp, omo, pi
 
     enum IntegrationError: Error { case unreadableConfig, unreadableHooks }
 
@@ -15,6 +16,17 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
         case .codex: "Codex"
         case .gemini: "Gemini CLI"
         case .openCode: "OpenCode"
+        case .omp, .omo, .pi: piAgent?.displayName ?? rawValue
+        }
+    }
+
+    /// The tool of the pi family this connects; nil for the others.
+    var piAgent: AgentKind? {
+        switch self {
+        case .omp: .omp
+        case .omo: .omo
+        case .pi: .pi
+        case .claudeCode, .codex, .gemini, .openCode: nil
         }
     }
 
@@ -38,20 +50,28 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
         case .codex: Self.home.appendingPathComponent(".codex/config.toml")
         case .gemini: Self.home.appendingPathComponent(".gemini/settings.json")
         case .openCode: Self.home.appendingPathComponent(".config/opencode/plugins/nunsseop.js")
+        case .omp, .omo, .pi: Self.home.appendingPathComponent(".\(rawValue)/agent/extensions/nunsseop.ts")
         }
     }
 
     /// Shown only when the tool has been used on this Mac.
     var isPresent: Bool {
-        let folder = self == .openCode ? Self.home.appendingPathComponent(".config/opencode")
-                                       : configURL.deletingLastPathComponent()
+        let folder: URL
+        switch self {
+        case .openCode: folder = Self.home.appendingPathComponent(".config/opencode")
+        case .omp, .omo, .pi: folder = Self.home.appendingPathComponent(".\(rawValue)/agent")
+        case .claudeCode, .codex, .gemini: folder = configURL.deletingLastPathComponent()
+        }
         return FileManager.default.fileExists(atPath: folder.path)
     }
 
     /// The tools among `present` whose permission prompts can be answered in the notch; each is explained under the setting.
     static func askingForPermission(present: Set<NotifyIntegration>) -> Set<NotifyIntegration> {
-        present.intersection([.claudeCode, .codex])
+        present.intersection([.claudeCode, .codex, .openCode])
     }
+
+    /// The tools that report their sessions for the agents count, once connected.
+    static let reportingSessions: [NotifyIntegration] = [.claudeCode, .codex, .openCode, .omp, .omo, .pi]
 
     /// Where Codex reads lifecycle hooks, next to its config. Its notices stay with the notify command in `configURL`.
     var hooksURL: URL { configURL.deletingLastPathComponent().appendingPathComponent("hooks.json") }
@@ -91,6 +111,8 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
             return (try? String(contentsOf: configURL, encoding: .utf8)).map(CodexNotify.isInstalled(in:)) ?? false
         case .openCode:
             return FileManager.default.fileExists(atPath: configURL.path)
+        case .omp, .omo, .pi:
+            return Self.isOurs(extension: configURL)
         }
     }
 
@@ -137,7 +159,20 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
             guard (try? String(contentsOf: configURL, encoding: .utf8)) != Self.openCodePlugin else { return }
             // Through write(), so a plugin edited by hand is kept as a backup.
             try Self.write(Data(Self.openCodePlugin.utf8), to: configURL)
+        case .omp, .omo, .pi:
+            guard let agent = piAgent else { return }
+            let extensionText = PiExtension.source(agent: agent)
+            guard (try? String(contentsOf: configURL, encoding: .utf8)) != extensionText else { return }
+            // A file of the same name that is not ours is kept as a backup. One of ours that differs is an older version or edited by
+            // hand: it is kept too, but only where no backup is yet (a foreign file's backup is not given up for an upgrade).
+            let backupExists = FileManager.default.fileExists(atPath: configURL.appendingPathExtension("nunsseop-backup").path)
+            try Self.write(Data(extensionText.utf8), to: configURL, backup: !Self.isOurs(extension: configURL) || !backupExists)
         }
+    }
+
+    /// Whether the extension file is there and Nunsseop's.
+    private static func isOurs(extension url: URL) -> Bool {
+        (try? String(contentsOf: url, encoding: .utf8))?.hasPrefix(PiExtension.marker) == true
     }
 
     /// Updates every connected tool to this version's hook, script or plugin, in the background; the rest stay
@@ -172,11 +207,14 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
         updateConnectedNow()
     }
 
+    /// The tools with hooks in a settings file, which a deleted notice hook or notify command can leave behind.
+    private var leavesHooksBehind: Bool { [.claudeCode, .codex, .gemini].contains(self) }
+
     static func updateConnectedNow() {
         for tool in allCases {
             if tool.isInstalled {
                 try? tool.installNow()
-            } else if tool != .openCode {
+            } else if tool.leavesHooksBehind {
                 try? tool.uninstallNow()
             }
         }
@@ -198,6 +236,8 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
             }
         case .openCode:
             try? FileManager.default.removeItem(at: configURL)
+        case .omp, .omo, .pi:
+            if Self.isOurs(extension: configURL) { try? FileManager.default.removeItem(at: configURL) }
         }
     }
 
@@ -226,41 +266,23 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
         try write(Data(text.utf8), to: url)
     }
 
-    /// Keeps the previous file as `<name>.nunsseop-backup` before replacing it.
-    private static func write(_ data: Data, to url: URL) throws {
+    /// Keeps the previous file as `<name>.nunsseop-backup` before replacing it, unless `backup` says it isn't worth one.
+    private static func write(_ data: Data, to url: URL, backup keep: Bool = true) throws {
         let fileManager = FileManager.default
         if fileManager.fileExists(atPath: url.path) {
-            let backup = url.appendingPathExtension("nunsseop-backup")
-            try? fileManager.removeItem(at: backup)
-            try fileManager.copyItem(at: url, to: backup)
+            if keep {
+                let backup = url.appendingPathExtension("nunsseop-backup")
+                try? fileManager.removeItem(at: backup)
+                try fileManager.copyItem(at: url, to: backup)
+            }
         } else {
             try fileManager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         }
         try data.write(to: url, options: .atomic)
     }
 
-    /// OpenCode loads every file in its plugins folder; this one reports finished sessions.
-    static let openCodePlugin = """
-        // Added by Nunsseop: shows OpenCode's finished sessions in the notch. Delete this file to stop.
-        import { readFileSync } from "node:fs"
-        import { homedir } from "node:os"
-
-        export const NunsseopPlugin = async () => ({
-          event: async ({ event }) => {
-            if (event.type !== "session.idle") return
-            try {
-              const token = readFileSync(`${homedir()}/Library/Application Support/Nunsseop/notify-token`, "utf8").trim()
-              await fetch("http://127.0.0.1:\(NotifyServer.port)/notify", {
-                method: "POST",
-                headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-                body: JSON.stringify({ title: "OpenCode", message: "Finished", app: process.env.__CFBundleIdentifier }),
-                signal: AbortSignal.timeout(2000),
-              })
-            } catch {}
-          },
-        })
-
-        """
+    /// OpenCode loads every file in its plugins folder (see `OpenCodePlugin`).
+    static var openCodePlugin: String { OpenCodePlugin.source() }
 }
 
 /// Claude Code and Gemini CLI both read hooks from a JSON settings file, as groups per event name.

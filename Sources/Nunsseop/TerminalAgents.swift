@@ -293,11 +293,31 @@ enum Herdr {
         return rows.compactMap { row in
             (row["pane_id"] as? String).map {
                 let session = row["agent_session"] as? [String: Any]
-                return Pane(id: $0, status: row["agent_status"] as? String ?? "unknown",
-                            agent: row["display_agent"] as? String ?? row["agent"] as? String, title: row["title"] as? String,
-                            cwd: row["foreground_cwd"] as? String ?? row["cwd"] as? String,
-                            session: session?["kind"] as? String == "id" ? session?["value"] as? String : nil)
+                var agent = agentName(display: row["display_agent"] as? String, agent: row["agent"] as? String)
+                // omo reports to herdr as pi; its session file says which of the two it is.
+                if AgentKind(tool: agent) == .pi, session?["kind"] as? String == "path",
+                   PiSessions.owner(ofPath: session?["value"] as? String ?? "") == .omo { agent = AgentKind.omo.rawValue }
+                return Pane(id: $0, status: row["agent_status"] as? String ?? "unknown", agent: agent, title: row["title"] as? String,
+                            cwd: row["foreground_cwd"] as? String ?? row["cwd"] as? String, session: sessionID(in: session))
             }
+        }
+    }
+
+    /// A pane's agent: herdr's `display_agent`, unless that is a label rather than a tool (pi and its forks put the session's
+    /// name there) and the pane's own `agent` names one.
+    static func agentName(display: String?, agent: String?) -> String? {
+        if AgentKind(tool: display) == nil, AgentKind(tool: agent) != nil { return agent }
+        return display ?? agent
+    }
+
+    /// The session id of a pane's `agent_session`: a value of kind `id` as it is, a `path` (what pi, omp and omo report) as the
+    /// id in the name of the file it points at.
+    static func sessionID(in session: [String: Any]?) -> String? {
+        guard let value = session?["value"] as? String else { return nil }
+        switch session?["kind"] as? String {
+        case "id": return value
+        case "path": return PiSessions.sessionID(path: value)
+        default: return nil
         }
     }
 
@@ -313,7 +333,7 @@ enum Herdr {
             return .panesChanged
         case "pane.agent_status_changed":
             guard let pane = data["pane_id"] as? String, let status = data["agent_status"] as? String else { return nil }
-            let agent = data["display_agent"] as? String ?? data["agent"] as? String ?? "herdr"
+            let agent = agentName(display: data["display_agent"] as? String, agent: data["agent"] as? String) ?? "herdr"
             return .status(pane: pane, Notice(agent: agent, status: status, title: data["title"] as? String, pane: pane))
         default:
             return nil
