@@ -39,6 +39,18 @@ private func setup(installed: [ResumeTerminal] = ResumeTerminal.allCases, script
                  scripts: scripts ?? FileManager.default.temporaryDirectory)
 }
 
+/// What a terminal that parses its command was given: only the path of a private 0700 script, plain under every parser,
+/// that hands `line` to the login shell. The script is removed afterwards.
+func expectResumeScript(_ path: String?, runs line: String, sourceLocation: SourceLocation = #_sourceLocation) throws {
+    let path = try #require(path, sourceLocation: sourceLocation)
+    #expect(Resume.isPlainPath(path), "\(path)", sourceLocation: sourceLocation)
+    let text = try String(contentsOfFile: path, encoding: .utf8)
+    #expect(text == Resume.terminalScript(line: line, shell: "/bin/zsh"), sourceLocation: sourceLocation)
+    let mode = (try FileManager.default.attributesOfItem(atPath: path)[.posixPermissions] as? NSNumber)?.intValue
+    #expect(mode == 0o700, sourceLocation: sourceLocation)
+    try? FileManager.default.removeItem(at: URL(fileURLWithPath: path).deletingLastPathComponent())
+}
+
 struct ResumeLineTests {
     @Test func sessionIdsAreHexDigitsAndDashes() {
         for good in [session, "01a130c4-3953-7f71-bc99-b8a6d37a5338", "ABCDEF12", String(repeating: "a", count: 64)] {
@@ -140,7 +152,8 @@ struct ResumeOpenTests {
         let call = try #require(recorder.calls.first)
         let line = "cd -- \(Resume.quote(cwd)) && exec claude --resume '\(session)'"
         #expect(call.program == "open")
-        #expect(call.arguments == ["-na", "/Applications/Ghostty.app", "--args", "--window-save-state=never", "--working-directory=\(cwd)", "-e", "/bin/zsh", "-lc", line])
+        #expect(Array(call.arguments.dropLast()) == ["-na", "/Applications/Ghostty.app", "--args", "--window-save-state=never", "--working-directory=\(cwd)", "-e"])
+        try expectResumeScript(call.arguments.last, runs: line)
     }
 
     @Test func cmuxTypesTheLineIntoANewWorkspaceOfARunningApp() throws {
@@ -149,8 +162,9 @@ struct ResumeOpenTests {
         #expect(Resume.open(conversation(.codex, cwd: cwd), in: .cmux, setup: setup(), launcher: recorder.launcher) == .cmux)
         #expect(recorder.calls.map(\.program) == ["cmux", "cmux"])
         #expect(recorder.calls[0].arguments == ["ping"])
-        #expect(recorder.calls[1].arguments == ["new-workspace", "--cwd", cwd, "--command", "cd -- '\(cwd)' && exec codex resume '\(session)'",
-                                                "--focus", "true"])
+        let arguments = recorder.calls[1].arguments
+        #expect(arguments.count == 7 && arguments[0...3] == ["new-workspace", "--cwd", cwd, "--command"] && arguments[5...] == ["--focus", "true"])
+        try expectResumeScript(arguments.count == 7 ? arguments[4] : nil, runs: "cd -- '\(cwd)' && exec codex resume '\(session)'")
         #expect(recorder.sleeps == 0)
     }
 
@@ -311,5 +325,24 @@ struct ResumeEnvironmentTests {
     @Test func theCommandRunsWithThatEnvironment() throws {
         let output = try #require(TerminalFocus.run(URL(fileURLWithPath: "/usr/bin/env"), [], environment: ["A": "1"]))
         #expect(output == "A=1\n")
+    }
+}
+
+struct ResumeScriptPathTests {
+    @Test func aTerminalThatParsesItsCommandGetsOnlyAPlainPathEvenForAHostileFolder() throws {
+        let hostile = try FileManager.default.temporaryDirectory.appendingPathComponent("nunsseop-hostile-\(UUID().uuidString)/a'b\\c $(x) `y`; z \"q\"").path
+        try FileManager.default.createDirectory(atPath: hostile, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(atPath: URL(fileURLWithPath: hostile).deletingLastPathComponent().path) }
+        let line = try #require(Resume.line(conversation(cwd: hostile)))
+        let script = try #require(Resume.writeScript(line, setup: setup()))
+        #expect(Resume.isPlainPath(script.path) && !script.path.contains("'"))
+        try expectResumeScript(script.path, runs: line)
+    }
+
+    @Test func onlyLettersDigitsAndSlashDotUnderscoreDashArePlain() {
+        #expect(Resume.isPlainPath("/var/folders/_2/T/nunsseop-resume-0A-1/resume.command"))
+        for bad in ["relative/path", "/a b", "/a'b", "/a\"b", "/a$b", "/a;b", "/a\\b", "/é", "/a\nb", ""] {
+            #expect(!Resume.isPlainPath(bad), "\(bad)")
+        }
     }
 }

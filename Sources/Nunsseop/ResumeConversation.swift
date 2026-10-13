@@ -197,12 +197,9 @@ enum Resume {
 
     /// A new window of a new Ghostty process, in the folder: argv, not a shell string. The new process doesn't bring
     /// back the windows Ghostty saved, which would open beside it as tabs.
-    static func ghosttyArguments(app: URL, cwd: String, line: String, shell: String) -> [String] {
-        ["-na", app.path, "--args", "--window-save-state=never", "--working-directory=\(cwd)", "-e", shell, "-lc", line]
+    static func ghosttyArguments(app: URL, cwd: String, script: String) -> [String] {
+        ["-na", app.path, "--args", "--window-save-state=never", "--working-directory=\(cwd)", "-e", script]
     }
-
-    /// The login shell as one command for a terminal that takes a command line to parse (Ghostty's `command`, iTerm2's profile command).
-    static func shellCommand(shell: String, line: String) -> String { "\(quote(shell)) -lc \(quote(line))" }
 
     /// A tab in the WezTerm that is running; `--no-auto-start` so none is started for it.
     static func weztermArguments(cwd: String, line: String, shell: String) -> [String] {
@@ -219,40 +216,45 @@ enum Resume {
         ["@", "--to", socket, "launch", "--type=tab", "--cwd=\(cwd)", shell, "-lc", line]
     }
 
-    static func cmuxArguments(cwd: String, line: String) -> [String] {
-        ["new-workspace", "--cwd", cwd, "--command", line, "--focus", "true"]
+    static func cmuxArguments(cwd: String, script: String) -> [String] {
+        ["new-workspace", "--cwd", cwd, "--command", script, "--focus", "true"]
     }
 
-    /// The script Terminal opens: it removes itself, then hands the line to the login shell as one `-lc` argument. It is
-    /// sh whatever the user's shell is, which needn't understand any of this (fish and nu don't).
+    /// The script a terminal runs: it removes itself, then hands the line to the login shell as one `-lc` argument. It is
+    /// sh whatever the user's shell is, which needn't understand any of this (fish and nu don't). Ghostty, iTerm2, cmux and
+    /// Terminal each read a command as text by rules of their own (Ghostty and iTerm2 split it, cmux types it into the user's
+    /// shell), so they are given only this script's path, which needs no quoting under any of them.
     static func terminalScript(line: String, shell: String) -> String {
         "#!/bin/sh\nrm -f -- \"$0\"\nrmdir -- \"$(dirname -- \"$0\")\" 2>/dev/null\nexec \(quote(shell)) -lc \(quote(line))\n"
     }
 
     /// A tab of the Ghostty that is running, by AppleScript; a window of a new process when none runs or the script is refused or fails.
     private static func openInGhostty(_ cwd: String, _ line: String, setup: Setup, launcher: Launcher, denied: ((String) -> Void)?) -> Bool {
-        guard let app = setup.ghostty else { return false }
+        guard let app = setup.ghostty, let script = writeScript(line, setup: setup) else { return false }
         if setup.running.contains(TerminalScripts.ghosttyID) {
-            let call = TerminalScripts.ghosttyTab(cwd: cwd, command: shellCommand(shell: setup.shell, line: line))
+            let call = TerminalScripts.ghosttyTab(cwd: cwd, command: script.path)
             switch setup.appleScript.run(call) {
             case .value(let answer) where answer == call.expecting: return true
             case .notAllowed: denied?(call.bundleID)
             default: break
             }
         }
-        return launcher.run(openTool, ghosttyArguments(app: app, cwd: cwd, line: line, shell: setup.shell)) != nil
+        if launcher.run(openTool, ghosttyArguments(app: app, cwd: cwd, script: script.path)) != nil { return true }
+        discard(script)
+        return false
     }
 
     /// A tab of the front iTerm2 window, or a window of its own; iTerm2 is started if it isn't running.
     private static func openInITerm(_ line: String, setup: Setup, denied: ((String) -> Void)?) -> Bool {
-        let call = TerminalScripts.itermTab(command: shellCommand(shell: setup.shell, line: line))
+        guard let script = writeScript(line, setup: setup) else { return false }
+        let call = TerminalScripts.itermTab(command: script.path)
         switch setup.appleScript.run(call) {
-        case .value(let answer): return answer == call.expecting
-        case .notAllowed:
-            denied?(call.bundleID)
-            return false
-        case .failed: return false
+        case .value(let answer) where answer == call.expecting: return true
+        case .notAllowed: denied?(call.bundleID)
+        default: break
         }
+        discard(script)
+        return false
     }
 
     /// A tab through the running WezTerm, which is brought forward; with none running, a new WezTerm.
@@ -288,23 +290,42 @@ enum Resume {
             }
             guard answered else { return false }
         }
-        return launcher.run(cli, cmuxArguments(cwd: cwd, line: line)) != nil
+        guard let script = writeScript(line, setup: setup) else { return false }
+        if launcher.run(cli, cmuxArguments(cwd: cwd, script: script.path)) != nil { return true }
+        discard(script)
+        return false
     }
 
     private static func openInTerminal(_ line: String, setup: Setup, launcher: Launcher) -> Bool {
+        guard let script = writeScript(line, setup: setup) else { return false }
+        if launcher.run(openTool, ["-b", ResumeTerminal.terminal.bundleID, script.path]) != nil { return true }
+        discard(script)
+        return false
+    }
+
+    /// The script for `line` in a private folder of its own; nil when it can't be written or its path isn't plain.
+    static func writeScript(_ line: String, setup: Setup) -> URL? {
         let files = FileManager.default
         let folder = setup.scripts.appendingPathComponent("nunsseop-resume-\(UUID().uuidString)", isDirectory: true)
         let script = folder.appendingPathComponent("resume.command")
+        guard isPlainPath(script.path) else { return nil }
         do {
             try files.createDirectory(at: folder, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
             guard files.createFile(atPath: script.path, contents: Data(terminalScript(line: line, shell: setup.shell).utf8),
                                    attributes: [.posixPermissions: 0o700]) else { throw CocoaError(.fileWriteUnknown) }
         } catch {
             try? files.removeItem(at: folder)
-            return false
+            return nil
         }
-        if launcher.run(openTool, ["-b", ResumeTerminal.terminal.bundleID, script.path]) != nil { return true }
-        try? files.removeItem(at: folder)
-        return false
+        return script
+    }
+
+    /// Only ASCII letters, digits and `/._-`: the same text under every terminal's parser and every shell.
+    static func isPlainPath(_ path: String) -> Bool {
+        path.hasPrefix("/") && path.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || "/._-".contains($0)) }
+    }
+
+    private static func discard(_ script: URL) {
+        try? FileManager.default.removeItem(at: script.deletingLastPathComponent())
     }
 }

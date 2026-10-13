@@ -658,7 +658,8 @@ struct MoreTerminalsResumeTests {
         let call = try #require(log.scripts.first)
         #expect(log.scripts.count == 1 && log.calls.isEmpty)
         #expect(call.bundleID == "com.googlecode.iterm2" && call.handler == "open_tab" && call.launches)
-        #expect(call.arguments == ["'/bin/zsh' -lc " + Resume.quote(line(cwd))])
+        #expect(call.arguments.count == 1)
+        try expectResumeScript(call.arguments.first, runs: line(cwd))
         #expect(call.source.contains("create tab with default profile command theCommand") && call.source.contains("create window with default profile command theCommand"))
         #expect(!call.source.contains(session) && !call.source.contains("it's"))
     }
@@ -682,7 +683,8 @@ struct MoreTerminalsResumeTests {
         #expect(Resume.open(conversation(cwd), in: .ghostty, setup: setup(log, running: ["com.mitchellh.ghostty"]), launcher: log.launcher) == .ghostty)
         let call = try #require(log.scripts.first)
         #expect(log.scripts.count == 1 && log.calls.isEmpty)
-        #expect(call.bundleID == "com.mitchellh.ghostty" && call.arguments == [cwd, "'/bin/zsh' -lc " + Resume.quote(line(cwd))])
+        #expect(call.bundleID == "com.mitchellh.ghostty" && call.arguments.count == 2 && call.arguments.first == cwd)
+        try expectResumeScript(call.arguments.last, runs: line(cwd))
         #expect(call.source.contains("new tab in front window with configuration {initial working directory:theDir, command:theCommand}"))
         #expect(!call.source.contains("it's") && !call.source.contains(session))
     }
