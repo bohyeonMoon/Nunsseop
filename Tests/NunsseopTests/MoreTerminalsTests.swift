@@ -638,11 +638,11 @@ struct MoreTerminalsResumeTests {
         return path
     }
 
-    private func setup(_ log: Log, running: Set<String> = [], kitty: String? = socket) -> Resume.Setup {
+    private func setup(_ log: Log, running: Set<String> = [], comesUp: Bool = false, kitty: String? = socket) -> Resume.Setup {
         Resume.Setup(installed: ResumeTerminal.allCases, ghostty: URL(fileURLWithPath: "/Applications/Ghostty.app"),
                      wezterm: URL(fileURLWithPath: "/Applications/WezTerm.app"), weztermCLI: URL(fileURLWithPath: "/Applications/WezTerm.app/Contents/MacOS/wezterm"),
                      kittyCLI: URL(fileURLWithPath: "/Applications/kitty.app/Contents/MacOS/kitty"), kittySocket: kitty, running: running,
-                     appleScript: log.runner, shell: "/bin/zsh", scripts: FileManager.default.temporaryDirectory)
+                     isRunning: { _ in comesUp }, appleScript: log.runner, shell: "/bin/zsh", scripts: FileManager.default.temporaryDirectory)
     }
 
     private func conversation(_ cwd: String) -> RecentConversation {
@@ -703,11 +703,22 @@ struct MoreTerminalsResumeTests {
         }
     }
 
-    @Test func ghosttyThatIsNotRunningIsStartedAsBeforeWithoutAnAppleEvent() throws {
+    @Test func ghosttyThatIsNotRunningIsStartedWithoutItsFirstWindowAndOpensTheConversationByHandler() throws {
+        let cwd = try folder()
+        let log = Log()
+        #expect(Resume.open(conversation(cwd), in: .ghostty, setup: setup(log, comesUp: true), launcher: log.launcher) == .ghostty)
+        #expect(log.calls.count == 1 && log.calls[0].arguments == ["-a", "/Applications/Ghostty.app", "--args", "--initial-window=false", "--window-save-state=never"])
+        let call = try #require(log.scripts.first)
+        #expect(log.scripts.count == 1 && call.bundleID == "com.mitchellh.ghostty" && call.arguments.first == cwd)
+        try expectResumeScript(call.arguments.last, runs: line(cwd))
+    }
+
+    @Test func ghosttyThatNeverComesUpFallsBackToItsCommandLine() throws {
         let cwd = try folder()
         let log = Log()
         #expect(Resume.open(conversation(cwd), in: .ghostty, setup: setup(log), launcher: log.launcher) == .ghostty)
-        #expect(log.scripts.isEmpty && log.calls.count == 1 && log.calls[0].arguments.contains("--working-directory=\(cwd)"))
+        #expect(log.scripts.isEmpty && log.calls.count == 2 && log.calls[1].arguments.contains("--working-directory=\(cwd)"))
+        try expectResumeScript(log.calls[1].arguments.last, runs: line(cwd))
     }
 
     @Test func weztermRunningGetsATabAsArgvAndComesForward() throws {

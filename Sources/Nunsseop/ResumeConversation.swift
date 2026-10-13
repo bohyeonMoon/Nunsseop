@@ -83,6 +83,8 @@ enum Resume {
         var kittySocket: String?
         /// The bundle ids of the apps that are running.
         var running: Set<String> = []
+        /// Whether an app runs now, for waiting on one that was just started.
+        var isRunning: (String) -> Bool = { !NSRunningApplication.runningApplications(withBundleIdentifier: $0).isEmpty }
         /// What the Apple Event terminals are asked through.
         var appleScript: AppleScriptRunner = .live
         /// Whether cmux is running already, in which case a socket that doesn't answer is a refusal, not a start-up.
@@ -103,6 +105,10 @@ enum Resume {
     }
 
     static let openTool = URL(fileURLWithPath: "/usr/bin/open")
+
+    /// How long a Ghostty that was just started gets to come up.
+    private static let ghosttyStartAttempts = 20
+    private static let ghosttyStartPause: TimeInterval = 0.25
 
     /// How long cmux gets to answer after being started.
     private static let cmuxAttempts = 20
@@ -229,9 +235,18 @@ enum Resume {
     }
 
     /// A tab of the Ghostty that is running, by AppleScript; a window of a new process when none runs or the script is refused or fails.
+    /// By AppleScript, which Ghostty doesn't ask about: a command given with `-e` makes it ask whether to run it, every time. A Ghostty
+    /// that isn't running is started without its first window, so the conversation's window is the only one.
     private static func openInGhostty(_ cwd: String, _ line: String, setup: Setup, launcher: Launcher, denied: ((String) -> Void)?) -> Bool {
         guard let app = setup.ghostty, let script = writeScript(line, setup: setup) else { return false }
-        if setup.running.contains(TerminalScripts.ghosttyID) {
+        var running = setup.running.contains(TerminalScripts.ghosttyID)
+        if !running, launcher.run(openTool, ["-a", app.path, "--args", "--initial-window=false", "--window-save-state=never"]) != nil {
+            for _ in 0..<ghosttyStartAttempts where !running {
+                launcher.sleep(ghosttyStartPause)
+                running = setup.isRunning(TerminalScripts.ghosttyID)
+            }
+        }
+        if running {
             let call = TerminalScripts.ghosttyTab(cwd: cwd, command: script.path)
             switch setup.appleScript.run(call) {
             case .value(let answer) where answer == call.expecting: return true

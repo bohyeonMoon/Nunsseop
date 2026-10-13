@@ -34,8 +34,10 @@ private func conversation(_ kind: AgentKind = .claude, id: String = session, cwd
 }
 
 private func setup(installed: [ResumeTerminal] = ResumeTerminal.allCases, scripts: URL? = nil) -> Resume.Setup {
+    // Nothing here runs or asks a real app: no app counts as running, and no Apple Event goes out.
     Resume.Setup(installed: installed, ghostty: URL(fileURLWithPath: "/Applications/Ghostty.app"),
-                 cmuxCLI: URL(fileURLWithPath: "/Applications/cmux.app/Contents/Resources/bin/cmux"), shell: "/bin/zsh",
+                 cmuxCLI: URL(fileURLWithPath: "/Applications/cmux.app/Contents/Resources/bin/cmux"),
+                 isRunning: { _ in false }, appleScript: AppleScriptRunner { _ in .failed }, shell: "/bin/zsh",
                  scripts: scripts ?? FileManager.default.temporaryDirectory)
 }
 
@@ -143,13 +145,14 @@ struct ResumeTerminalChoiceTests {
 }
 
 struct ResumeOpenTests {
-    @Test func ghosttyGetsANewWindowInTheFolderAsArguments() throws {
+    @Test func aGhosttyThatNeverComesUpGetsANewWindowInTheFolderAsArguments() throws {
         let cwd = try folder("it's a project")
         let recorder = Recorder()
         let used = Resume.open(conversation(cwd: cwd), in: .ghostty, setup: setup(), launcher: recorder.launcher)
         #expect(used == .ghostty)
-        #expect(recorder.calls.count == 1)
-        let call = try #require(recorder.calls.first)
+        #expect(recorder.calls.count == 2)
+        #expect(recorder.calls.first?.arguments == ["-a", "/Applications/Ghostty.app", "--args", "--initial-window=false", "--window-save-state=never"])
+        let call = try #require(recorder.calls.last)
         let line = "cd -- \(Resume.quote(cwd)) && exec claude --resume '\(session)'"
         #expect(call.program == "open")
         #expect(Array(call.arguments.dropLast()) == ["-na", "/Applications/Ghostty.app", "--args", "--window-save-state=never", "--working-directory=\(cwd)", "-e"])
@@ -231,7 +234,7 @@ struct ResumeOpenTests {
         let failing = Recorder()
         failing.answers = { name, _ in name != "open:-na" }
         #expect(Resume.open(conversation(cwd: cwd), in: .ghostty, setup: setup(scripts: URL(fileURLWithPath: try folder("scripts"))), launcher: failing.launcher) == .terminal)
-        #expect(failing.calls.map { $0.arguments.first } == ["-na", "-b"])
+        #expect(failing.calls.map { $0.arguments.first } == ["-a", "-na", "-b"])
     }
 
     @Test func terminalOpensAPrivateScriptThatRemovesItself() throws {
