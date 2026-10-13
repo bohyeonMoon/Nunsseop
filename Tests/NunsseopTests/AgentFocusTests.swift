@@ -27,7 +27,7 @@ private func row(_ agent: AgentBoard.Agent, verified: Bool = true, hostApp: Stri
 
 struct AgentFocusStepsTests {
     @Test func eachTerminalIsFocusedThroughItsOwnToolWithExactArguments() throws {
-        #expect(AgentFocus.steps(.muxy("42"), clis: clis, ghostty: nil) == [.muxyProject(URL(fileURLWithPath: "/m/muxy"), session: "42", socket: MuxyNotice.socketURL.path)])
+        #expect(AgentFocus.steps(.muxy("42"), clis: clis, ghostty: nil) == [.muxyFocus(session: "42")])
         #expect(AgentFocus.steps(.cmux(uuid), clis: clis, ghostty: nil) == [.run(URL(fileURLWithPath: "/c/cmux"), ["focus-panel", "--panel", uuid])])
         // The instance is named by the socket, as for sending: pane ids mean nothing in another one.
         #expect(AgentFocus.steps(.wezterm(pane: "7", socket: wezSocket), clis: clis, ghostty: nil)
@@ -42,9 +42,11 @@ struct AgentFocusStepsTests {
 
     @Test func aTerminalWhoseToolIsNotThereGetsNoSteps() {
         let none = TerminalCLIs()
-        for input in [AgentInput.muxy("42"), .cmux(uuid), .wezterm(pane: "7", socket: wezSocket), .kitty(window: "3", socket: socket)] {
+        for input in [AgentInput.cmux(uuid), .wezterm(pane: "7", socket: wezSocket), .kitty(window: "3", socket: socket)] {
             #expect(AgentFocus.steps(input, clis: none, ghostty: nil) == nil, "\(input)")
         }
+        // Muxy is gone to through its bridge extension or its folder, which need none of its tools.
+        #expect(AgentFocus.steps(.muxy("42"), clis: none, ghostty: nil) == [.muxyFocus(session: "42")])
         // Terminal.app, iTerm2 and Ghostty need no tool but their own Apple Events.
         #expect(AgentFocus.steps(.terminalApp(tty: "/dev/ttys003"), clis: none, ghostty: nil) != nil)
     }
@@ -121,16 +123,6 @@ struct AgentFocusStepsTests {
         #expect(run(terminal, answering: .notAllowed).0 == .notAllowed("com.apple.Terminal") && run(terminal, answering: .failed).0 == .failed)
     }
 
-    @Test func aMuxySessionsProjectIsReadFromTheListAndOnlyAsAnId() {
-        let listing = "7\tAA2932BC-99A4-4172-845B-99E03F715C77\tLive\ttrue\t/tmp\n42\t\(project)\tLive\ttrue\t/Users/me\n"
-        #expect(AgentFocus.muxyProject(of: "42", in: listing) == project)
-        #expect(AgentFocus.muxyProject(of: "7", in: listing) == project)
-        // Another session's id that only starts the same, one that is not there, and one whose project is no id.
-        #expect(AgentFocus.muxyProject(of: "4", in: listing) == nil && AgentFocus.muxyProject(of: "422", in: listing) == nil)
-        #expect(AgentFocus.muxyProject(of: "42", in: "42\t$(id)\tLive\n") == nil && AgentFocus.muxyProject(of: "42", in: "42\t\tLive\n") == nil)
-        #expect(AgentFocus.muxyProject(of: "42", in: "42\n") == nil && AgentFocus.muxyProject(of: "42", in: "") == nil)
-    }
-
     @Test func eachTerminalNamesItsApp() {
         let expected: [(AgentInput, String?)] = [
             (.muxy("1"), "com.muxy.app"), (.cmux(uuid), "com.cmuxterm.app"), (.herdr(pane: "p", socket: "/s"), nil),
@@ -180,9 +172,7 @@ struct AgentFocusPlanTests {
         #expect(row(agent(), hostApp: "com.process.App").focusable)
     }
 
-    @Test func aVerifiedRowWhoseToolIsMissingOrWhoseTabWasNotPickedOnlyActivatesItsApp() {
-        let muxy = row(agent(input: .muxy("42")))
-        #expect(AgentFocus.plan(for: muxy, clis: TerminalCLIs()) == .app("com.muxy.app"))
+    @Test func aVerifiedRowWhoseTabWasNotPickedOnlyActivatesItsApp() {
         let ghostty = row(agent(input: .ghostty(cwd: "/Users/me/proj", name: nil)))
         #expect(AgentFocus.plan(for: ghostty, clis: clis, ghostty: nil) == .app("com.mitchellh.ghostty"))
     }
@@ -296,7 +286,7 @@ struct AgentFocusModelTests {
         let model = await make(["a": claude(.muxy("42"), pid: 100)], tree: tree(), calls: calls)
         model.focus(try row(model))
         await eventually { calls.log.count == 2 }
-        #expect(calls.steps == [[.muxyProject(URL(fileURLWithPath: "/m/muxy"), session: "42", socket: MuxyNotice.socketURL.path)]])
+        #expect(calls.steps == [[.muxyFocus(session: "42")]])
         #expect(calls.log == ["run", "activate:com.muxy.app"])
     }
 
@@ -408,37 +398,5 @@ struct AgentFocusModelTests {
         await eventually { calls.log.count == 2 }
         #expect(calls.steps == [[.script(TerminalScripts.ghosttyFocus(terminal: "T1", folders: ["/Users/me/proj", "/Users/me/proj/"], name: "", needsName: false))]])
         #expect(calls.log == ["run", "activate:com.mitchellh.ghostty"])
-    }
-}
-
-struct AgentFocusExecutionTests {
-    @Test func theMuxyStepReadsTheProjectFromTheSessionListAndSwitchesToItOnTheAppsSocket() throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("nunsseop-focus-\(UUID().uuidString.prefix(6))")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let path = "/tmp/nunsseop-focus-\(UUID().uuidString.prefix(6)).sock"
-        // A tool that lists one session and runs for nothing else, and a socket that answers one command per connection, as Muxy's does.
-        let tool = dir.appendingPathComponent("muxy")
-        try "#!/bin/sh\n[ \"$1 $2\" = \"session list\" ] || exit 1\nprintf '42\\t\(project)\\tLive\\ttrue\\t/tmp\\n'\n"
-            .write(to: tool, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tool.path)
-        let server = try StandIn.python("""
-        import socket, sys
-        s = socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(8)
-        while True:
-            c, _ = s.accept(); f = c.makefile("rwb"); line = f.readline()
-            open(sys.argv[1] + ".log", "ab").write(line)
-            f.write(b"ok\\n"); f.flush(); c.close()
-        """, arguments: [path])
-        defer { server.terminate(); try? FileManager.default.removeItem(at: dir); try? FileManager.default.removeItem(atPath: path); try? FileManager.default.removeItem(atPath: path + ".log") }
-        let deadline = Date.now.addingTimeInterval(eventDeadline)
-        while !FileManager.default.fileExists(atPath: path) && Date.now < deadline { usleep(20_000) }
-
-        #expect(AgentSend.perform(.muxyProject(tool, session: "42", socket: path)) == .sent)
-        #expect(try String(contentsOfFile: path + ".log", encoding: .utf8) == "switch-project|\(project)\n")
-        // A session that is not listed sends nothing; a tool or a socket that is not there fails.
-        #expect(AgentSend.perform(.muxyProject(tool, session: "9", socket: path)) == .failed)
-        #expect(try String(contentsOfFile: path + ".log", encoding: .utf8) == "switch-project|\(project)\n")
-        #expect(AgentSend.perform(.muxyProject(tool, session: "42", socket: dir.appendingPathComponent("none.sock").path)) == .failed)
-        #expect(AgentSend.perform(.muxyProject(dir.appendingPathComponent("missing"), session: "42", socket: path)) == .failed)
     }
 }

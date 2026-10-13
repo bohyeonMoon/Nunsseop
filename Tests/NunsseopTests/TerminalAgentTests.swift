@@ -661,29 +661,6 @@ struct HookUpdateTests {
 }
 
 struct NoticeClickTests {
-    @Test func muxyGoesToTheNotificationsTab() throws {
-        let entry: [[String: Any]] = [["id": "N", "title": "Pi", "body": "done", "isRead": false, "source": ["aiProvider": ["_0": "pi"]],
-                                       "projectID": "AA2932BC-99A4-4172-845B-99E03F715C77",
-                                       "worktreeID": "E8EE3F1F-3D0F-404B-83B7-8E89D7A0B59E",
-                                       "tabID": "129BB77D-F173-4DB8-B231-6C7FF885213D"]]
-        let notice = try #require(MuxyNotice.parse(JSONSerialization.data(withJSONObject: entry))?.first)
-        #expect(notice.focusCommands == [
-            "switch-project|AA2932BC-99A4-4172-845B-99E03F715C77",
-            "switch-worktree|E8EE3F1F-3D0F-404B-83B7-8E89D7A0B59E|AA2932BC-99A4-4172-845B-99E03F715C77",
-            "switch-tab|129BB77D-F173-4DB8-B231-6C7FF885213D",
-        ])
-    }
-
-    @Test func muxyIdsThatCouldAddCommandsAreRefused() {
-        let hostile = MuxyNotice(id: "N", title: "", body: "", isRead: false, provider: nil,
-                                 projectID: "AA|close-pane", worktreeID: nil, tabID: "12\nkill-session")
-        #expect(hostile.focusCommands.isEmpty)
-        let partly = MuxyNotice(id: "N", title: "", body: "", isRead: false, provider: nil,
-                                projectID: "AA2932BC", worktreeID: "x|y", tabID: nil)
-        #expect(partly.focusCommands == ["switch-project|AA2932BC"])
-        #expect(MuxyNotice(id: "N", title: "", body: "", isRead: false, provider: nil).focusCommands.isEmpty)
-    }
-
     @Test func localNoticesLeadToTheirPaneOrApp() {
         #expect(TerminalFocus.action(app: nil, target: "tmux:%3") != nil)
         #expect(TerminalFocus.action(app: nil, target: "WezTerm:7") != nil)
@@ -716,8 +693,8 @@ struct NoticeClickTests {
         #expect(TerminalFocus.send(["x"], toSocket: "/tmp/nunsseop-missing.sock").isEmpty)
     }
 
-    @Test func muxyCommandsGetAConnectionEach() throws {
-        // Like Muxy: one reply, then the connection closes.
+    @Test func aServerThatAnswersOneCommandPerConnectionNeedsAConnectionEach() throws {
+        // Like herdr: one reply, then the connection closes.
         let path = "/tmp/nunsseop-test-\(UUID().uuidString.prefix(8)).sock"
         let script = """
         import socket, sys
@@ -731,7 +708,7 @@ struct NoticeClickTests {
         let deadline = Date.now.addingTimeInterval(eventDeadline)
         while !FileManager.default.fileExists(atPath: path) && Date.now < deadline { usleep(20_000) }
         let commands = ["switch-project|A", "switch-worktree|B|A", "switch-tab|C"]
-        #expect(MuxyNotice.send(commands, toSocket: path) == commands.map { "ok \($0)" })
+        #expect(commands.compactMap { TerminalFocus.send([$0], toSocket: path).first } == commands.map { "ok \($0)" })
         // On one connection only the first would get through.
         #expect(TerminalFocus.send(commands, toSocket: path).count == 1)
     }

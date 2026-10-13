@@ -16,6 +16,8 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN_DIR/Nunsseop" "$APP/Contents/MacOS/Nunsseop"
 cp "$BIN_DIR/libNowPlayingHelper.dylib" Resources/nowplaying.pl "$APP/Contents/Resources/"
 cp -R Resources/*.lproj Resources/AppIcon.icns "$APP/Contents/Resources/"
+# The Muxy extension the user loads from Nunsseop's own folder (see MuxyBridge.swift).
+cp -R Resources/muxy-bridge "$APP/Contents/Resources/"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 xattr -cr "$APP"
 # A fixed certificate keeps the code requirement stable, so macOS keeps the Accessibility

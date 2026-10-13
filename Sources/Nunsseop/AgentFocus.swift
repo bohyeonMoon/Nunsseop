@@ -17,8 +17,9 @@ enum AgentFocus {
     /// the pane of an Orca row.
     static func plan(for row: AgentRow, clis: TerminalCLIs, ghostty: GhosttyPick? = nil, orca: OrcaPick? = nil) -> Plan {
         if case .herdr(let pane, let socket)? = row.target { return .herdr(pane: pane, socket: socket) }
-        if row.offersInput, let input = row.input, let app = bundleID(of: input) {
-            return steps(input, clis: clis, ghostty: ghostty, orca: orca).map { .terminal($0, app: app) } ?? .app(app)
+        if row.offersInput || row.listedByTerminal, let input = row.input, let app = bundleID(of: input) {
+            return steps(input, clis: clis, ghostty: ghostty, orca: orca, folder: row.listedByTerminal ? row.path : nil)
+                .map { .terminal($0, app: app) } ?? .app(app)
         }
         if case .app(let id)? = row.target { return .app(id) }
         return .nothing
@@ -27,7 +28,7 @@ enum AgentFocus {
     /// The app a terminal's input belongs to; nil for herdr, which has no app of its own.
     static func bundleID(of input: AgentInput) -> String? {
         switch input {
-        case .muxy: MuxyNotice.bundleID
+        case .muxy: Muxy.bundleID
         case .cmux: Cmux.bundleID
         case .herdr: nil
         case .terminalApp: TerminalScripts.terminalID
@@ -41,12 +42,12 @@ enum AgentFocus {
 
     /// The calls that select the session's tab or pane, with the same ids and the same check of the tab as sending; nil when the
     /// terminal's tool isn't there (or, for Ghostty, no tab was picked). Muxy has no call for a session's tab (tabs belong to the
-    /// app's UI), so it goes to the session's project.
-    static func steps(_ input: AgentInput, clis: TerminalCLIs, ghostty: GhosttyPick?, orca: OrcaPick? = nil) -> [AgentStep]? {
+    /// app's UI): the bridge extension selects it, and without that the session's project is opened.
+    /// - folder: the project Muxy lists the session in, for when the desktop state has no pane for it.
+    static func steps(_ input: AgentInput, clis: TerminalCLIs, ghostty: GhosttyPick?, orca: OrcaPick? = nil, folder: String? = nil) -> [AgentStep]? {
         switch input {
         case .muxy(let session):
-            guard let cli = clis.muxy else { return nil }
-            return [.muxyProject(cli, session: session, socket: MuxyNotice.socketURL.path)]
+            return [.muxyFocus(session: session, folder: folder)]
         case .cmux(let surface):
             guard let cli = clis.cmux else { return nil }
             return [.run(cli, ["focus-panel", "--panel", surface])]
@@ -71,21 +72,6 @@ enum AgentFocus {
             guard let cli = clis.orca, let orca, orca.paneKey == paneKey else { return nil }
             return [.run(cli, ["terminal", "switch", "--terminal", orca.handle])]
         }
-    }
-
-    /// A project id as Muxy's socket takes it: hex digits and dashes (a UUID).
-    static func projectID(_ value: String?) -> String? {
-        guard let value, !value.isEmpty, value.allSatisfy({ $0.isHexDigit || $0 == "-" }) else { return nil }
-        return value
-    }
-
-    /// The project of a session in the output of `muxy session list` (columns: id, project-id, status, attached, directory).
-    static func muxyProject(of session: String, in listing: String) -> String? {
-        for line in listing.split(separator: "\n") {
-            let fields = line.split(separator: "\t", omittingEmptySubsequences: false)
-            if fields.count > 1, fields[0] == Substring(session) { return projectID(String(fields[1])) }
-        }
-        return nil
     }
 }
 

@@ -296,7 +296,7 @@ struct AgentSendPlanTests {
                 case .runInput(let tool, let arguments, _), .runWith(let tool, let arguments, _):
                     #expect(!["sh", "bash", "zsh", "dash", "env"].contains(tool.lastPathComponent))
                     #expect(!arguments.contains("-c"))
-                case .script, .muxyProject: break
+                case .script, .muxyFocus: break
                 }
             }
         }
