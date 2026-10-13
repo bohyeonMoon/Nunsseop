@@ -463,3 +463,4 @@
 "Paseo's tool approvals show in the notch too, where you can allow or deny them. “Answer in Paseo” leaves one for Paseo's own screens, and the notch lets go of one you answer there." = "Paseo의 도구 승인도 노치에 표시되어 허용하거나 거부할 수 있어요. ‘Paseo에서 답하기’를 누르면 그 승인은 Paseo 화면에 맡기고, Paseo에서 답하면 노치에서도 사라져요.";
 "Paseo's daemon asks for a password or listens on a socket, so its approvals and notices can't show here." = "Paseo 데몬이 비밀번호를 요구하거나 소켓으로 대기 중이라 승인과 알림을 여기에 표시할 수 없어요.";
 "Its agents are read from Paseo's own files, and its approvals and notices from its daemon on this Mac, which Nunsseop never starts. Messages go through its command line." = "에이전트는 Paseo의 파일에서, 승인과 알림은 이 Mac의 Paseo 데몬에서 읽어요. Nunsseop은 데몬을 직접 켜지 않아요. 메시지는 Paseo 명령줄로 보내요.";
+"Apply file changes" = "파일 변경 적용";

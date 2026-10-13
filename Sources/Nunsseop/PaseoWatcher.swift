@@ -38,16 +38,28 @@ final class PaseoApprovals {
     }
 
     /// The card for a request, or nil when it can't be shown: not a tool call, nothing of it to read (the approval is left to Paseo
-    /// rather than asked blind), or too large to show whole. A request without input is named by its title, not by the tool kind it
-    /// carries (`execute`, `edit`).
+    /// rather than asked blind), or too large to show whole. A request without input is titled by the kind of tool it carries, in
+    /// Nunsseop's own words: its title and description are the agent's, which could call a command "Read the README", so they stay
+    /// in the body as named fields and never become the card's title.
     static func prompt(_ permission: PaseoPermission, folder: String) -> PermissionPrompt? {
         guard permission.kind == "tool", !permission.toolInput.isEmpty || !permission.shown.isEmpty,
               let body = body(permission, folder: folder), let prompt = PermissionPrompt.parse(body, tag: Paseo.name)?.prompt else { return nil }
-        guard permission.toolInput.isEmpty, let title = permission.title, prompt.title == PermissionText.escape(permission.name, multiline: false) else { return prompt }
-        let shown = PermissionText.clipped(PermissionText.escape(title, multiline: false), limit: 80)
-        guard !shown.isEmpty else { return prompt }
-        return PermissionPrompt(id: prompt.id, title: shown, symbol: prompt.symbol, detail: prompt.detail, flags: prompt.flags, secondary: prompt.secondary,
+        guard permission.toolInput.isEmpty, let title = kindTitle(permission.name) else { return prompt }
+        return PermissionPrompt(id: prompt.id, title: title, symbol: prompt.symbol, detail: prompt.detail, flags: prompt.flags, secondary: prompt.secondary,
                                 folder: prompt.folder, grant: prompt.grant, codex: prompt.isCodex, tag: prompt.tag)
+    }
+
+    /// Fixed titles for the tool kinds ACP providers and Codex send without input; nil leaves the tool's own name as the title.
+    static func kindTitle(_ name: String) -> String? {
+        switch name.lowercased() {
+        case "execute": String(localized: "Run a command")
+        case "edit": String(localized: "Edit a file")
+        case "read": String(localized: "Read a file")
+        case "fetch": String(localized: "Fetch a web page")
+        case "search": String(localized: "Search the web")
+        case "codexfilechange": String(localized: "Apply file changes")
+        default: nil
+        }
     }
 
     func added(agent: String, _ permission: PaseoPermission) {

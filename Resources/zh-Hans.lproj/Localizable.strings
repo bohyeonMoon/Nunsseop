@@ -438,3 +438,4 @@
 "Paseo's tool approvals show in the notch too, where you can allow or deny them. “Answer in Paseo” leaves one for Paseo's own screens, and the notch lets go of one you answer there." = "Paseo 的工具审批也会显示在刘海中，可以允许或拒绝。点“在 Paseo 中回答”会把该审批留给 Paseo 自己的界面，在 Paseo 中回答后刘海也会随之放开。";
 "Paseo's daemon asks for a password or listens on a socket, so its approvals and notices can't show here." = "Paseo 守护进程要求密码或监听在套接字上，因此它的审批和通知无法显示在这里。";
 "Its agents are read from Paseo's own files, and its approvals and notices from its daemon on this Mac, which Nunsseop never starts. Messages go through its command line." = "代理从 Paseo 自己的文件中读取，审批和通知则来自这台 Mac 上的 Paseo 守护进程，Nunsseop 不会启动它。消息通过它的命令行发送。";
+"Apply file changes" = "应用文件更改";
