@@ -133,7 +133,7 @@ final class NotchWindowController {
                         model.tmux.stop()
                     }),
             Feature(setting: \.muxyNotifications, changes: \.$muxyNotifications,
-                    start: { model.muxy.start() }, stop: { _ in model.muxy.stop() }),
+                    start: { model.muxy.noticesEnabled = true }, stop: { _ in model.muxy.noticesEnabled = false }),
             Feature(setting: \.cmuxNotifications, changes: \.$cmuxNotifications,
                     // Started even before they're installed: both look for their app again while running.
                     start: { model.cmux.start() }, stop: { _ in model.cmux.stop() }),
@@ -402,9 +402,15 @@ final class NotchWindowController {
             self?.announce(symbol: "terminal", title: String(title.prefix(80)), detail: String(detail.prefix(200)),
                            action: { Herdr.focus(notice) })
         }
-        model.muxy.onNotice = { [weak self] notice in
-            self?.announce(symbol: "terminal", title: String(notice.title.prefix(80)),
-                           detail: notice.body.isEmpty ? nil : String(notice.body.prefix(200)), action: { notice.focus() })
+        model.muxy.onNotice = { [weak self] event, project, folder in
+            guard let title = event.notice(project: project) else { return }
+            let session = event.session
+            self?.announce(symbol: "terminal", title: String(title.prefix(80)), detail: nil, action: {
+                DispatchQueue.global(qos: .userInitiated).async {
+                    MuxyFocus.run(session: session, folder: folder)
+                    DispatchQueue.main.async { TerminalFocus.activate(bundleID: Muxy.bundleID) }
+                }
+            })
         }
         // App volume taps run whenever the setting is on; the list of apps refreshes only while the Tools tab shows.
         settingsObservers.append(model.settings.$perAppVolume.combineLatest(model.$isExpanded, model.$tab)

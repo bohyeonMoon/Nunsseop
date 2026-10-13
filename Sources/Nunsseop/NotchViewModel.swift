@@ -106,7 +106,7 @@ final class NotchViewModel: ObservableObject {
     let capsLock = CapsLockWatcher()
     let notifyServer = NotifyServer()
     let approvals = PermissionBoard()
-    let muxy = MuxyWatcher()
+    let muxy: MuxyActivityWatcher
     let notices = NoticeLog()
     let cmux = CmuxWatcher()
     let herdr = HerdrSessions()
@@ -174,8 +174,14 @@ final class NotchViewModel: ObservableObject {
         self.agentList = AgentsTabModel(board: agents)
         self.agentHooks = ToolHooks(board: agents, isOn: isOn, watchesHerdr: { settings.watchesHerdr })
         self.gjcWatcher = GjcWatcher(board: agents, isOn: isOn)
+        self.muxy = MuxyActivityWatcher(board: agents)
+        muxy.wantsBoard = isOn
         // Looks only while the count or the tab is showing (every poll asks `isOn`).
         gjcWatcher.start()
+        // Looks only while Muxy runs and a notice or the count wants it (every poll asks).
+        muxy.start()
+        // The bridge extension the user loads in Muxy is kept current beside Nunsseop's other files.
+        if Muxy.isInstalled { DispatchQueue.global(qos: .utility).async { MuxyBridge.installBundled() } }
         Publishers.CombineLatest4(nowPlaying.$track.map { $0?.isPlaying == true }, timer.$anchor.map { $0 != nil },
                                   settings.$collapsedMusic, settings.$collapsedTimer)
             .map { music, timer, showMusic, showTimer in (music && showMusic) || (timer && showTimer) }

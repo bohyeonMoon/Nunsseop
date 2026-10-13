@@ -309,7 +309,16 @@
 "No apps are playing sound" = "音を鳴らしているアプリはありません";
 "No sound has come through yet. If the app is playing, Nunsseop may need permission to record system audio." = "まだ音が届いていません。アプリが再生中なら、Nunsseop にシステムオーディオの録音を許可する必要があるかもしれません。";
 "Show notifications from agents running in Muxy" = "Muxy で動くエージェントの通知を表示";
-"Read from Muxy's own notification list, so every agent and terminal in Muxy works without setup. Hidden while Muxy is in front, and skipped for tools connected above." = "Muxy 自身の通知一覧を読むので、Muxy 内のすべてのエージェントとターミナルの通知が設定なしで届きます。Muxy が前面にあるときと、上で接続したツールの通知は表示しません。";
+"Read from Muxy's own agent activity while it runs, so every agent in Muxy works without setup. Hidden while Muxy is in front, and skipped for tools connected above." = "実行中の Muxy が検出したエージェントの動きを読み取るので、Muxy 内のどのエージェントも設定なしで届きます。Muxy が最前面のときと、上で接続したツールの通知は表示しません。";
+"Lets Nunsseop open a session's own tab in Muxy and resume conversations there. In Muxy, open Settings › Extensions › Load Unpacked…, pick the folder shown in Finder, then turn the extension on." = "Nunsseop が Muxy 内のセッションのタブを直接開き、会話をそこで再開できるようにします。Muxy で Settings › Extensions › Load Unpacked… を開き、Finder に表示されたフォルダを選んで、拡張機能をオンにしてください。";
+"%@ in %@ needs input" = "%2$@の%1$@が入力待ちです";
+"%@ needs input" = "%@が入力待ちです";
+"%@ in %@ finished" = "%2$@の%1$@が完了しました";
+"%@ finished" = "%@が完了しました";
+"Muxy bridge" = "Muxy ブリッジ";
+"Loaded, not running" = "読み込み済み・未実行";
+"Not loaded" = "未読み込み";
+"Show extension in Finder" = "Finder で拡張機能を表示";
 "Show notifications from agents running in cmux" = "cmux で動くエージェントの通知を表示";
 "Read through the cmux command inside the app, so cmux's settings stay as they are. Hidden while cmux is in front." = "アプリ内の cmux コマンドで読むので、cmux の設定はそのままです。cmux が前面にあるときは表示しません。";
 "Show when agents in herdr finish or wait for you" = "herdr のエージェントが終わったり入力を待ったりしたら表示";
@@ -422,4 +431,5 @@
 "%@ doesn't let Nunsseop type into it" = "%@には Nunsseop が文字を入力できません";
 "Restart this session to send to it" = "このセッションを再起動すると送れるようになります";
 "Couldn't confirm which terminal this session is in" = "このセッションがどのターミナルにあるか確認できませんでした";
+"Muxy lists this session, so Nunsseop can take you to it but not type into it" = "このセッションは Muxy が一覧に出したもので、Nunsseop は移動はできますが入力は送れません";
 "There are several Ghostty tabs in this folder, so Nunsseop can't tell which one" = "このフォルダに Ghostty のタブが複数あるため、Nunsseop はどれか判別できません";

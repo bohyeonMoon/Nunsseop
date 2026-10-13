@@ -309,7 +309,16 @@
 "No apps are playing sound" = "没有应用在播放声音";
 "No sound has come through yet. If the app is playing, Nunsseop may need permission to record system audio." = "尚未收到任何声音。如果该应用正在播放，Nunsseop 可能需要录制系统音频的权限。";
 "Show notifications from agents running in Muxy" = "显示在 Muxy 中运行的代理的通知";
-"Read from Muxy's own notification list, so every agent and terminal in Muxy works without setup. Hidden while Muxy is in front, and skipped for tools connected above." = "读取 Muxy 自己的通知列表，因此 Muxy 中的所有代理和终端无需设置即可通知。Muxy 在前台时以及上方已连接的工具不会显示。";
+"Read from Muxy's own agent activity while it runs, so every agent in Muxy works without setup. Hidden while Muxy is in front, and skipped for tools connected above." = "在 Muxy 运行时读取它自己检测到的代理活动，因此 Muxy 中的所有代理无需设置即可通知。Muxy 在最前面时，以及上面已连接的工具，不会显示。";
+"Lets Nunsseop open a session's own tab in Muxy and resume conversations there. In Muxy, open Settings › Extensions › Load Unpacked…, pick the folder shown in Finder, then turn the extension on." = "让 Nunsseop 直接打开 Muxy 中会话所在的标签页，并在其中继续对话。在 Muxy 中打开 Settings › Extensions › Load Unpacked…，选择访达中显示的文件夹，然后启用该扩展。";
+"%@ in %@ needs input" = "%2$@ 中的 %1$@ 正在等待输入";
+"%@ needs input" = "%@ 正在等待输入";
+"%@ in %@ finished" = "%2$@ 中的 %1$@ 已完成";
+"%@ finished" = "%@ 已完成";
+"Muxy bridge" = "Muxy 桥接";
+"Loaded, not running" = "已加载，未运行";
+"Not loaded" = "未加载";
+"Show extension in Finder" = "在访达中显示扩展";
 "Show notifications from agents running in cmux" = "显示在 cmux 中运行的代理的通知";
 "Read through the cmux command inside the app, so cmux's settings stay as they are. Hidden while cmux is in front." = "通过应用内的 cmux 命令读取，cmux 的设置保持不变。cmux 在前台时不显示。";
 "Show when agents in herdr finish or wait for you" = "herdr 中的代理完成或等待你时显示";
@@ -422,4 +431,5 @@
 "%@ doesn't let Nunsseop type into it" = "%@不允许 Nunsseop 向其输入文字";
 "Restart this session to send to it" = "重新启动此会话后即可发送";
 "Couldn't confirm which terminal this session is in" = "无法确认此会话位于哪个终端";
+"Muxy lists this session, so Nunsseop can take you to it but not type into it" = "此会话由 Muxy 列出，Nunsseop 可以带你前往，但不能向其输入";
 "There are several Ghostty tabs in this folder, so Nunsseop can't tell which one" = "此文件夹中有多个 Ghostty 标签页，Nunsseop 无法确定是哪一个";

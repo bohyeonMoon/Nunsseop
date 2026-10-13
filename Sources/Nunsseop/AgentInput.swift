@@ -96,9 +96,10 @@ enum AgentStep: Equatable {
     case runInput(URL, [String], stdin: String)
     /// Calls a handler of an AppleScript in a terminal app, which takes the text as an argument. Passes when it answers `expecting`.
     case script(AppleScriptCall)
-    /// Switches Muxy to the project of a session: looks the session up in `muxy session list`, then sends `switch-project` to the app's
-    /// socket. Passes when the list holds the session with a project id and the socket answers.
-    case muxyProject(URL, session: String, socket: String)
+    /// Goes to a Muxy session: its own tab through the bridge extension when that runs, else its project (see `MuxyFocus`). Passes when
+    /// either worked.
+    /// `folder`: the project's, for a session the desktop state has no pane for.
+    case muxyFocus(session: String, folder: String? = nil)
 }
 
 /// The command-line tools of the terminals that take input; nil for one that isn't installed.
@@ -108,15 +109,7 @@ struct TerminalCLIs {
     var wezterm: URL?
     var kitty: URL?
 
-    static var live: TerminalCLIs { TerminalCLIs(muxy: MuxyNotice.cli, cmux: Cmux.cli, wezterm: WezTerm.cli, kitty: Kitty.cli) }
-}
-
-extension MuxyNotice {
-    static var cli: URL? {
-        let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)?
-            .appendingPathComponent("Contents/MacOS/muxy")
-        return url.flatMap { FileManager.default.isExecutableFile(atPath: $0.path) ? $0 : nil }
-    }
+    static var live: TerminalCLIs { TerminalCLIs(muxy: Muxy.cli, cmux: Cmux.cli, wezterm: WezTerm.cli, kitty: Kitty.cli) }
 }
 
 /// What may be sent to a session, and how it reaches each terminal.
@@ -254,10 +247,8 @@ enum AgentSend {
                 guard let reply = TerminalFocus.send([request], toSocket: path).first else { return false }
                 return ((try? JSONSerialization.jsonObject(with: Data(reply.utf8))) as? [String: Any]).map { $0["error"] == nil } ?? false
             } ? .sent : .failed
-        case .muxyProject(let cli, let session, let socket):
-            guard let listing = TerminalFocus.run(cli, ["session", "list"], environment: environment),
-                  let project = AgentFocus.muxyProject(of: session, in: listing) else { return .failed }
-            return MuxyNotice.send(["switch-project|\(project)"], toSocket: socket).isEmpty ? .failed : .sent
+        case .muxyFocus(let session, let folder):
+            return MuxyFocus.run(session: session, folder: folder) ? .sent : .failed
         case .script(let call):
             switch scripts.run(call) {
             case .value(let answer): return answer == call.expecting ? .sent : .failed

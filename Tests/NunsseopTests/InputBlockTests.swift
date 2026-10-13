@@ -61,7 +61,7 @@ struct InputBlockDerivationTests {
     }
 
     @Test func everyTerminalWithAnInputApiCountsAsSupported() {
-        for app in [TerminalScripts.terminalID, TerminalScripts.itermID, MuxyNotice.bundleID, Cmux.bundleID, WezTerm.bundleID, Kitty.bundleID,
+        for app in [TerminalScripts.terminalID, TerminalScripts.itermID, Muxy.bundleID, Cmux.bundleID, WezTerm.bundleID, Kitty.bundleID,
                     TerminalScripts.ghosttyID] {
             let block = AgentRow(entry(agent(app: app)), transcript: nil).inputBlock
             #expect(block == .unconfirmed, Comment(rawValue: app))

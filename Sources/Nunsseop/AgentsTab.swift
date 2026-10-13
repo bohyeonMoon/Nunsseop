@@ -28,6 +28,8 @@ struct AgentRow: Identifiable, Equatable {
     let pid: Int32?
     /// Whether `AgentTargetCheck` found the session's process in the terminal `input` names.
     let inputVerified: Bool
+    /// Muxy itself lists the session (it has no process to check): its terminal is known for going to it, though not for typing into it.
+    let listedByTerminal: Bool
     /// A prompt may be open in the terminal this row types into: the session's own, however long it has waited, or that of
     /// another listed session sharing the terminal (`claude -p` started from it, a Codex session it replaced).
     private(set) var promptOnTerminal: Bool
@@ -46,6 +48,8 @@ struct AgentRow: Identifiable, Equatable {
         case noProcess
         /// The terminal supports input, but the session couldn't be shown to be in it.
         case unconfirmed
+        /// Muxy itself lists the session: its terminal is known, but with no process to check Nunsseop doesn't type into it.
+        case listedOnly
         /// Ghostty has several tabs in the session's folder and nothing tells which is its own.
         case ambiguousTab
         /// macOS hasn't allowed Nunsseop to control the app (Automation), so the session's tab can't be looked for.
@@ -60,6 +64,7 @@ struct AgentRow: Identifiable, Equatable {
             case .unsupportedApp(let app): String(localized: "\(AgentRow.appName(app)) doesn't let Nunsseop type into it")
             case .noProcess: String(localized: "Restart this session to send to it")
             case .unconfirmed: String(localized: "Couldn't confirm which terminal this session is in")
+            case .listedOnly: String(localized: "Muxy lists this session, so Nunsseop can take you to it but not type into it")
             case .ambiguousTab: String(localized: "There are several Ghostty tabs in this folder, so Nunsseop can't tell which one")
             case .notAllowed(let app): TerminalScripts.notAllowedNote(app)
             case .checking: String(localized: "Checking…")
@@ -68,7 +73,7 @@ struct AgentRow: Identifiable, Equatable {
     }
 
     /// The terminals that have an input API (see `AgentInput`); the other apps a session can run in have none.
-    static let inputApps: Set<String> = [TerminalScripts.terminalID, TerminalScripts.itermID, MuxyNotice.bundleID, Cmux.bundleID,
+    static let inputApps: Set<String> = [TerminalScripts.terminalID, TerminalScripts.itermID, Muxy.bundleID, Cmux.bundleID,
                                          WezTerm.bundleID, Kitty.bundleID, TerminalScripts.ghosttyID]
 
     /// An app's name for the tooltip: the installed app's own, else the last part of its bundle id; a name with a space or no dot is
@@ -103,6 +108,7 @@ struct AgentRow: Identifiable, Equatable {
         input = agent.input
         pid = agent.pid
         self.inputVerified = inputVerified
+        listedByTerminal = entry.source == MuxyActivityWatcher.source
         promptOnTerminal = agent.promptMayBeOpen
         // Only a hook session can be restarted, and only its hook names an app or a multiplexer; any other source (gjc, a herdr
         // pane without its socket) can only be unconfirmed.
@@ -114,6 +120,8 @@ struct AgentRow: Identifiable, Equatable {
             notOffered = .checking
         } else if let blockedBy {
             notOffered = blockedBy
+        } else if listedByTerminal {
+            notOffered = .listedOnly
         } else if hook, let app = agent.app ?? hostApp, !Self.inputApps.contains(app) {
             notOffered = .unsupportedApp(app)
         } else {
@@ -610,10 +618,10 @@ final class AgentsTabModel: ObservableObject {
         case .nothing: break
         case .terminal(let steps, let app):
             guard let input = current.input else { return }
-            let focuser = focuser, targets = targets, pid = current.pid, id = row.id
+            let focuser = focuser, targets = targets, pid = current.pid, id = row.id, listed = current.listedByTerminal
             let others = Set(board.entries(now: asOf).compactMap { $0.agent.pid })
             Task.detached(priority: .userInitiated) { [weak self] in
-                let outcome = targets.hosted(input, pid: pid, others: others) ? focuser.run(steps) : .failed
+                let outcome = listed || targets.hosted(input, pid: pid, others: others) ? focuser.run(steps) : .failed
                 await self?.focused(outcome, id, app)
             }
         }

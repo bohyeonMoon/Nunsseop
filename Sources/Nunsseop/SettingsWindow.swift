@@ -332,6 +332,7 @@ private struct AlertsPane: View {
     @State private var connected: Set<NotifyIntegration> = []
     @State private var failed: URL?
     @State private var terminals = ResumeTerminal.installed
+    @State private var muxyBridge = MuxyBridge.status()
 
     var body: some View {
         Form {
@@ -428,9 +429,21 @@ private struct AlertsPane: View {
                     NSPasteboard.general.setString(NotifyServer.scriptCommand, forType: .string)
                 }
                 .disabled(!settings.localNotifications)
-                if MuxyNotice.isInstalled {
+                if Muxy.isInstalled {
                     Toggle("Show notifications from agents running in Muxy", isOn: $settings.muxyNotifications)
-                    Text("Read from Muxy's own notification list, so every agent and terminal in Muxy works without setup. Hidden while Muxy is in front, and skipped for tools connected above.")
+                    Text("Read from Muxy's own agent activity while it runs, so every agent in Muxy works without setup. Hidden while Muxy is in front, and skipped for tools connected above.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    HStack {
+                        Text("Muxy bridge")
+                        switch muxyBridge {
+                        case .running: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                        case .loaded: Text("Loaded, not running").foregroundStyle(.secondary)
+                        case .notLoaded: Text("Not loaded").foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button("Show extension in Finder") { MuxyBridge.reveal() }
+                    }
+                    Text("Lets Nunsseop open a session's own tab in Muxy and resume conversations there. In Muxy, open Settings › Extensions › Load Unpacked…, pick the folder shown in Finder, then turn the extension on.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 if Cmux.isInstalled {
@@ -465,6 +478,10 @@ private struct AlertsPane: View {
                 }
             }
             .onAppear(perform: refreshConnections)
+            // The bridge starts answering a moment after the user turns it on in Muxy.
+            .onReceive(Timer.publish(every: 3, on: .main, in: .common).autoconnect()) { _ in
+                if Muxy.isInstalled { refreshBridge() }
+            }
         }
         .formStyle(.grouped)
     }
@@ -472,6 +489,13 @@ private struct AlertsPane: View {
     private func refreshConnections() {
         connected = Set(NotifyIntegration.allCases.filter(\.isInstalled))
         terminals = ResumeTerminal.installed
+        muxyBridge = MuxyBridge.status()
+    }
+
+    /// Only what the bridge's heartbeat changes: the hooks' config files are not read again every few seconds.
+    private func refreshBridge() {
+        terminals = ResumeTerminal.installed
+        muxyBridge = MuxyBridge.status()
     }
 
     private func toggle(_ tool: NotifyIntegration) {

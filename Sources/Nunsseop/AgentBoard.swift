@@ -107,8 +107,28 @@ final class AgentBoard: ObservableObject {
 
     /// Everything listed that hasn't expired, as it is at `now`.
     func entries(now: Date = .now) -> [Entry] {
-        bySource.flatMap { source, agents in agents.map { Entry(source: source, id: $0.key, agent: $0.value.effective(at: now)) } }
+        listed(at: now).map { Entry(source: $0.source, id: $0.id, agent: $0.agent.effective(at: now)) }
+    }
+
+    /// What every source lists that hasn't expired. A session Muxy lists that a hook also reports (the hook's `input` names the same
+    /// Muxy session) is listed once, as the hook has it: it knows more of the session, and the provider's own events keep it current.
+    /// A hook that predates the terminal variables names no terminal, so it can't be matched to a session: it takes the place of one
+    /// Muxy row of the same tool, since the hook of a tool that Muxy lists is more likely in Muxy than elsewhere. At most one each.
+    private func listed(at now: Date) -> [(source: String, id: String, agent: Agent)] {
+        let live = bySource.flatMap { source, agents in agents.map { (source: source, id: $0.key, agent: $0.value) } }
             .filter { $0.agent.expiresAt.map { $0 > now } ?? true }
+        let hooked = Set(live.compactMap { entry -> String? in
+            if entry.source != MuxyActivityWatcher.source, case .muxy(let session)? = entry.agent.input { session } else { nil }
+        })
+        var unplaced = live.filter { $0.source.hasPrefix("hooks:") && $0.agent.input == nil && ($0.agent.app == nil || $0.agent.app == Muxy.bundleID) }
+            .sorted { ($0.source, $0.id) < ($1.source, $1.id) }
+        var hidden = hooked
+        for row in live.filter({ $0.source == MuxyActivityWatcher.source && !hooked.contains($0.id) }).sorted(by: { $0.id < $1.id }) {
+            guard let tool = row.agent.tool, let index = unplaced.firstIndex(where: { $0.agent.tool == tool }) else { continue }
+            unplaced.remove(at: index)
+            hidden.insert(row.id)
+        }
+        return hidden.isEmpty ? live : live.filter { !($0.source == MuxyActivityWatcher.source && hidden.contains($0.id)) }
     }
 
     /// Everything one source knows now; agents it no longer lists are gone.
@@ -125,7 +145,7 @@ final class AgentBoard: ObservableObject {
 
     /// Counts the agents that haven't expired, and wakes up when the next one expires or turns idle.
     func recount(now: Date = .now) {
-        let live = bySource.values.flatMap(\.values).filter { $0.expiresAt.map { $0 > now } ?? true }
+        let live = listed(at: now).map(\.agent)
         let new = Counts(live.map { $0.effective(at: now).state })
         if new != counts { counts = new }
         revision &+= 1

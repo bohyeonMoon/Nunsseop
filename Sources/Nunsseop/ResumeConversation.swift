@@ -1,9 +1,10 @@
 import AppKit
 import Foundation
 
-/// The terminal a conversation is resumed in. Muxy is left out: it can't open a visible tab from outside.
+/// The terminal a conversation is resumed in. Muxy can open a tab from outside only through its bridge extension (see `MuxyBridge`), so
+/// it is offered while that runs.
 enum ResumeTerminal: String, CaseIterable, Identifiable {
-    case ghostty, iterm, wezterm, kitty, cmux, terminal
+    case ghostty, iterm, wezterm, kitty, cmux, muxy, terminal
 
     var id: String { rawValue }
 
@@ -14,6 +15,7 @@ enum ResumeTerminal: String, CaseIterable, Identifiable {
         case .wezterm: "WezTerm"
         case .kitty: "kitty"
         case .cmux: "cmux"
+        case .muxy: "Muxy"
         case .terminal: "Terminal"
         }
     }
@@ -25,6 +27,7 @@ enum ResumeTerminal: String, CaseIterable, Identifiable {
         case .wezterm: WezTerm.bundleID
         case .kitty: Kitty.bundleID
         case .cmux: Cmux.bundleID
+        case .muxy: Muxy.bundleID
         case .terminal: TerminalScripts.terminalID
         }
     }
@@ -32,17 +35,19 @@ enum ResumeTerminal: String, CaseIterable, Identifiable {
     var appURL: URL? { NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) }
 
     /// Terminal is always there. WezTerm may be only its command-line tool. kitty can be told from outside only through a socket, which
-    /// a session in it reported and which still exists: without one it isn't offered.
+    /// a session in it reported and which still exists: without one it isn't offered. Muxy is offered while its bridge extension runs.
     static var installed: [ResumeTerminal] {
-        installed(appURL: \.appURL, weztermInstalled: WezTerm.isInstalled, kittyCLI: Kitty.cli, kittySocket: Kitty.socket, socketExists: Kitty.socketExists)
+        installed(appURL: \.appURL, weztermInstalled: WezTerm.isInstalled, kittyCLI: Kitty.cli, kittySocket: Kitty.socket, socketExists: Kitty.socketExists,
+                  muxyBridgeRunning: MuxyBridge.isRunning())
     }
 
     /// `installed` for the given state of the machine.
     static func installed(appURL: (ResumeTerminal) -> URL?, weztermInstalled: Bool, kittyCLI: URL?, kittySocket: String?,
-                          socketExists: (String) -> Bool) -> [ResumeTerminal] {
+                          socketExists: (String) -> Bool, muxyBridgeRunning: Bool = false) -> [ResumeTerminal] {
         allCases.filter { terminal in
             switch terminal {
             case .terminal: true
+            case .muxy: muxyBridgeRunning && appURL(terminal) != nil
             case .wezterm: weztermInstalled
             case .kitty: appURL(terminal) != nil && kittyCLI != nil && kittySocket.map(socketExists) == true
             default: appURL(terminal) != nil
@@ -89,6 +94,9 @@ enum Resume {
         var appleScript: AppleScriptRunner = .live
         /// Whether cmux is running already, in which case a socket that doesn't answer is a refusal, not a start-up.
         var cmuxRunning = false
+        /// Opens `line` in a new Muxy tab through the bridge extension: given the line, the folder and the user's shell; true when Muxy took it.
+        /// Only `live` reaches Muxy.
+        var muxyResume: (_ line: String, _ cwd: String, _ shell: String) -> Bool = { _, _, _ in false }
         /// The user's login shell.
         var shell: String
         /// A private folder for the script Terminal opens is made in here.
@@ -99,6 +107,7 @@ enum Resume {
                   wezterm: ResumeTerminal.wezterm.appURL, weztermCLI: WezTerm.cli, kittyCLI: Kitty.cli, kittySocket: Kitty.socket,
                   running: Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier)),
                   cmuxRunning: !NSRunningApplication.runningApplications(withBundleIdentifier: Cmux.bundleID).isEmpty,
+                  muxyResume: { MuxyBridge.resume(line: $0, cwd: $1, shell: $2, desktop: MuxyDesktop.read()) },
                   shell: Resume.shell(from: ProcessInfo.processInfo.environment["SHELL"]),
                   scripts: FileManager.default.temporaryDirectory)
         }
@@ -194,6 +203,7 @@ enum Resume {
             case .wezterm: opened = openInWezTerm(conversation.cwd, line, setup: setup, launcher: launcher)
             case .kitty: opened = openInKitty(conversation.cwd, line, setup: setup, launcher: launcher)
             case .cmux: opened = openInCmux(conversation.cwd, line, setup: setup, launcher: launcher)
+            case .muxy: opened = setup.muxyResume(line, conversation.cwd, setup.shell)
             case .terminal: opened = openInTerminal(line, setup: setup, launcher: launcher)
             }
             if opened { return candidate }

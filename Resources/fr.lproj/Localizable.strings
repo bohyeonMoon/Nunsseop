@@ -309,7 +309,16 @@
 "No apps are playing sound" = "Aucune app n’émet de son";
 "No sound has come through yet. If the app is playing, Nunsseop may need permission to record system audio." = "Aucun son ne passe pour l’instant. Si l’app joue quelque chose, Nunsseop a peut-être besoin de l’autorisation d’enregistrer l’audio du système.";
 "Show notifications from agents running in Muxy" = "Afficher les notifications des agents exécutés dans Muxy";
-"Read from Muxy's own notification list, so every agent and terminal in Muxy works without setup. Hidden while Muxy is in front, and skipped for tools connected above." = "Lues dans la liste de notifications de Muxy, donc tous les agents et terminaux de Muxy fonctionnent sans réglage. Masquées quand Muxy est au premier plan, et ignorées pour les outils connectés ci-dessus.";
+"Read from Muxy's own agent activity while it runs, so every agent in Muxy works without setup. Hidden while Muxy is in front, and skipped for tools connected above." = "Lit l’activité des agents que Muxy détecte lui-même pendant qu’il tourne, donc tout agent dans Muxy fonctionne sans réglage. Masqué quand Muxy est au premier plan, et ignoré pour les outils connectés ci-dessus.";
+"Lets Nunsseop open a session's own tab in Muxy and resume conversations there. In Muxy, open Settings › Extensions › Load Unpacked…, pick the folder shown in Finder, then turn the extension on." = "Permet à Nunsseop d’ouvrir l’onglet d’une session dans Muxy et d’y reprendre les conversations. Dans Muxy, ouvrez Settings › Extensions › Load Unpacked…, choisissez le dossier affiché dans le Finder, puis activez l’extension.";
+"%@ in %@ needs input" = "%1$@ dans %2$@ vous attend";
+"%@ needs input" = "%@ vous attend";
+"%@ in %@ finished" = "%1$@ dans %2$@ a terminé";
+"%@ finished" = "%@ a terminé";
+"Muxy bridge" = "Passerelle Muxy";
+"Loaded, not running" = "Chargée, inactive";
+"Not loaded" = "Non chargée";
+"Show extension in Finder" = "Afficher l’extension dans le Finder";
 "Show notifications from agents running in cmux" = "Afficher les notifications des agents exécutés dans cmux";
 "Read through the cmux command inside the app, so cmux's settings stay as they are. Hidden while cmux is in front." = "Lues avec la commande cmux incluse dans l'app, donc les réglages de cmux restent inchangés. Masquées quand cmux est au premier plan.";
 "Show when agents in herdr finish or wait for you" = "Afficher quand les agents de herdr terminent ou vous attendent";
@@ -422,4 +431,5 @@
 "%@ doesn't let Nunsseop type into it" = "%@ ne permet pas à Nunsseop d'y saisir du texte";
 "Restart this session to send to it" = "Redémarrez cette session pour lui envoyer";
 "Couldn't confirm which terminal this session is in" = "Impossible de confirmer dans quel terminal se trouve cette session";
+"Muxy lists this session, so Nunsseop can take you to it but not type into it" = "Muxy liste cette session : Nunsseop peut vous y emmener, mais pas y saisir de texte";
 "There are several Ghostty tabs in this folder, so Nunsseop can't tell which one" = "Il y a plusieurs onglets Ghostty dans ce dossier, Nunsseop ne peut donc pas savoir lequel";

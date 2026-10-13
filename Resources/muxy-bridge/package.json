@@ -1,0 +1,13 @@
+{
+  "name": "nunsseop-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "muxy": {
+    "description": "Lets Nunsseop go to a session's tab and resume a conversation in a new tab.",
+    "permissions": ["storage:read", "storage:write", "tabs:write", "projects:write"],
+    "background": "background.js",
+    "tabTypes": [
+      { "id": "helper", "title": "Nunsseop", "entry": "helper.html" }
+    ]
+  }
+}

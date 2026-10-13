@@ -136,9 +136,11 @@ struct ResumeTerminalChoiceTests {
         #expect(ResumeTerminal.effective(saved: "cmux", installed: [.ghostty, .terminal]) == .ghostty)
         #expect(ResumeTerminal.effective(saved: "", installed: [.cmux, .terminal]) == .terminal)
         #expect(ResumeTerminal.effective(saved: "ghostty", installed: [.terminal]) == .terminal)
-        #expect(ResumeTerminal.effective(saved: "muxy", installed: all) == .ghostty)
+        // Muxy is a choice only while its bridge runs (it is then among the installed ones).
+        #expect(ResumeTerminal.effective(saved: "muxy", installed: all) == .muxy)
+        #expect(ResumeTerminal.effective(saved: "muxy", installed: [.ghostty, .terminal]) == .ghostty)
         #expect(ResumeTerminal.installed.contains(.terminal))
-        #expect(ResumeTerminal.allCases.map(\.name) == ["Ghostty", "iTerm2", "WezTerm", "kitty", "cmux", "Terminal"])
+        #expect(ResumeTerminal.allCases.map(\.name) == ["Ghostty", "iTerm2", "WezTerm", "kitty", "cmux", "Muxy", "Terminal"])
         #expect(ResumeTerminal.effective(saved: "iterm", installed: all) == .iterm)
         #expect(ResumeTerminal.effective(saved: "kitty", installed: [.ghostty, .terminal]) == .ghostty)
     }
@@ -157,6 +159,32 @@ struct ResumeOpenTests {
         #expect(call.program == "open")
         #expect(Array(call.arguments.dropLast()) == ["-na", "/Applications/Ghostty.app", "--args", "--window-save-state=never", "--working-directory=\(cwd)", "-e"])
         try expectResumeScript(call.arguments.last, runs: line)
+    }
+
+    @Test func muxyTakesTheLineThroughItsBridgeAndNothingElseIsRun() throws {
+        let cwd = try folder("api")
+        let recorder = Recorder()
+        var taken: [(String, String, String)] = []
+        var muxy = setup()
+        muxy.muxyResume = { taken.append(($0, $1, $2)); return true }
+        #expect(Resume.open(conversation(.codex, cwd: cwd), in: .muxy, setup: muxy, launcher: recorder.launcher) == .muxy)
+        #expect(taken.count == 1 && taken[0].0 == "cd -- '\(cwd)' && exec codex resume '\(session)'" && taken[0].1 == cwd && taken[0].2 == "/bin/zsh")
+        #expect(recorder.calls.isEmpty)
+    }
+
+    @Test func aMuxyThatDoesNotTakeItFallsBackToTerminalAndOneNotOfferedIsSkipped() throws {
+        let cwd = try folder("api")
+        let refused = Recorder()
+        var muxy = setup()
+        var asked = 0
+        muxy.muxyResume = { _, _, _ in asked += 1; return false }
+        #expect(Resume.open(conversation(cwd: cwd), in: .muxy, setup: muxy, launcher: refused.launcher) == .terminal)
+        #expect(asked == 1 && refused.calls.map(\.program) == ["open"] && refused.calls.first?.arguments.prefix(2) == ["-b", "com.apple.Terminal"])
+        let absent = Recorder()
+        var gone = setup(installed: [.terminal])
+        gone.muxyResume = { _, _, _ in asked += 1; return true }
+        #expect(Resume.open(conversation(cwd: cwd), in: .muxy, setup: gone, launcher: absent.launcher) == .terminal)
+        #expect(asked == 1)
     }
 
     @Test func cmuxTypesTheLineIntoANewWorkspaceOfARunningApp() throws {
