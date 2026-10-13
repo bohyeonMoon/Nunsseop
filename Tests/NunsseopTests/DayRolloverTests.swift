@@ -98,13 +98,11 @@ enum DayRolloverTests {
 
     @MainActor
     struct PomodoroDayRolloverTests {
-        private static let suiteName = "NunsseopTests.DayRollover"
+        private let scratch = ScratchDefaults("DayRollover")
 
         /// A Pomodoro timer on the 10th at 22:00 with its first work session running; the work lasts 25 minutes.
         private func runningTimer(_ clock: Clock) -> TimerModel {
-            let defaults = UserDefaults(suiteName: Self.suiteName)!
-            defaults.removePersistentDomain(forName: Self.suiteName)
-            let timer = TimerModel(defaults: defaults, calendar: utc, now: { clock.date }, chime: {})
+            let timer = TimerModel(defaults: scratch.defaults, calendar: utc, now: { clock.date }, chime: {})
             timer.mode = .pomodoro
             timer.start()
             return timer

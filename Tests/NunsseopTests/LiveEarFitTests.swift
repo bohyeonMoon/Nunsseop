@@ -451,8 +451,6 @@ struct LiveEarRenderTests {
 @MainActor
 @Suite(.serialized)
 struct LiveContentTests {
-    private static let suiteName = "NunsseopTests.LiveContent"
-
     private func content(timer: TimerModel, call: CallMonitor.Call? = nil, muted: Bool = false) -> Content {
         CollapsedActivity.content(nowPlaying: NowPlayingController(), timer: timer, recorder: ScreenRecorder(),
                                   downloads: DownloadWatcher(), privacy: nil, call: call, callMuted: muted,
@@ -460,12 +458,11 @@ struct LiveContentTests {
     }
 
     private func withTimer(_ body: (TimerModel) -> Void) {
-        let defaults = UserDefaults(suiteName: Self.suiteName)!
-        defaults.removePersistentDomain(forName: Self.suiteName)
-        let timer = TimerModel(defaults: defaults)
+        let scratch = ScratchDefaults("LiveContent")
+        let timer = TimerModel(defaults: scratch.defaults)
         defer {
             timer.reset()
-            defaults.removePersistentDomain(forName: Self.suiteName)
+            scratch.remove()
         }
         body(timer)
     }

@@ -4,13 +4,10 @@ import Testing
 
 @Suite(.serialized)
 struct AppSettingsLoadTests {
-    private static let suiteName = "NunsseopTests.AppSettings"
-
     private func withDefaults(_ body: (UserDefaults) throws -> Void) rethrows {
-        let defaults = UserDefaults(suiteName: Self.suiteName)!
-        defaults.removePersistentDomain(forName: Self.suiteName)
-        defer { defaults.removePersistentDomain(forName: Self.suiteName) }
-        try body(defaults)
+        let scratch = ScratchDefaults("AppSettings")
+        defer { scratch.remove() }
+        try body(scratch.defaults)
     }
 
     @Test(arguments: [(300.0, 540.0), (540.0, 540.0), (620.0, 620.0), (780.0, 780.0), (9999.0, 780.0)])
