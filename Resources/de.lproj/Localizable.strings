@@ -421,3 +421,4 @@
 "%@ doesn't let Nunsseop type into it" = "%@ lässt Nunsseop keine Eingabe zu";
 "Restart this session to send to it" = "Starte diese Sitzung neu, um an sie zu senden";
 "Couldn't confirm which terminal this session is in" = "Konnte nicht bestätigen, in welchem Terminal diese Sitzung läuft";
+"There are several Ghostty tabs in this folder, so Nunsseop can't tell which one" = "In diesem Ordner gibt es mehrere Ghostty-Tabs, daher kann Nunsseop nicht erkennen, welcher gemeint ist";

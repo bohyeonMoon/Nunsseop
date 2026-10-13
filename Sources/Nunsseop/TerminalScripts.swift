@@ -154,6 +154,104 @@ enum TerminalScripts {
             """, handler: "open_tab", arguments: [cwd, command], expecting: "opened", launches: false)
     }
 
+    /// Apple Events to Ghostty wait this long (seconds) for an answer: the default is two minutes, and a Ghostty that hangs or sits on
+    /// the Automation prompt would hold the one script queue (every other terminal's sends with it) for that long.
+    static let ghosttyTimeout = 3
+
+    /// Every Ghostty terminal: its id, folder and title, fields apart by U+001F and records by U+001E (a title may hold tabs and line
+    /// breaks). A value that is missing counts as empty.
+    static func ghosttyList() -> AppleScriptCall {
+        AppleScriptCall(bundleID: ghosttyID, source: """
+            on list_terminals()
+            	set fieldSeparator to character id 31
+            	set recordSeparator to character id 30
+            	set listing to ""
+            	with timeout of \(ghosttyTimeout) seconds
+            		tell application id "\(ghosttyID)"
+            			set surfaces to terminals
+            			repeat with i from 1 to count of surfaces
+            				set t to item i of surfaces
+            				set listing to listing & my text_of(id of t) & fieldSeparator & my text_of(working directory of t) & fieldSeparator & my text_of(name of t) & recordSeparator
+            			end repeat
+            		end tell
+            	end timeout
+            	return listing
+            end list_terminals
+            on text_of(v)
+            	if v is missing value then return ""
+            	return v as text
+            end text_of
+            """, handler: "list_terminals", arguments: [], expecting: "", launches: false)
+    }
+
+    /// Types the text into the terminal with that id, with Return after it when `submit`, but only if the terminal is still the one that
+    /// was picked: its folder is one of `folders` (one per line) and its title is Claude's (a status mark, then text), holding `name`
+    /// when `needsName`, and no other terminal fits as well. When the tab was picked without the name, it also refuses if it is the
+    /// only one in the folder yet another tab's Claude title holds `name` and its own doesn't (see `Ghostty.resolve`). "gone" when it
+    /// no longer fits or isn't there, "ambiguous" when another fits too; nothing is typed then.
+    static func ghosttySend(terminal: String, folders: [String], name: String, needsName: Bool, text: String, submit: Bool) -> AppleScriptCall {
+        AppleScriptCall(bundleID: ghosttyID, source: """
+            on send_text(theID, theFolders, theName, theNeedsName, theText, withReturn)
+            	set acceptedFolders to paragraphs of theFolders
+            	with timeout of \(ghosttyTimeout + 2) seconds
+            		tell application id "\(ghosttyID)"
+            			set surfaces to terminals
+            			set found to missing value
+            			set foundNamed to false
+            			set fits to 0
+            			set inFolderCount to 0
+            			set elsewhereNamed to 0
+            			repeat with i from 1 to count of surfaces
+            				set t to item i of surfaces
+            				considering case
+            					set dir to my text_of(working directory of t)
+            					set titleText to my claude_title(my text_of(name of t))
+            					set inFolder to dir is in acceptedFolders
+            					set isNamed to theName is not "" and titleText contains theName
+            					if inFolder then set inFolderCount to inFolderCount + 1
+            					if inFolder and titleText is not "" and (theNeedsName is "0" or isNamed) then
+            						set fits to fits + 1
+            						if (id of t) is theID then
+            							set found to t
+            							set foundNamed to isNamed
+            						end if
+            					else if isNamed and not inFolder then
+            						set elsewhereNamed to elsewhereNamed + 1
+            					end if
+            				end considering
+            			end repeat
+            			if found is missing value then return "gone"
+            			if fits is not 1 then return "ambiguous"
+            			if theNeedsName is "0" then
+            				if inFolderCount is not 1 then return "ambiguous"
+            				if not foundNamed and elsewhereNamed > 0 then return "ambiguous"
+            			end if
+            			input text theText to found
+            			if withReturn is "1" then send key "enter" to found
+            		end tell
+            	end timeout
+            	return "ok"
+            end send_text
+            on text_of(v)
+            	if v is missing value then return ""
+            	return v as text
+            end text_of
+            on claude_title(heading)
+            	try
+            		if (count of characters of heading) < 3 then return ""
+            		set mark to id of (character 1 of heading)
+            		if mark < \(Ghostty.markScalars.lowerBound) or mark > \(Ghostty.markScalars.upperBound) then return ""
+            		if character 2 of heading is not " " then return ""
+            		return text 3 thru -1 of heading
+            	on error
+            		return ""
+            	end try
+            end claude_title
+            """, handler: "send_text",
+                          arguments: [terminal, folders.joined(separator: "\n"), name, needsName ? "1" : "0", text, submit ? "1" : "0"],
+                          expecting: "ok", launches: false)
+    }
+
     /// The name of a terminal app for a note, by bundle id.
     static func name(of bundleID: String) -> String {
         switch bundleID {

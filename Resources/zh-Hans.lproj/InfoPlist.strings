@@ -1,4 +1,4 @@
-"NSAppleEventsUsageDescription" = "显示 Music、Spotify 和浏览器正在播放的内容并控制播放。还会向 Terminal 和 iTerm2 中的智能体会话输入你的消息，并在 iTerm2 和 Ghostty 的新标签页中打开对话。";
+"NSAppleEventsUsageDescription" = "显示 Music、Spotify 和浏览器正在播放的内容并控制播放。还会向 Terminal、iTerm2 和 Ghostty 中的智能体会话输入你的消息，并在 iTerm2 和 Ghostty 的新标签页中打开对话。";
 "NSCalendarsFullAccessUsageDescription" = "在刘海的主页标签中显示今天和本周的日程。";
 "NSRemindersFullAccessUsageDescription" = "在日历下方显示今天到期的提醒事项，并可标记为完成。";
 "NSCameraUsageDescription" = "在刘海的镜子标签中显示相机画面。不会录制或发送。";

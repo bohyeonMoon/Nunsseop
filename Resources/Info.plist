@@ -33,7 +33,7 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>
-	<string>Shows what Music, Spotify and your browsers are playing and controls playback. Also types your messages into agent sessions in Terminal and iTerm2, and opens conversations in new tabs of iTerm2 and Ghostty.</string>
+	<string>Shows what Music, Spotify and your browsers are playing and controls playback. Also types your messages into agent sessions in Terminal, iTerm2 and Ghostty, and opens conversations in new tabs of iTerm2 and Ghostty.</string>
 	<key>NSAudioCaptureUsageDescription</key>
 	<string>Changes the volume of individual apps when you turn on per-app volume. Audio is only passed through at the level you choose; nothing is recorded or saved.</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>

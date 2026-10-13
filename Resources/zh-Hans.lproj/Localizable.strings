@@ -421,3 +421,4 @@
 "%@ doesn't let Nunsseop type into it" = "%@不允许 Nunsseop 向其输入文字";
 "Restart this session to send to it" = "重新启动此会话后即可发送";
 "Couldn't confirm which terminal this session is in" = "无法确认此会话位于哪个终端";
+"There are several Ghostty tabs in this folder, so Nunsseop can't tell which one" = "此文件夹中有多个 Ghostty 标签页，Nunsseop 无法确定是哪一个";

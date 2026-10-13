@@ -52,6 +52,10 @@ struct AgentRow: Identifiable, Equatable {
         case noProcess
         /// The terminal supports input, but the session couldn't be shown to be in it.
         case unconfirmed
+        /// Ghostty has several tabs in the session's folder and nothing tells which is its own.
+        case ambiguousTab
+        /// macOS hasn't allowed Nunsseop to control the app (Automation), so the session's tab can't be looked for.
+        case notAllowed(String)
         /// The check of its terminal hasn't covered the row yet; the reason may turn out to be none.
         case checking
 
@@ -62,6 +66,8 @@ struct AgentRow: Identifiable, Equatable {
             case .unsupportedApp(let app): String(localized: "\(AgentRow.appName(app)) doesn't let Nunsseop type into it")
             case .noProcess: String(localized: "Restart this session to send to it")
             case .unconfirmed: String(localized: "Couldn't confirm which terminal this session is in")
+            case .ambiguousTab: String(localized: "There are several Ghostty tabs in this folder, so Nunsseop can't tell which one")
+            case .notAllowed(let app): TerminalScripts.notAllowedNote(app)
             case .checking: String(localized: "Checking…")
             }
         }
@@ -69,7 +75,7 @@ struct AgentRow: Identifiable, Equatable {
 
     /// The terminals that have an input API (see `AgentInput`); the other apps a session can run in have none.
     static let inputApps: Set<String> = [TerminalScripts.terminalID, TerminalScripts.itermID, MuxyNotice.bundleID, Cmux.bundleID,
-                                         WezTerm.bundleID, Kitty.bundleID]
+                                         WezTerm.bundleID, Kitty.bundleID, TerminalScripts.ghosttyID]
 
     /// An app's name for the tooltip: the installed app's own, else the last part of its bundle id; a name with a space or no dot is
     /// an app folder's (see `AgentTargetCheck.hostApp`) and stays whole. `installed` finds the name by bundle id.
@@ -85,8 +91,9 @@ struct AgentRow: Identifiable, Equatable {
     /// - hostApp: the app found above its process, for a hook that named none (see `AgentTargetCheck.hostApp`).
     /// - checked: whether a verification pass has covered the entry's key and process; until it has, a row with a process that
     ///   isn't sendable reads `.checking`, not a reason a pass may still overturn.
+    /// - blockedBy: the reason the model found for a session whose terminal needed a look of its own (Ghostty's tabs).
     init(_ entry: AgentBoard.Entry, transcript: AgentTranscript?, inputVerified: Bool = false, multiplexed: Bool = false, hostApp: String? = nil,
-         checked: Bool = true) {
+         checked: Bool = true, blockedBy: InputBlock? = nil) {
         let agent = entry.agent
         id = entry.key
         tool = Self.toolName(agent.tool)
@@ -111,6 +118,8 @@ struct AgentRow: Identifiable, Equatable {
         } else if !checked && agent.pid != nil {
             // The process environment may still say tmux, and the process tree may still name another app.
             notOffered = .checking
+        } else if let blockedBy {
+            notOffered = blockedBy
         } else if hook, let app = agent.app ?? hostApp, !Self.inputApps.contains(app) {
             notOffered = .unsupportedApp(app)
         } else {
@@ -124,7 +133,7 @@ struct AgentRow: Identifiable, Equatable {
         switch input {
         case nil: false
         case .herdr: true
-        case .muxy, .cmux, .terminalApp, .iterm, .wezterm, .kitty: inputVerified
+        case .muxy, .cmux, .terminalApp, .iterm, .wezterm, .kitty, .ghostty: inputVerified
         }
     }
 
@@ -276,6 +285,7 @@ final class AgentsTabModel: ObservableObject {
     private let clis: () -> TerminalCLIs
     private let targets: AgentTargetCheck
     private let environments: ProcessEnvironment
+    private let scripts: AppleScriptRunner
     private var transcripts = AgentTranscripts()
     private var loading = false
     private var changedWhileLoading = false
@@ -297,6 +307,13 @@ final class AgentsTabModel: ObservableObject {
     /// What `ProcessEnvironment` read of each such session's process, by pid. A process's environment doesn't change, so it is read
     /// once; only the pids on the board are kept.
     private var environmentCache: [Int32: [String: String]] = [:]
+    /// The sessions whose process runs under Ghostty itself with no other terminal between, by `Entry.key`, for the process, and the
+    /// terminals Ghostty listed in the same pass (nil when no session is in it). The tab of each is worked out from these in `rebuild`,
+    /// when its folder and name are known.
+    private var ghosttyHosted: [String: Int32] = [:]
+    private var ghosttyListing: GhosttyListing?
+    /// The terminal each row that can be sent to in Ghostty was resolved to, by `Entry.key`; what a send finds the tab again by.
+    private var ghosttyPicks: [String: GhosttyPick] = [:]
     /// The app found above the process of each session whose hook named none, by `Entry.key`; for the tooltip of a row that can't be typed into.
     private var hostApps: [String: String] = [:]
     /// The entries a verification pass has covered: `Entry.key` and process, see `checkedKey`. A row outside it is still being checked.
@@ -317,10 +334,11 @@ final class AgentsTabModel: ObservableObject {
     /// - clis: where the terminals' command-line tools are, looked up on every send.
     /// - targets: how a session's terminal is verified; tests give it a made-up process tree.
     /// - environments: how the environment of a session's process is read; tests give it made-up ones.
+    /// - scripts: what looks at Ghostty's tabs (the sends go through `sender`); tests give it one that answers from a made-up list.
     init(board: AgentBoard, home: @escaping () -> URL = { NotifyIntegration.home }, isConnected: (() -> Bool)? = nil,
          scratch: [String] = RecentConversations.scratch, onResume: @escaping (RecentConversation) -> Void = Resume.inChosenTerminal,
          sender: AgentSender = .live, clis: @escaping () -> TerminalCLIs = { .live }, targets: AgentTargetCheck = .live,
-         environments: ProcessEnvironment = .live) {
+         environments: ProcessEnvironment = .live, scripts: AppleScriptRunner = .live) {
         self.board = board
         self.home = home
         self.isConnected = isConnected
@@ -330,6 +348,7 @@ final class AgentsTabModel: ObservableObject {
         self.clis = clis
         self.targets = targets
         self.environments = environments
+        self.scripts = scripts
         connected = checkConnected()
         #if DEBUG
         if CommandLine.arguments.contains("--demo-agents") {
@@ -402,6 +421,8 @@ final class AgentsTabModel: ObservableObject {
             if !derivedTargets.isEmpty { derivedTargets = [:] }
             if !environmentCache.isEmpty { environmentCache = [:] }
             if !hostApps.isEmpty { hostApps = [:] }
+            if !ghosttyHosted.isEmpty { ghosttyHosted = [:] }
+            ghosttyListing = nil
             if !checked.isEmpty { checked = [] }
             return
         }
@@ -414,6 +435,14 @@ final class AgentsTabModel: ObservableObject {
             guard entry.agent.app == nil, entry.agent.pane == nil, let pid = entry.agent.pid else { return nil }
             return (entry.key, pid)
         }
+        // A session that may be in Ghostty: no input of its own, no multiplexer or herdr pane, and no other app named.
+        let unlisted = entries.compactMap { entry -> (key: String, pid: Int32)? in
+            let agent = entry.agent
+            guard agent.input == nil, !agent.inMultiplexer, agent.pane == nil, let pid = agent.pid,
+                  agent.app == nil || agent.app == TerminalScripts.ghosttyID else { return nil }
+            return (entry.key, pid)
+        }
+        let scripts = scripts
         let cached = environmentCache.filter { pids.contains($0.key) }
         Task.detached(priority: .utility) { [weak self] in
             var cache = cached
@@ -431,13 +460,27 @@ final class AgentsTabModel: ObservableObject {
             let verified = candidates.filter { targets.verified($0.target.input, pid: $0.target.pid, muxySessions: sessions, others: others) }
             var hosts: [String: String] = [:]
             for session in unplaced { hosts[session.key] = targets.hostApp(pid: session.pid) }
-            await self?.verified(Dictionary(uniqueKeysWithValues: verified.map { ($0.key, $0.target) }), derived: derived, environments: cache, hosts: hosts, covered: covered)
+            let taken = Set(verified.map(\.key))
+            // Ghostty has no id a shell could report: the process tree is the proof, and its tabs are listed once for all of them.
+            var inGhostty: [String: Int32] = [:]
+            for session in unlisted where !taken.contains(session.key) {
+                let variables = cache[session.pid] ?? environments.variables(of: session.pid)
+                cache[session.pid] = variables
+                guard !AgentHook.inMultiplexer(environment: variables), variables["HERDR_PANE_ID"]?.isEmpty != false,
+                      targets.hosted(.ghostty(cwd: "", name: nil), pid: session.pid, others: others) else { continue }
+                inGhostty[session.key] = session.pid
+            }
+            let listing = inGhostty.isEmpty ? nil : Ghostty.list(scripts: scripts)
+            await self?.verified(Dictionary(uniqueKeysWithValues: verified.map { ($0.key, $0.target) }), derived: derived, environments: cache, hosts: hosts, covered: covered,
+                                 ghostty: (inGhostty, listing))
         }
     }
 
     private func verified(_ targets: [String: VerifiedTarget], derived: [String: VerifiedTarget], environments: [Int32: [String: String]],
-                          hosts: [String: String], covered: Set<String>) {
+                          hosts: [String: String], covered: Set<String>, ghostty: (hosted: [String: Int32], listing: GhosttyListing?)) {
         checked = covered
+        ghosttyHosted = ghostty.hosted
+        ghosttyListing = ghostty.listing
         verifiedTargets = targets
         hostApps = hosts
         derivedTargets = derived
@@ -532,7 +575,7 @@ final class AgentsTabModel: ObservableObject {
     private func deliver(_ text: String, submit: Bool, to row: AgentRow) -> Bool {
         guard let current = rows.first(where: { $0.id == row.id }), current.acceptsInput, let input = current.input else { return false }
         notes[row.id] = nil
-        guard let steps = AgentSend.steps(input, text: text, submit: submit, clis: clis()) else {
+        guard let steps = AgentSend.steps(input, text: text, submit: submit, clis: clis(), ghostty: ghosttyPicks[row.id]) else {
             note(Self.failure, for: row.id)
             return true
         }
@@ -589,18 +632,64 @@ final class AgentsTabModel: ObservableObject {
     /// The entry with the target found in its process's environment when its hook named none.
     private func withDerivedInput(_ entry: AgentBoard.Entry) -> AgentBoard.Entry {
         guard entry.agent.input == nil, let derived = derivedTargets[entry.key], derived.pid == entry.agent.pid else { return entry }
+        return Self.entry(entry, input: derived.input)
+    }
+
+    private static func entry(_ entry: AgentBoard.Entry, input: AgentInput) -> AgentBoard.Entry {
         var agent = entry.agent
-        agent.input = derived.input
+        agent.input = input
         return AgentBoard.Entry(source: entry.source, id: entry.id, agent: agent)
     }
 
+    /// What the look at Ghostty's tabs came to for a session: the input to type into (verified), or why there is none.
+    private struct GhosttyOutcome {
+        var input: AgentInput?
+        var pick: GhosttyPick?
+        var block: AgentRow.InputBlock?
+    }
+
+    /// Resolves each session found under Ghostty to its tab, from the tabs listed in the pass and the session's folder and name as the
+    /// transcripts have them now; all of them together, as sessions sharing a folder must be told apart from each other.
+    private func ghosttyOutcomes(_ entries: [AgentBoard.Entry]) -> [String: GhosttyOutcome] {
+        let here = entries.filter { $0.agent.pid != nil && ghosttyHosted[$0.key] == $0.agent.pid }
+        guard !here.isEmpty else { return [:] }
+        let sessions = here.map { entry -> GhosttySession in
+            let transcript = fixed[entry.key] ?? AgentRow.transcriptKey(entry.agent).flatMap(transcripts.transcript)
+            let cwd = [entry.agent.cwd, transcript?.cwd].lazy.compactMap { $0 }.first { !$0.isEmpty } ?? ""
+            return GhosttySession(key: entry.key, cwd: cwd, name: transcript?.name.flatMap { $0.isEmpty ? nil : $0 })
+        }
+        switch ghosttyListing {
+        case .notAllowed?:
+            return Dictionary(uniqueKeysWithValues: sessions.map { ($0.key, GhosttyOutcome(block: .notAllowed(TerminalScripts.ghosttyID))) })
+        case .terminals(let terminals)?:
+            let tabs = Ghostty.resolve(sessions.filter { !$0.cwd.isEmpty }, in: terminals)
+            return Dictionary(uniqueKeysWithValues: sessions.map { session in
+                switch tabs[session.key] {
+                case .terminal(let id, let usesName)?:
+                    return (session.key, GhosttyOutcome(input: .ghostty(cwd: session.cwd, name: session.name),
+                                                        pick: GhosttyPick(terminal: id, usesName: usesName)))
+                case .ambiguous?: return (session.key, GhosttyOutcome(block: .ambiguousTab))
+                case .absent?, nil: return (session.key, GhosttyOutcome())
+                }
+            })
+        case .unavailable?, nil:
+            return Dictionary(uniqueKeysWithValues: sessions.map { ($0.key, GhosttyOutcome()) })
+        }
+    }
+
     private func rebuild(_ entries: [AgentBoard.Entry]) {
+        let ghostty = ghosttyOutcomes(entries)
+        ghosttyPicks = ghostty.compactMapValues(\.pick)
         let next = AgentRow.sorted(AgentRow.sharingTerminals(entries.map(withDerivedInput).map { entry in
-            AgentRow(entry, transcript: fixed[entry.key] ?? AgentRow.transcriptKey(entry.agent).flatMap(transcripts.transcript),
-                     inputVerified: entry.agent.input.map { verifiedTargets[entry.key] == VerifiedTarget(input: $0, pid: entry.agent.pid) } ?? false,
+            let outcome = ghostty[entry.key]
+            var entry = entry
+            if let input = outcome?.input { entry = Self.entry(entry, input: input) }
+            return AgentRow(entry, transcript: fixed[entry.key] ?? AgentRow.transcriptKey(entry.agent).flatMap(transcripts.transcript),
+                     inputVerified: outcome?.input != nil || (entry.agent.input.map { verifiedTargets[entry.key] == VerifiedTarget(input: $0, pid: entry.agent.pid) } ?? false),
                      multiplexed: entry.agent.pid.flatMap { environmentCache[$0] }.map(AgentHook.inMultiplexer) ?? false,
                      hostApp: hostApps[entry.key],
-                     checked: entry.agent.pid.map { checked.contains(Self.checkedKey(entry.key, $0)) } ?? true)
+                     checked: entry.agent.pid.map { checked.contains(Self.checkedKey(entry.key, $0)) } ?? true,
+                     blockedBy: outcome?.block)
         }))
         if next != rows { rows = next }
         // The field closes with its row, or when the session starts waiting on a prompt: typing could answer it.

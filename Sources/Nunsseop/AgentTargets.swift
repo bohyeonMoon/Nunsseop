@@ -71,6 +71,7 @@ struct AgentTargetCheck: Sendable {
         case .iterm(let device): (host, tty) = (Self.isITerm, device)
         case .wezterm: host = Self.isWezTerm
         case .kitty: host = Self.isKitty
+        case .ghostty: host = Self.isGhostty
         }
         // Terminal.app and iTerm2 find the session by its device, so the process must be on that one.
         guard let pid, let own = processes.lookup(pid), own.hasTTY, tty == nil || own.tty == tty else { return false }
@@ -113,7 +114,7 @@ struct AgentTargetCheck: Sendable {
 
     /// Whether the executable is the process of a terminal that has an input API (see `AgentRow.inputApps`).
     static func hostsInput(_ path: String) -> Bool {
-        isMuxyServer(path) || isCmuxApp(path) || isTerminalApp(path) || isITerm(path) || isWezTerm(path) || isKitty(path)
+        isMuxyServer(path) || isCmuxApp(path) || isTerminalApp(path) || isITerm(path) || isWezTerm(path) || isKitty(path) || isGhostty(path)
     }
 
     /// Muxy's server, the parent of its terminals' shells: `Muxy.app/Contents/MacOS/muxy-server`.
@@ -137,6 +138,9 @@ struct AgentTargetCheck: Sendable {
 
     /// kitty, which runs the shells of its windows itself.
     static func isKitty(_ path: String) -> Bool { (path as NSString).lastPathComponent == "kitty" }
+
+    /// Ghostty, which runs its terminals' shells itself (through `/usr/bin/login`); one app bundle named Ghostty.
+    static func isGhostty(_ path: String) -> Bool { path.hasSuffix("/Ghostty.app/Contents/MacOS/ghostty") }
 
     /// cmux's app, which its terminals' shells run under: the executable in the `Contents/MacOS` of an app bundle named cmux.
     static func isCmuxApp(_ path: String) -> Bool {

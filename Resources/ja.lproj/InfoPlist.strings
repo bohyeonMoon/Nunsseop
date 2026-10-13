@@ -1,4 +1,4 @@
-"NSAppleEventsUsageDescription" = "Music、Spotify、ブラウザで再生中の内容を表示し、再生を操作します。また、TerminalとiTerm2のエージェントセッションにメッセージを入力し、iTerm2とGhosttyの新しいタブで会話を開きます。";
+"NSAppleEventsUsageDescription" = "Music、Spotify、ブラウザで再生中の内容を表示し、再生を操作します。また、Terminal、iTerm2、Ghosttyのエージェントセッションにメッセージを入力し、iTerm2とGhosttyの新しいタブで会話を開きます。";
 "NSCalendarsFullAccessUsageDescription" = "ノッチのホームタブに今日と今週の予定を表示します。";
 "NSRemindersFullAccessUsageDescription" = "今日が期限のリマインダーをカレンダーの下に表示し、完了にできるようにします。";
 "NSCameraUsageDescription" = "ノッチのミラータブにカメラを表示します。録画や送信はしません。";

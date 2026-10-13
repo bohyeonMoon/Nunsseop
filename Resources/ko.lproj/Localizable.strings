@@ -446,3 +446,4 @@
 "%@ doesn't let Nunsseop type into it" = "%@에는 눈썹이 글자를 넣을 수 없어요";
 "Restart this session to send to it" = "이 세션을 다시 시작하면 보낼 수 있어요";
 "Couldn't confirm which terminal this session is in" = "이 세션이 어느 터미널에 있는지 확인하지 못했어요";
+"There are several Ghostty tabs in this folder, so Nunsseop can't tell which one" = "이 폴더에 Ghostty 탭이 여러 개라 어느 탭인지 알 수 없어요";

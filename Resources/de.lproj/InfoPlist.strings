@@ -1,4 +1,4 @@
-"NSAppleEventsUsageDescription" = "Zeigt, was Music, Spotify und deine Browser abspielen, und steuert die Wiedergabe. Tippt außerdem deine Nachrichten in Agent-Sitzungen in Terminal und iTerm2 und öffnet Unterhaltungen in neuen Tabs von iTerm2 und Ghostty.";
+"NSAppleEventsUsageDescription" = "Zeigt, was Music, Spotify und deine Browser abspielen, und steuert die Wiedergabe. Tippt außerdem deine Nachrichten in Agent-Sitzungen in Terminal, iTerm2 und Ghostty und öffnet Unterhaltungen in neuen Tabs von iTerm2 und Ghostty.";
 "NSCalendarsFullAccessUsageDescription" = "Zeigt die Termine von heute und dieser Woche im Start-Tab der Notch.";
 "NSRemindersFullAccessUsageDescription" = "Zeigt heute fällige Erinnerungen unter dem Kalender und lässt dich sie erledigen.";
 "NSCameraUsageDescription" = "Zeigt deine Kamera im Spiegel-Tab der Notch. Es wird nichts aufgenommen oder gesendet.";

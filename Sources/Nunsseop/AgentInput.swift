@@ -18,6 +18,9 @@ enum AgentInput: Equatable {
     case wezterm(pane: String, socket: String)
     /// A kitty window (`KITTY_WINDOW_ID`) and the socket its remote control listens on (`KITTY_LISTEN_ON`, `unix:/path`).
     case kitty(window: String, socket: String)
+    /// A Ghostty terminal, found by the session's folder among the tabs with a Claude title and, among several in it, by its name in
+    /// that title: Ghostty gives a shell no id of its own. Which terminal it is comes from `Ghostty.resolve`, so the id is not part of this.
+    case ghostty(cwd: String, name: String?)
 
     /// A Muxy session id from the hook: 1 to 20 ASCII digits (a 64-bit id).
     static func muxySession(_ value: String?) -> String? {
@@ -162,7 +165,8 @@ enum AgentSend {
     }
 
     /// The calls that put `text` into the session, followed by Return when `submit`; nil when its terminal's tool isn't there.
-    static func steps(_ input: AgentInput, text: String, submit: Bool, clis: TerminalCLIs) -> [AgentStep]? {
+    /// `ghostty` is the terminal picked for a Ghostty session (see `Ghostty.resolve`); without it there is no plan.
+    static func steps(_ input: AgentInput, text: String, submit: Bool, clis: TerminalCLIs, ghostty: GhosttyPick? = nil) -> [AgentStep]? {
         switch input {
         case .muxy(let session):
             guard let cli = clis.muxy else { return nil }
@@ -199,6 +203,14 @@ enum AgentSend {
             let remote = ["@", "--to", socket]
             return [.runInput(cli, remote + ["send-text", "--match", "id:\(window)", "--stdin"], stdin: text)]
                 + (submit ? [.run(cli, remote + ["send-key", "--match", "id:\(window)", "enter"])] : [])
+        case .ghostty(let cwd, let name):
+            // `input text` pastes, so a drop needs no Return and a message gets its own key. The script finds the terminal again by id
+            // and types only if it still holds the folder and a Claude title (and the name, when that told it from the others). The
+            // name goes in whenever it is long enough to look for in other tabs; `usesName` says whether this tab was found by it.
+            guard let ghostty, let folder = Ghostty.normalized(cwd) else { return nil }
+            let usable = name.flatMap { $0.count >= Ghostty.shortestName ? $0 : nil } ?? ""
+            return [.script(TerminalScripts.ghosttySend(terminal: ghostty.terminal, folders: Ghostty.spellings(of: folder), name: usable,
+                                                        needsName: ghostty.usesName && !usable.isEmpty, text: text, submit: submit))]
         }
     }
 

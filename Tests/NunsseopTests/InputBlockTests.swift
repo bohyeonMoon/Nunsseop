@@ -48,18 +48,21 @@ struct InputBlockDerivationTests {
     }
 
     @Test func aKnownTerminalWithoutAnInputApiIsNamed() {
-        let ghostty = AgentRow(entry(agent(app: "com.mitchellh.ghostty")), transcript: nil)
-        #expect(ghostty.inputBlock == .unsupportedApp("com.mitchellh.ghostty"))
+        let warp = AgentRow(entry(agent(app: "dev.warp.Warp-Stable")), transcript: nil)
+        #expect(warp.inputBlock == .unsupportedApp("dev.warp.Warp-Stable"))
         // The app found above the process stands in for a hook that sent none, and X-App wins over it.
         #expect(AgentRow(entry(agent()), transcript: nil, hostApp: "dev.warp.Warp-Stable").inputBlock == .unsupportedApp("dev.warp.Warp-Stable"))
-        #expect(AgentRow(entry(agent(app: "com.mitchellh.ghostty")), transcript: nil, hostApp: TerminalScripts.terminalID).inputBlock
-                == .unsupportedApp("com.mitchellh.ghostty"))
+        #expect(AgentRow(entry(agent(app: "dev.warp.Warp-Stable")), transcript: nil, hostApp: TerminalScripts.terminalID).inputBlock
+                == .unsupportedApp("dev.warp.Warp-Stable"))
         // Even with no process to check: the app is the better answer.
-        #expect(AgentRow(entry(agent(app: "com.mitchellh.ghostty", pid: nil)), transcript: nil).inputBlock == .unsupportedApp("com.mitchellh.ghostty"))
+        #expect(AgentRow(entry(agent(app: "dev.warp.Warp-Stable", pid: nil)), transcript: nil).inputBlock == .unsupportedApp("dev.warp.Warp-Stable"))
+        // Ghostty can be typed into (through its tabs): not named as unsupported when it couldn't be confirmed.
+        #expect(AgentRow(entry(agent(app: "com.mitchellh.ghostty")), transcript: nil).inputBlock == .unconfirmed)
     }
 
     @Test func everyTerminalWithAnInputApiCountsAsSupported() {
-        for app in [TerminalScripts.terminalID, TerminalScripts.itermID, MuxyNotice.bundleID, Cmux.bundleID, WezTerm.bundleID, Kitty.bundleID] {
+        for app in [TerminalScripts.terminalID, TerminalScripts.itermID, MuxyNotice.bundleID, Cmux.bundleID, WezTerm.bundleID, Kitty.bundleID,
+                    TerminalScripts.ghosttyID] {
             let block = AgentRow(entry(agent(app: app)), transcript: nil).inputBlock
             #expect(block == .unconfirmed, Comment(rawValue: app))
         }
@@ -99,8 +102,9 @@ struct InputBlockDerivationTests {
     }
 
     @Test func eachReasonHasItsOwnSentence() {
-        let messages = [AgentRow.InputBlock.prompt, .multiplexer, .unsupportedApp("com.mitchellh.ghostty"), .noProcess, .unconfirmed, .checking].map(\.message)
-        #expect(Set(messages).count == 6)
+        let messages = [AgentRow.InputBlock.prompt, .multiplexer, .unsupportedApp("dev.warp.Warp-Stable"), .noProcess, .unconfirmed, .checking,
+                        .ambiguousTab, .notAllowed("com.mitchellh.ghostty")].map(\.message)
+        #expect(Set(messages).count == 8)
         #expect(AgentRow.InputBlock.multiplexer.message == String(localized: "Can't send into tmux, zellij or screen"))
         #expect(AgentRow.InputBlock.noProcess.message == String(localized: "Restart this session to send to it"))
         #expect(AgentRow.InputBlock.unconfirmed.message == String(localized: "Couldn't confirm which terminal this session is in"))
@@ -250,6 +254,7 @@ struct InputBlockModelTests {
             "ok": agent(input: .muxy("42"), pid: 100),
             "hookTmux": agent(pid: 300, multiplexer: true),
             "envTmux": agent(pid: 300),
+            "warpApp": agent(app: "dev.warp.Warp-Stable", pid: 200),
             "ghosttyApp": agent(app: "com.mitchellh.ghostty", pid: 200),
             "ghosttyTree": agent(pid: 200),
             "oldHook": agent(pid: nil),
@@ -259,7 +264,9 @@ struct InputBlockModelTests {
         #expect(try row(model, "ok").inputBlock == nil)
         #expect(try row(model, "hookTmux").inputBlock == .multiplexer)
         #expect(try row(model, "envTmux").inputBlock == .multiplexer)
-        #expect(try row(model, "ghosttyApp").inputBlock == .unsupportedApp("com.mitchellh.ghostty"))
+        #expect(try row(model, "warpApp").inputBlock == .unsupportedApp("dev.warp.Warp-Stable"))
+        // Ghostty is typed into, but this session's process isn't under it here.
+        #expect(try row(model, "ghosttyApp").inputBlock == .unconfirmed)
         // Found in the process tree: no bundle is on disk here, so it is named by the app's folder.
         #expect(try row(model, "ghosttyTree").inputBlock == .unsupportedApp("NoSuchTerm"))
         #expect(try row(model, "ghosttyTree").sendHelp == AgentRow.InputBlock.unsupportedApp("NoSuchTerm").message)
