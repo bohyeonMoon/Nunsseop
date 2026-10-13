@@ -554,6 +554,7 @@ struct AgentSendModelTests {
         let hooks = AgentHooks(board: board, isOn: { true }, watchesHerdr: { false }, frontmostApp: { nil }, isAlive: { _ in true })
         let model = makeModel(board, sender: recorder.sender)
         hooks.apply(AgentEvent(session: "a", action: .needsInput, pid: 100, input: .muxy("42")), now: start)
+        stopLiveness(hooks)
         model.refresh(now: start)
         await settle(model)
         let id = "hooks:claude|a"
@@ -583,6 +584,26 @@ struct AgentSendModelTests {
         model.refresh(now: later)
         await settle(model)
         #expect(try #require(model.rows.first { $0.id == id }).acceptsInput)
+    }
+
+    /// The hooks look at the real clock once a minute for sessions that have expired or whose process is gone. A test that gives its events a
+    /// made-up time (long ago, to the clock) and waits on a busy machine for more than a minute would have the timer take every session
+    /// away, so it stops the timer.
+    private func stopLiveness(_ hooks: AgentHooks) { hooks.liveness?.invalidate() }
+
+    /// A refresh that comes while the transcripts are being read is repeated when they are in, and it is repeated for the moment it was
+    /// asked for: a clock the caller gave is not swapped for the real one, which takes every session of a made-up time for an old one.
+    @Test func aRefreshRepeatedAfterTheTranscriptsAreReadKeepsTheMomentItWasAskedFor() async throws {
+        let board = AgentBoard()
+        let hooks = AgentHooks(board: board, isOn: { true }, watchesHerdr: { false }, frontmostApp: { nil }, isAlive: { _ in true })
+        let model = makeModel(board, sender: Recorder().sender)
+        hooks.apply(AgentEvent(session: "a", action: .working, pid: 100, input: .muxy("42")), now: start)
+        stopLiveness(hooks)
+        model.refresh(now: start)
+        model.refresh(now: start)
+        await eventually { !model.loading }
+        await settle(model)
+        #expect(model.rows.contains { $0.id == "hooks:claude|a" })
     }
 
     @Test func aFinishedTurnPastItsWindowStillTakesInput() async throws {

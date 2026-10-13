@@ -356,7 +356,7 @@ final class AgentsTabModel: ObservableObject {
     private let scripts: AppleScriptRunner
     private let focuser: AgentFocuser
     private var transcripts = AgentTranscripts()
-    private var loading = false
+    private(set) var loading = false
     private var changedWhileLoading = false
     /// The rows whose terminal target has been verified, by `Entry.key`, for the input and process it was verified for.
     private var verifiedTargets: [String: VerifiedTarget] = [:]
@@ -478,7 +478,8 @@ final class AgentsTabModel: ObservableObject {
         rebuild(board.entries(now: asOf))
         if changedWhileLoading {
             changedWhileLoading = false
-            refresh()
+            // For the moment the repeated refresh was asked for: the real clock would not be the one a caller gave.
+            refresh(now: asOf)
         }
     }
 
