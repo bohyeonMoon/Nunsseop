@@ -423,3 +423,17 @@
 "Restart this session to send to it" = "Redémarrez cette session pour lui envoyer";
 "Couldn't confirm which terminal this session is in" = "Impossible de confirmer dans quel terminal se trouve cette session";
 "There are several Ghostty tabs in this folder, so Nunsseop can't tell which one" = "Il y a plusieurs onglets Ghostty dans ce dossier, Nunsseop ne peut donc pas savoir lequel";
+
+/* The Agents tab list */
+"Waiting for your answer" = "En attente d'une réponse";
+"Working" = "En cours";
+"%lld waiting" = "%lld en attente";
+"%lld working" = "%lld en cours";
+"%lld idle" = "%lld au repos";
+"Drop files on a row" = "Déposez des fichiers sur une ligne";
+"Select" = "Sélectionner";
+"Terminal" = "Terminal";
+"To" = "À";
+"Message to %@" = "Message pour %@";
+"Context %@ of %@" = "Contexte %@ sur %@";
+"Resume" = "Reprendre";

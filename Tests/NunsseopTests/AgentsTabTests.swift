@@ -19,33 +19,34 @@ struct AgentsTabTests {
         let row = rowFor(AgentBoard.Agent(state: .working, tool: "claude"),
                       AgentTranscript(cwd: "/Users/me/Projects/nunsseop", model: "claude-opus-5-5", tokens: 84_300))
         #expect(row.title == "nunsseop" && row.path == "/Users/me/Projects/nunsseop")
-        #expect(row.details == ["Claude Code", "Opus 5.5", "84k"])
-        #expect(row.symbol == "bolt.fill")
+        #expect(row.metaParts == ["Claude Code", "Opus 5.5"] && row.meta == "Claude Code · Opus 5.5")
+        #expect(row.tokensLabel == "84k")
     }
 
     @Test func aNameIsTheTitleAndTheFolderMovesIntoTheDetails() {
         let transcript = AgentTranscript(cwd: "/Users/me/Projects/nunsseop", model: "claude-opus-5-5", tokens: 84_300, mode: .plan, name: "Agents tab")
         let row = rowFor(AgentBoard.Agent(state: .working, tool: "claude"), transcript)
         #expect(row.title == "Agents tab" && row.name == "Agents tab")
-        #expect(row.details == ["nunsseop", "Claude Code", "Plan", "Opus 5.5", "84k"])
-        // The state still comes first, and the tooltip's path is still the full one.
+        // The mode is the chip's and the count the meter's, so the meta line has neither; the tooltip's path is still the full one.
+        #expect(row.metaParts == ["nunsseop", "Claude Code", "Opus 5.5"])
+        #expect(row.modeChip?.text == "Plan")
+        // The state is the marker's, so it isn't in the meta line either.
         let waiting = rowFor(AgentBoard.Agent(state: .waiting, tool: "claude"), transcript)
-        #expect(waiting.details == ["Needs input", "nunsseop", "Claude Code", "Plan", "Opus 5.5", "84k"])
+        #expect(waiting.metaParts == ["nunsseop", "Claude Code", "Opus 5.5"])
         #expect(waiting.path == "/Users/me/Projects/nunsseop")
-        #expect(rowFor(AgentBoard.Agent(state: .idle, tool: "claude"), transcript).details.first == "Idle")
     }
 
     @Test func aNameWithoutAFolderStillSaysTheTool() {
         let row = rowFor(AgentBoard.Agent(state: .working, tool: "codex"), AgentTranscript(name: "refactor"))
-        #expect(row.title == "refactor" && row.details == ["Codex"])
+        #expect(row.title == "refactor" && row.metaParts == ["Codex"])
         // Without a name the title is as it was.
         let plain = rowFor(AgentBoard.Agent(state: .working, tool: "claude"), AgentTranscript(cwd: "/a/nunsseop", name: nil))
-        #expect(plain.title == "nunsseop" && plain.details == ["Claude Code"])
+        #expect(plain.title == "nunsseop" && plain.metaParts == ["Claude Code"])
     }
 
     @Test func aNameThatIsTheFolderIsNotSaidTwice() {
         let row = rowFor(AgentBoard.Agent(state: .working, tool: "claude"), AgentTranscript(cwd: "/Users/me/Nunsseop", name: "nunsseop"))
-        #expect(row.title == "nunsseop" && row.details == ["Claude Code"])
+        #expect(row.title == "nunsseop" && row.metaParts == ["Claude Code"])
     }
 
     @Test func theDemoShowsBothANamedAndAnUnnamedRow() {
@@ -53,15 +54,17 @@ struct AgentsTabTests {
         #expect(AgentBoard.demoTranscripts["demo|b"]?.name == nil)
     }
 
-    @Test func theModeIsShownAfterTheToolOnlyWhenItIsNotTheDefault() {
+    @Test func theModeIsAChipOnlyWhenItIsNotTheDefaultAndTheDangerousOnesWarn() {
         let agent = AgentBoard.Agent(state: .working, tool: "claude", cwd: "/a/b")
-        let details = { (mode: AgentMode?) in rowFor(agent, AgentTranscript(model: "claude-opus-5-5", tokens: 84_300, mode: mode)).details }
-        #expect(details(.plan) == ["Claude Code", "Plan", "Opus 5.5", "84k"])
-        #expect(details(.bypass) == ["Claude Code", "Bypass permissions", "Opus 5.5", "84k"])
-        #expect(details(.standard) == ["Claude Code", "Opus 5.5", "84k"])
-        #expect(details(nil) == ["Claude Code", "Opus 5.5", "84k"])
+        let chip = { (mode: AgentMode?) in rowFor(agent, AgentTranscript(model: "claude-opus-5-5", tokens: 84_300, mode: mode)).modeChip }
+        #expect(chip(.plan)?.text == "Plan" && chip(.plan)?.warns == false)
+        #expect(chip(.bypass)?.text == "Bypass permissions" && chip(.bypass)?.warns == true)
+        #expect(chip(.standard) == nil && chip(nil) == nil)
         let waiting = AgentBoard.Agent(state: .waiting, tool: "codex")
-        #expect(rowFor(waiting, AgentTranscript(mode: .fullAccess)).details == ["Needs input", "Full access"])
+        #expect(rowFor(waiting, AgentTranscript(mode: .fullAccess)).modeChip?.text == "Full access")
+        #expect(rowFor(waiting, AgentTranscript(mode: .fullAccess)).modeChip?.warns == true)
+        // The chip is not in the meta line.
+        #expect(rowFor(agent, AgentTranscript(model: "claude-opus-5-5", mode: .plan)).meta == "Claude Code · Opus 5.5")
     }
 
     @Test func modeLabelsAndWhichOnesWarn() {
@@ -77,10 +80,10 @@ struct AgentsTabTests {
         let unknown = rowFor(AgentBoard.Agent(state: .working, tool: "codex", app: "com.apple.Terminal"))
         #expect(unknown.title == "Codex" && unknown.path == nil && unknown.model == nil && unknown.tokens == nil)
         // The tool is the title, so the details don't say it again.
-        #expect(unknown.details.isEmpty)
+        #expect(unknown.metaParts.isEmpty && unknown.meta.isEmpty && unknown.contextFraction == nil && unknown.tokensLabel == nil)
         // A folder without a model or context, as with herdr.
         let folderOnly = rowFor(AgentBoard.Agent(state: .working, tool: "pi", cwd: "/Users/me/api/"))
-        #expect(folderOnly.title == "api" && folderOnly.details == ["pi"])
+        #expect(folderOnly.title == "api" && folderOnly.metaParts == ["pi"])
     }
 
     @Test func theTranscriptsFolderIsOnlyUsedWhenTheSourceHasNone() {
@@ -89,25 +92,95 @@ struct AgentsTabTests {
         #expect(rowFor(AgentBoard.Agent(state: .working, tool: "claude", cwd: ""), AgentTranscript(cwd: "/Users/me/start")).path == "/Users/me/start")
     }
 
-    @Test func waitingSaysWhetherItNeedsYouOrIsDone() {
+    @Test func aRowThatAsksOpensToSayWhatAndAFinishedHandStaysOneLine() {
         let asking = rowFor(AgentBoard.Agent(state: .waiting, tool: "claude", cwd: "/a/b"), AgentTranscript(model: "claude-opus-5-5"))
-        #expect(asking.details == ["Needs input", "Claude Code", "Opus 5.5"] && asking.symbol == "hand.raised.fill")
+        #expect(asking.asksForAnswer && asking.stateLabel == "Needs input")
+        // Nothing on the permission board names its session, so what is asked is the generic sentence.
+        #expect(asking.waitingPrompt == String(localized: "Waiting for your answer"))
         let done = rowFor(AgentBoard.Agent(state: .waiting, finished: true, tool: "claude", cwd: "/a/b"))
-        #expect(done.details == ["Your turn", "Claude Code"] && done.symbol == "hand.raised.fill")
+        #expect(!done.asksForAnswer && done.waitingPrompt == nil && done.stateLabel == "Your turn")
+        for state in [AgentBoard.State.working, .idle] {
+            let other = rowFor(AgentBoard.Agent(state: state, tool: "claude"))
+            #expect(!other.asksForAnswer && other.waitingPrompt == nil)
+        }
     }
 
-    @Test func idleRowsAreDimmedAndSayIdle() {
-        let idle = rowFor(AgentBoard.Agent(state: .idle, tool: "claude", cwd: "/a/b"), AgentTranscript(model: "claude-opus-5-5", tokens: 12_400))
-        #expect(idle.details == ["Idle", "Claude Code", "Opus 5.5", "12k"])
-        #expect(idle.detailParts.first?.warns == false)
-        #expect(idle.symbol == "moon.zzz.fill" && idle.tint == .white.opacity(0.45))
-        #expect(NSImage(systemSymbolName: idle.symbol, accessibilityDescription: nil) != nil)
-        // Without a folder the tool is the title, and the state still comes first.
-        #expect(rowFor(AgentBoard.Agent(state: .idle, tool: "codex")).details == ["Idle"])
-        // The other states are as they were.
-        #expect(rowFor(AgentBoard.Agent(state: .working, tool: "codex")).details.isEmpty)
-        #expect(rowFor(AgentBoard.Agent(state: .working, tool: "codex")).tint == .green)
-        #expect(rowFor(AgentBoard.Agent(state: .waiting, tool: "codex")).tint == .yellow)
+    @Test func eachStateHasItsOwnLabelForTheMarker() {
+        let label = { (state: AgentBoard.State) in rowFor(AgentBoard.Agent(state: state, tool: "claude", cwd: "/a/b")).stateLabel }
+        #expect(Set([label(.working), label(.waiting), label(.idle)]).count == 3)
+        #expect(label(.working) == "Working" && label(.idle) == "Idle")
+    }
+
+    @Test func theContextMeterFillsAgainst200kAnd1MForALargerWindow() {
+        let fraction = { (model: String?, tokens: Int?) in rowFor(AgentBoard.Agent(state: .working, tool: "claude"), AgentTranscript(model: model, tokens: tokens)).contextFraction }
+        #expect(fraction("claude-opus-5-5", 100_000) == 0.5)
+        #expect(fraction("claude-opus-5-5", 0) == 0)
+        #expect(fraction("claude-opus-5-5", nil) == nil)
+        // A "[1m]" id has the million window, and so has a count that wouldn't fit in 200k.
+        #expect(fraction("claude-opus-5-5[1m]", 250_000) == 0.25)
+        #expect(fraction("claude-opus-5-5[1M]", 100_000) == 0.1)
+        #expect(fraction("claude-opus-5-5", 500_000) == 0.5)
+        #expect(fraction("claude-opus-5-5", 2_000_000) == 1)
+        #expect(AgentRow.contextWindow(model: nil, tokens: nil) == 200_000)
+        let row = rowFor(AgentBoard.Agent(state: .working, tool: "claude"), AgentTranscript(model: "claude-opus-5-5", tokens: 142_000))
+        #expect(row.tokensLabel == "142k" && row.contextDescription == "Context 142k of 200k")
+    }
+
+    @Test func theSummaryCountsEachStateAndLeavesOutTheEmptyOnes() {
+        let rows = { (states: [AgentBoard.State]) in
+            states.enumerated().map { AgentRow(entry("s\($0.offset)", AgentBoard.Agent(state: $0.element, tool: "claude")), transcript: nil) }
+        }
+        #expect(AgentRow.summary(rows([.waiting, .working, .working, .working, .idle])) == "1 waiting · 3 working · 1 idle")
+        #expect(AgentRow.summary(rows([.working, .working])) == "2 working")
+        #expect(AgentRow.summary(rows([.idle, .waiting, .waiting])) == "2 waiting · 1 idle")
+        #expect(AgentRow.summary([]).isEmpty)
+    }
+
+    @Test func aRowWithNowhereToGoDisablesGoToTerminalAndSaysWhy() {
+        let nowhere = rowFor(AgentBoard.Agent(state: .working, tool: "claude"))
+        #expect(!nowhere.focusable && nowhere.terminalBlock == AgentRow.InputBlock.unconfirmed.message)
+        let app = rowFor(AgentBoard.Agent(state: .working, tool: "claude", app: "com.apple.Terminal"))
+        #expect(app.focusable && app.terminalBlock == nil)
+    }
+
+    @Test func keysMapToTheTabsCommandsAndModifiersLeaveTheRestAlone() {
+        let key = { (code: UInt16, flags: NSEvent.ModifierFlags, characters: String?) in AgentKey(keyCode: code, characters: characters, modifiers: flags) }
+        #expect(key(126, [], nil) == .up && key(125, [], nil) == .down)
+        #expect(key(36, [], "\r") == .activate && key(76, [], "\u{3}") == .activate)
+        #expect(key(46, .command, "m") == .message && key(46, .command, "M") == .message)
+        // Caps Lock and the function-key flag that arrows carry don't count as modifiers.
+        #expect(key(126, [.capsLock, .function, .numericPad], nil) == .up)
+        #expect(key(46, [], "m") == nil && key(36, .command, "\r") == nil && key(126, .shift, nil) == nil && key(36, .option, "\r") == nil)
+        #expect(key(46, [.command, .shift], "m") == nil && key(53, [], nil) == nil && key(0, [], "a") == nil)
+        // ⌘M follows the layout: on AZERTY the key code 46 types a comma and M sits on code 41.
+        #expect(key(46, .command, ",") == nil && key(41, .command, "m") == .message)
+    }
+
+    @Test func aRecentConversationSaysFolderAndToolAndTheAgeOnItsOwn() {
+        let recent = AgentBoard.demoRecent(now: now)
+        #expect(recent[0].metaParts == ["nunsseop", "Claude Code"] && recent[0].age(now: now) == "3h")
+        #expect(recent[1].metaParts == ["Codex"] && recent[1].age(now: now) == "1d")
+        #expect(recent[0].details(now: now) == ["nunsseop", "Claude Code", "3h ago"])
+    }
+
+    @Test func theLedgerSentencesAreTranslatedIntoEveryLanguage() throws {
+        let resources = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Resources")
+        let keys = ["Waiting for your answer", "Working", "%lld waiting", "%lld working", "%lld idle", "Drop files on a row", "Select", "Terminal", "To",
+                    "Message to %@", "Context %@ of %@", "Resume"]
+        for language in ["de", "es", "fr", "ja", "ko", "zh-Hans"] {
+            let table = try #require(NSDictionary(contentsOfFile: resources.appendingPathComponent("\(language).lproj/Localizable.strings").path), Comment(rawValue: language))
+            for key in keys {
+                let text = table[key] as? String ?? ""
+                #expect(!text.isEmpty, Comment(rawValue: "\(language): \(key)"))
+                // "Terminal" and "Message to" may stay as they are in a language that borrows the word.
+                if !["Terminal", "Working"].contains(key) { #expect(text != key, Comment(rawValue: "\(language): \(key)")) }
+            }
+            for key in ["%lld waiting", "%lld working", "%lld idle"] {
+                #expect((table[key] as? String)?.contains("%lld") == true, Comment(rawValue: "\(language): \(key)"))
+            }
+            #expect((table["Context %@ of %@"] as? String)?.components(separatedBy: "%@").count == 3, Comment(rawValue: language))
+        }
     }
 
     @Test func toolNames() {
@@ -281,13 +354,14 @@ struct AgentsTabModelTests {
         #expect(model.rows.map(\.title) == ["api-server", "site", "Agents tab", "ios-app", "docs"])
         #expect(model.rows.map(\.state) == [.waiting, .working, .working, .working, .idle])
         #expect(model.rows.filter { $0.tool == "Codex" }.count == 1)
-        #expect(model.rows[0].details == ["Needs input", "Claude Code", "Opus 5.5", "142k"])
-        #expect(model.rows[1].details == ["Claude Code", "Plan", "Sonnet 5.5", "32k"])
-        #expect(model.rows[2].details == ["nunsseop", "Claude Code", "Opus 5.5", "84k"])
+        #expect(model.rows[0].meta == "Claude Code · Opus 5.5" && model.rows[0].tokensLabel == "142k")
+        #expect(model.rows[1].meta == "Claude Code · Sonnet 5.5" && model.rows[1].modeChip?.text == "Plan")
+        #expect(model.rows[2].meta == "nunsseop · Claude Code · Opus 5.5" && model.rows[2].tokensLabel == "84k")
         #expect(model.rows.filter { $0.mode != nil }.count == 1)
-        #expect(model.rows[3].details == ["Codex", "gpt-5.6", "20k"])
+        #expect(model.rows[3].meta == "Codex · gpt-5.6" && model.rows[3].tokensLabel == "20k")
         // The idle one is listed last and isn't counted.
-        #expect(model.rows[4].details == ["Idle", "Claude Code", "Sonnet 5.5", "12k"])
+        #expect(model.rows[4].meta == "Claude Code · Sonnet 5.5" && model.rows[4].tokensLabel == "12k")
+        #expect(AgentRow.summary(model.rows) == "1 waiting · 3 working · 1 idle")
     }
 
     @Test func theDemoHasARowThatTakesAMessageAndRowsThatRefuse() async {
@@ -360,7 +434,7 @@ struct AgentsTabModelTests {
         #expect(model.rows.count == 2)
         #expect(await eventually { model.rows.first { $0.id == "hooks:claude|s1" }?.tokens != nil })
         let found = try #require(model.rows.first { $0.id == "hooks:claude|s1" })
-        #expect(found.title == "api" && found.details == ["Claude Code", "Auto-accept edits", "Opus 5.5", "60k"] && found.target == .app("com.apple.Terminal"))
+        #expect(found.title == "api" && found.meta == "Claude Code · Opus 5.5" && found.modeChip?.text == "Auto-accept edits" && found.tokensLabel == "60k" && found.target == .app("com.apple.Terminal"))
         let missing = try #require(model.rows.first { $0.id == "hooks:claude|gone" })
         #expect(missing.title == "Claude Code" && missing.model == nil && missing.tokens == nil)
 

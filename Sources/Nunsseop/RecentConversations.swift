@@ -17,13 +17,17 @@ struct RecentConversation: Identifiable, Equatable {
     /// The session's name, else the last prompt, else the folder.
     var title: String { name ?? prompt ?? folder }
 
+    /// The folder (unless it is the title) and the tool.
+    var metaParts: [String] {
+        (folder.caseInsensitiveCompare(title) != .orderedSame ? [folder] : []) + [tool]
+    }
+
+    /// How long ago it was last used: "3h".
+    func age(now: Date) -> String? { AgentRow.elapsed(since: modified, now: now) }
+
     /// The folder (unless it is the title), the tool and how long ago it was last used.
     func details(now: Date) -> [String] {
-        var parts: [String] = []
-        if folder.caseInsensitiveCompare(title) != .orderedSame { parts.append(folder) }
-        parts.append(tool)
-        if let elapsed = AgentRow.elapsed(since: modified, now: now) { parts.append(String(localized: "\(elapsed) ago")) }
-        return parts
+        metaParts + (age(now: now).map { [String(localized: "\($0) ago")] } ?? [])
     }
 }
 

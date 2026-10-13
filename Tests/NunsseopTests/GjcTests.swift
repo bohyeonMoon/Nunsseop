@@ -274,7 +274,7 @@ struct GjcTrackerTests {
         var tracker = GjcTracker()
         let agent = try! #require(tracker.agents(for: [session("running")], now: start)[gid(1)])
         let row = AgentRow(AgentBoard.Entry(source: "gjc", id: gid(1), agent: agent), transcript: AgentTranscript(model: "claude-sonnet-5", tokens: 18_277, name: "Sprint plan"))
-        #expect(row.title == "Sprint plan" && row.details == ["api", "gjc", "Sonnet 5", "18k"])
+        #expect(row.title == "Sprint plan" && row.metaParts == ["api", "gjc", "Sonnet 5"] && row.tokensLabel == "18k")
         #expect(AgentRow.transcriptKey(agent) == AgentTranscripts.Key(kind: .gjc, session: gid(1)))
         #expect(row.target == nil)
     }

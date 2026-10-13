@@ -332,6 +332,11 @@ final class NotchWindowController {
             self?.panel.ignoresMouseEvents = false
             self?.panel.makeKey()
         })
+        // Selecting a session takes the keyboard too, for ↑↓, Return and ⌘M (see `handlesAgentKey`).
+        settingsObservers.append(model.agentList.$selected.sink { [weak self] id in
+            guard id != nil else { return }
+            self?.panel.makeKey()
+        })
         settingsObservers.append(model.settings.$searchHotkey.combineLatest(model.settings.$searchHotKey, model.settings.$recordingShortcut)
             .sink { [weak self] enabled, combo, recording in
                 guard let self else { return }
@@ -346,7 +351,8 @@ final class NotchWindowController {
             self.panel.ignoresMouseEvents = true
         }
         if let keys = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { [weak self] event in
-            guard event.keyCode == 53, let self else { return event }
+            guard let self else { return event }
+            guard event.keyCode == 53 else { return MainActor.assumeIsolated { self.handlesAgentKey(event) } ? nil : event }
             MainActor.assumeIsolated {
                 // Escape closes the message field first, and the notch only the next time.
                 if self.model.agentList.composing != nil { self.model.agentList.cancelCompose(); return }
@@ -556,6 +562,15 @@ final class NotchWindowController {
         case .previousTrack: model.nowPlaying.send(.previous)
         case nil: break
         }
+    }
+
+    /// ↑↓, Return and ⌘M in the Agents tab, while the notch is the key window and nothing else wants the keys: not while a
+    /// message is typed (its field takes Return), not behind a permission card, not in another text field. True when the tab used the key.
+    private func handlesAgentKey(_ event: NSEvent) -> Bool {
+        guard event.window === panel, model.isExpanded, model.approvals.current == nil, model.agentList.isShowing,
+              model.agentList.composing == nil, !(panel.firstResponder is NSText),
+              let key = AgentKey(keyCode: event.keyCode, characters: event.charactersIgnoringModifiers, modifiers: event.modifierFlags) else { return false }
+        return model.agentList.perform(key)
     }
 
     /// A faded eyebrow comes back when the pointer arrives and raises, then opens, only if the pointer stays.

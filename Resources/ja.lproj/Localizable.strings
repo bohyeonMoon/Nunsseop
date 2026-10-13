@@ -423,3 +423,17 @@
 "Restart this session to send to it" = "このセッションを再起動すると送れるようになります";
 "Couldn't confirm which terminal this session is in" = "このセッションがどのターミナルにあるか確認できませんでした";
 "There are several Ghostty tabs in this folder, so Nunsseop can't tell which one" = "このフォルダに Ghostty のタブが複数あるため、Nunsseop はどれか判別できません";
+
+/* The Agents tab list */
+"Waiting for your answer" = "回答を待っています";
+"Working" = "作業中";
+"%lld waiting" = "入力待ち %lld";
+"%lld working" = "作業中 %lld";
+"%lld idle" = "待機中 %lld";
+"Drop files on a row" = "行にファイルをドロップ";
+"Select" = "選択";
+"Terminal" = "ターミナル";
+"To" = "宛先";
+"Message to %@" = "%@へのメッセージ";
+"Context %@ of %@" = "コンテキスト %@ / %@";
+"Resume" = "再開";

@@ -423,3 +423,17 @@
 "Restart this session to send to it" = "重新启动此会话后即可发送";
 "Couldn't confirm which terminal this session is in" = "无法确认此会话位于哪个终端";
 "There are several Ghostty tabs in this folder, so Nunsseop can't tell which one" = "此文件夹中有多个 Ghostty 标签页，Nunsseop 无法确定是哪一个";
+
+/* The Agents tab list */
+"Waiting for your answer" = "正在等待你的回答";
+"Working" = "工作中";
+"%lld waiting" = "%lld 个等待中";
+"%lld working" = "%lld 个运行中";
+"%lld idle" = "%lld 个空闲";
+"Drop files on a row" = "将文件拖到某一行上";
+"Select" = "选择";
+"Terminal" = "终端";
+"To" = "收件人";
+"Message to %@" = "发给 %@ 的消息";
+"Context %@ of %@" = "上下文 %@ / %@";
+"Resume" = "继续";

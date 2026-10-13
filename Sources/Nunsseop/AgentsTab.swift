@@ -144,7 +144,7 @@ struct AgentRow: Identifiable, Equatable {
     /// answering it would not make any other row sendable.
     var inputBlock: InputBlock? { offersInput ? (acceptsInput ? nil : .prompt) : notOffered }
 
-    /// The sentence that says it, shown in the row's strip.
+    /// The sentence that says it: the Message button's tooltip, and the footer's when the row is selected.
     var blockReason: String? { inputBlock?.message }
 
     /// The rows with `promptOnTerminal` set on every one whose terminal another row's prompt may be open in: text typed there
@@ -164,40 +164,65 @@ struct AgentRow: Identifiable, Equatable {
     /// The session's name, else its folder, else the tool.
     var title: String { name ?? folder ?? tool }
 
-    /// The state when it is waiting or idle, then the folder when a name is the title (unless it says the same), the tool
-    /// (unless it is the title), the mode when it isn't the default (before the model, so a long line cuts that off
-    /// last), model and context used.
-    var details: [String] { detailParts.map(\.text) }
-
-    var detailParts: [(text: String, warns: Bool)] {
-        var parts: [(text: String, warns: Bool)] = []
-        switch state {
-        case .waiting: parts.append((finished ? String(localized: "Your turn") : String(localized: "Needs input"), false))
-        case .idle: parts.append((String(localized: "Idle"), false))
-        case .working: break
-        }
-        if let name, let folder, folder.caseInsensitiveCompare(name) != .orderedSame { parts.append((folder, false)) }
-        if name != nil || folder != nil { parts.append((tool, false)) }
-        if let mode, let label = mode.label { parts.append((label, mode.warns)) }
-        if let model { parts.append((AgentTranscript.modelLabel(model), false)) }
-        if let tokens { parts.append((AgentTranscript.tokensLabel(tokens), false)) }
+    /// The folder when a name is the title (unless it says the same), then the tool (unless it is the title) and the model. The
+    /// state is the marker's, the mode the chip's, the context the meter's.
+    var metaParts: [String] {
+        var parts: [String] = []
+        if let name, let folder, folder.caseInsensitiveCompare(name) != .orderedSame { parts.append(folder) }
+        if name != nil || folder != nil { parts.append(tool) }
+        if let model { parts.append(AgentTranscript.modelLabel(model)) }
         return parts
     }
 
-    var symbol: String {
+    var meta: String { metaParts.joined(separator: " · ") }
+
+    /// The chip after the meta when the mode isn't the default; `warns` when nothing asks before it acts.
+    var modeChip: (text: String, warns: Bool)? { mode?.label.map { ($0, mode?.warns ?? false) } }
+
+    /// The window a model's context is measured against: 1M for an id marked "[1m]", else 200k. A count above 200k can only be a
+    /// larger window, so that is 1M too; the ids don't say anything finer.
+    static func contextWindow(model: String?, tokens: Int?) -> Int {
+        model?.lowercased().contains("[1m]") == true || (tokens ?? 0) > 200_000 ? 1_000_000 : 200_000
+    }
+
+    /// How full the context is, 0...1; nil when the transcript has no count.
+    var contextFraction: Double? {
+        tokens.map { min(1, max(0, Double($0) / Double(Self.contextWindow(model: model, tokens: $0)))) }
+    }
+
+    /// "142k".
+    var tokensLabel: String? { tokens.map(AgentTranscript.tokensLabel) }
+
+    /// What the meter and the label say together, for VoiceOver and the tooltip.
+    var contextDescription: String? {
+        tokens.map { String(localized: "Context \(AgentTranscript.tokensLabel($0)) of \(AgentTranscript.tokensLabel(Self.contextWindow(model: model, tokens: $0)))") }
+    }
+
+    /// A session that asks for an answer: its row opens to say so. A finished hand ("Your turn") stays one line.
+    var asksForAnswer: Bool { state == .waiting && !finished }
+
+    /// What the opened row says is being asked. Nothing on the permission board names its session (only a folder), so it is the
+    /// generic sentence.
+    var waitingPrompt: String? { asksForAnswer ? String(localized: "Waiting for your answer") : nil }
+
+    /// What the state marker says, for VoiceOver and its tooltip.
+    var stateLabel: String {
         switch state {
-        case .working: "bolt.fill"
-        case .waiting: "hand.raised.fill"
-        case .idle: "moon.zzz.fill"
+        case .waiting: finished ? String(localized: "Your turn") : String(localized: "Needs input")
+        case .working: String(localized: "Working")
+        case .idle: String(localized: "Idle")
         }
     }
 
-    var tint: Color {
-        switch state {
-        case .working: .green
-        case .waiting: .yellow
-        case .idle: .white.opacity(0.45)
-        }
+    /// Why the Go to terminal button is disabled, nil when it works.
+    var terminalBlock: String? { focusable ? nil : InputBlock.unconfirmed.message }
+
+    /// "1 waiting · 3 working · 1 idle", the parts that are zero left out. The words don't change with the count in any language
+    /// (the de, es and fr ones are adjectives or phrases that don't agree).
+    static func summary(_ rows: [AgentRow]) -> String {
+        let counts = [rows.filter { $0.state == .waiting }.count, rows.filter { $0.state == .working }.count, rows.filter { $0.state == .idle }.count]
+        let words = [String(localized: "\(counts[0]) waiting"), String(localized: "\(counts[1]) working"), String(localized: "\(counts[2]) idle")]
+        return zip(counts, words).filter { $0.0 > 0 }.map(\.1).joined(separator: " · ")
     }
 
     /// The tool's name as it presents itself; herdr's own name for an agent that isn't one of ours.
@@ -252,15 +277,16 @@ struct AgentRow: Identifiable, Equatable {
 /// and only while the tab is showing: on opening it and whenever the board changes, not on a timer.
 @MainActor
 final class AgentsTabModel: ObservableObject {
-    @Published private(set) var rows: [AgentRow] = []
-    /// Conversations that aren't open, to pick up again; listed below the rows.
-    @Published private(set) var recent: [RecentConversation] = []
+    @Published private(set) var rows: [AgentRow] = [] { didSet { pruneSelection() } }
+    /// Conversations that aren't open, to pick up again; listed when no session is.
+    @Published private(set) var recent: [RecentConversation] = [] { didSet { pruneSelection() } }
     /// Whether the first look for them is done; until then an empty list doesn't mean there are none.
     @Published private(set) var recentLoaded = false
     /// Whether a tool that reports its sessions is connected, which tells an empty tab from one waiting for a connection.
     @Published private(set) var connected = false
-    /// The row whose action strip is unfolded, by `AgentRow.id`; one at a time.
-    @Published private(set) var unfolded: String?
+    /// The row with the cursor, by `AgentRow.id`; with no rows, the recent conversation with it, by `RecentConversation.id`. One at a
+    /// time; ↑↓ move it, a click sets it.
+    @Published private(set) var selected: String?
     /// The row whose message field is open, by `AgentRow.id`: the field has the keyboard, and the notch stays open while it does.
     @Published private(set) var composing: String?
     /// A short note under a row whose message or files didn't go out, by `AgentRow.id`.
@@ -270,7 +296,7 @@ final class AgentsTabModel: ObservableObject {
     private var denial: AnyCancellable?
     var isShowing = false {
         didSet {
-            if !isShowing { composing = nil }
+            if !isShowing { composing = nil; selected = nil }
             guard isShowing && !oldValue else { return }
             connected = checkConnected()
             refresh()
@@ -547,16 +573,24 @@ final class AgentsTabModel: ObservableObject {
         onResume(conversation)
     }
 
-    /// A click on a row unfolds its action strip and folds the one before it; a click on the unfolded row folds it. Folding ends typing.
-    func toggle(_ row: AgentRow) {
-        composing = nil
-        unfolded = unfolded == row.id ? nil : row.id
+    /// A click selects the row, and ends typing to another one; a double click also goes to its terminal.
+    func click(_ row: AgentRow, count: Int = 1) {
+        select(row.id)
+        if count >= 2 { focus(row) }
     }
 
-    /// Opens the message field in the strip of a row that takes input now, closing any other.
+    /// Puts the cursor on a row or recent conversation (nil: none). Typing stays with its own row.
+    func select(_ id: String?) {
+        if composing != id { composing = nil }
+        selected = id
+    }
+
+    /// Opens the message field for a row that takes input now, closing any other; a row that doesn't is only selected, so the footer
+    /// says why.
     func compose(_ row: AgentRow) {
-        guard let current = rows.first(where: { $0.id == row.id }), current.acceptsInput else { return }
-        unfolded = current.id
+        guard let current = rows.first(where: { $0.id == row.id }) else { return }
+        guard current.acceptsInput else { return select(current.id) }
+        selected = current.id
         composing = current.id
     }
 
@@ -683,6 +717,47 @@ final class AgentsTabModel: ObservableObject {
     /// Recent conversations are listed only when no session is: with sessions open they are noise next to them.
     var showsRecent: Bool { rows.isEmpty && !recent.isEmpty }
 
+    /// What ↑↓ walk through: the rows, else the recent conversations that are listed.
+    private var navigable: [String] { showsRecent ? recent.map(\.id) : rows.map(\.id) }
+
+    var selectedRow: AgentRow? { rows.first { $0.id == selected } }
+
+    /// Whether files dropped on a row would be taken: the selected row's word, else any row's.
+    var takesFiles: Bool { selectedRow.map(\.acceptsInput) ?? rows.contains(where: \.acceptsInput) }
+
+    /// The note to say under the tab: the selected row's, else the first row's that has one.
+    var footerNote: (title: String, text: String)? {
+        let row = selectedRow.flatMap { notes[$0.id] != nil ? $0 : nil } ?? rows.first { notes[$0.id] != nil }
+        return row.flatMap { row in notes[row.id].map { (row.title, $0) } }
+    }
+
+    /// A key the tab uses while it is showing and no field has the keyboard. True when it was used, so the notch's monitor swallows it.
+    @discardableResult
+    func perform(_ key: AgentKey) -> Bool {
+        switch key {
+        case .up, .down:
+            let ids = navigable
+            guard !ids.isEmpty else { return false }
+            let at = selected.flatMap(ids.firstIndex(of:))
+            let next = at.map { key == .down ? min($0 + 1, ids.count - 1) : max($0 - 1, 0) } ?? (key == .down ? 0 : ids.count - 1)
+            select(ids[next])
+            return true
+        case .activate:
+            if let row = selectedRow { focus(row); return true }
+            guard let conversation = recent.first(where: { $0.id == selected }), showsRecent else { return false }
+            resume(conversation)
+            return true
+        case .message:
+            guard let row = selectedRow else { return false }
+            compose(row)
+            return true
+        }
+    }
+
+    private func pruneSelection() {
+        if let selected, !navigable.contains(selected) { self.selected = nil }
+    }
+
     /// Whether the tab says it has nothing: no session is listed and no recent conversation turned up.
     var showsEmptyMessage: Bool { rows.isEmpty && recent.isEmpty && recentLoaded }
 
@@ -755,12 +830,47 @@ final class AgentsTabModel: ObservableObject {
                      blockedBy: outcome?.block)
         }))
         if next != rows { rows = next }
-        if let unfolded, !rows.contains(where: { $0.id == unfolded }) { self.unfolded = nil }
         // The field lets go when its row goes away or starts waiting on a prompt: typing could answer it.
         if let composing, !rows.contains(where: { $0.id == composing && $0.acceptsInput }) { self.composing = nil }
         let kept = notes.filter { id, _ in rows.contains { $0.id == id } }
         if kept.count != notes.count { notes = kept }
     }
+}
+
+/// The keys the tab uses, as the notch's key monitor hands them over (see `AgentsTabModel.perform`).
+enum AgentKey: Equatable {
+    case up, down
+    /// Return: go to the selected session's terminal, or resume the selected conversation.
+    case activate
+    /// ⌘M: open the message field for the selected session.
+    case message
+
+    /// nil for any other key, or one with Shift, Option or Control held, which belongs to someone else. ⌘M is matched by the
+    /// character the layout gives the key (`charactersIgnoringModifiers`), not its key code, which is another letter on AZERTY.
+    init?(keyCode: UInt16, characters: String?, modifiers: NSEvent.ModifierFlags) {
+        let held = modifiers.intersection([.command, .shift, .option, .control])
+        switch (keyCode, held) {
+        case (126, []): self = .up
+        case (125, []): self = .down
+        case (36, []), (76, []): self = .activate
+        case (_, .command) where characters?.lowercased() == "m": self = .message
+        default: return nil
+        }
+    }
+}
+
+private enum Ink {
+    static let waiting = Color(red: 1.0, green: 0.62, blue: 0.2)
+    static let working = Color(red: 0.31, green: 0.82, blue: 0.47)
+}
+
+private enum Metrics {
+    static let row: CGFloat = 24
+    static let expanded: CGFloat = 52
+    static let titleWidth: CGFloat = 120
+    static let tag: CGFloat = 24
+    static let meter: CGFloat = 36
+    static let figure: CGFloat = 32
 }
 
 struct AgentsTab: View {
@@ -770,27 +880,22 @@ struct AgentsTab: View {
         Group {
             if model.rows.isEmpty && model.recent.isEmpty {
                 Text(verbatim: model.showsEmptyMessage ? model.emptyMessage : "")
-                    .font(.system(size: 12)).foregroundStyle(.white.opacity(0.45))
+                    .font(.system(size: 12)).foregroundStyle(.white.opacity(0.6))
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 // The times count on from the minute they were drawn.
                 TimelineView(.everyMinute) { context in
-                    ScrollView(.vertical, showsIndicators: false) {
-                        LazyVStack(spacing: 4) {
-                            ForEach(model.rows) { AgentRowView(row: $0, now: context.date, model: model) }
-                            if model.showsRecent {
-                                Text("Recent")
-                                    .font(.system(size: 10, weight: .semibold)).foregroundStyle(.white.opacity(0.4))
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.horizontal, 10)
-                                if let note = model.resumeNote {
-                                    Text(verbatim: note).font(.system(size: 10)).foregroundStyle(.orange).lineLimit(2)
-                                        .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 10)
-                                }
-                                ForEach(model.recent) { conversation in
-                                    RecentRowView(conversation: conversation, now: context.date) { model.resume(conversation) }
-                                }
+                    VStack(spacing: 0) {
+                        if model.rows.isEmpty {
+                            RecentList(model: model, now: context.date)
+                        } else {
+                            AgentList(model: model, now: context.date)
+                            if let to = model.composing.flatMap({ id in model.rows.first { $0.id == id } }) {
+                                // Per recipient: a draft typed to one session must not go to another.
+                                AgentComposer(row: to, model: model).id(to.id)
+                            } else {
+                                AgentFooter(model: model)
                             }
                         }
                     }
@@ -803,6 +908,113 @@ struct AgentsTab: View {
     }
 }
 
+private struct AgentList: View {
+    @ObservedObject var model: AgentsTabModel
+    let now: Date
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 1) {
+                    ForEach(model.rows) { AgentRowView(row: $0, now: now, model: model).id($0.id) }
+                }
+            }
+            .onChange(of: model.selected) { _, id in
+                if let id { withAnimation(.easeOut(duration: 0.12)) { proxy.scrollTo(id) } }
+            }
+        }
+    }
+}
+
+/// A state you can tell without colour: a filled dot with a ring (needs you), a turning arc (working), a hollow ring (idle).
+private struct StateMark: View {
+    let row: AgentRow
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        ZStack {
+            switch row.state {
+            case .waiting:
+                Circle().fill(Ink.waiting).frame(width: 8, height: 8)
+                Circle().stroke(Ink.waiting.opacity(0.4), lineWidth: 1).frame(width: 13, height: 13)
+            case .working:
+                Circle().stroke(Ink.working.opacity(0.25), lineWidth: 1.6).frame(width: 11, height: 11)
+                // The arc stands still under Reduce Motion.
+                TimelineView(.animation(paused: reduceMotion)) { context in
+                    let turn = reduceMotion ? 0 : context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1) * 360
+                    Circle().trim(from: 0, to: 0.3).stroke(Ink.working, style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
+                        .frame(width: 11, height: 11).rotationEffect(.degrees(turn - 90))
+                }
+            case .idle:
+                Circle().stroke(.white.opacity(0.55), lineWidth: 1.2).frame(width: 10, height: 10)
+            }
+        }
+        .frame(width: 16, height: 16)
+        .help(row.stateLabel)
+        .accessibilityElement()
+        .accessibilityLabel(row.stateLabel)
+    }
+}
+
+/// A key as a keycap; `dim` when it does nothing now.
+private struct Keycap: View {
+    let key: String
+    var dim = false
+
+    var body: some View {
+        Text(verbatim: key).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(dim ? 0.45 : 0.7))
+            .padding(.horizontal, 4).frame(minWidth: 20, minHeight: 16)
+            .background(RoundedRectangle(cornerRadius: 4).fill(.white.opacity(dim ? 0.05 : 0.1)))
+            .accessibilityHidden(true)
+    }
+}
+
+/// An icon button with no label of its own: 24 x 22 pt, always there, brighter on the selected row and under the pointer. Disabled it
+/// is a dashed outline, not only dimmer, and says why in its tooltip.
+private struct RowIconButton: View {
+    let symbol: String
+    let title: String
+    /// Why it is disabled; nil when it works.
+    let reason: String?
+    let hot: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    private var enabled: Bool { reason == nil }
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol).font(.system(size: 12))
+                .foregroundStyle(.white.opacity(enabled ? (hot || hovering ? 0.9 : 0.55) : 0.4))
+                .frame(width: 24, height: 22)
+                .background(RoundedRectangle(cornerRadius: 6).fill(.white.opacity(enabled && hovering ? 0.1 : 0)))
+                .overlay {
+                    if !enabled { RoundedRectangle(cornerRadius: 6).stroke(.white.opacity(0.22), style: StrokeStyle(lineWidth: 1, dash: [2, 2])) }
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .onHover { hovering = $0 }
+        .help(reason ?? title)
+        .accessibilityLabel(title)
+        .accessibilityHint(reason ?? "")
+    }
+}
+
+/// The context meter: 36 x 3 pt, the label beside it carries the number.
+private struct ContextMeter: View {
+    let fraction: Double
+
+    var body: some View {
+        ZStack(alignment: .leading) {
+            Capsule().fill(.white.opacity(0.15))
+            Capsule().fill(.white.opacity(0.7)).frame(width: max(3, Metrics.meter * fraction))
+        }
+        .frame(width: Metrics.meter, height: 3)
+    }
+}
+
 private struct AgentRowView: View {
     let row: AgentRow
     let now: Date
@@ -810,30 +1022,30 @@ private struct AgentRowView: View {
     @State private var hovering = false
     @State private var dropTargeted = false
 
-    private var isUnfolded: Bool { model.unfolded == row.id }
+    private var selected: Bool { model.selected == row.id }
+    private var composing: Bool { model.composing == row.id }
+    private var dim: Bool { row.state == .idle }
+    /// A row that asks opens to say what, unless the composer needs the room.
+    private var open: Bool { row.asksForAnswer && model.composing == nil }
 
     var body: some View {
-        // A click always does something: it unfolds the strip with what can be done with the session. The strip is outside the
-        // clickable part, so its field and buttons take their own clicks.
-        VStack(alignment: .leading, spacing: 4) {
-            content
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 10).padding(.top, 6).padding(.bottom, isUnfolded ? 0 : 6)
-                .contentShape(Rectangle())
-                .onTapGesture { model.toggle(row) }
-            if isUnfolded {
-                AgentActionStrip(row: row, model: model).padding(.horizontal, 10).padding(.bottom, 6)
-            }
+        VStack(spacing: 0) {
+            line
+            if open, let prompt = row.waitingPrompt { promptLine(prompt) }
         }
-        .opacity(row.state == .idle ? 0.6 : 1)
-        .surface(RoundedRectangle(cornerRadius: 10), opacity: isUnfolded || dropTargeted ? 0.16 : hovering ? 0.12 : 0.08)
+        .padding(.horizontal, 8)
+        .frame(height: open ? Metrics.expanded : Metrics.row)
+        .background { background }
         .overlay {
             if dropTargeted {
-                RoundedRectangle(cornerRadius: 10).stroke(Color.accentColor.opacity(0.9), lineWidth: 1.5)
-            } else if isUnfolded {
-                RoundedRectangle(cornerRadius: 10).stroke(Color.accentColor.opacity(0.6), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 8).stroke(Color.accentColor, lineWidth: 1.5)
+            } else if composing {
+                RoundedRectangle(cornerRadius: 8).stroke(Color.accentColor, lineWidth: 1.5)
             }
         }
+        .contentShape(Rectangle())
+        // The buttons inside take their own clicks; this is the rest of the row.
+        .onTapGesture { model.click(row, count: NSApp.currentEvent?.clickCount ?? 1) }
         .onHover { inside in
             hovering = inside
             if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
@@ -847,90 +1059,146 @@ private struct AgentRowView: View {
         .help(row.path.map { Text(verbatim: $0) } ?? Text(verbatim: ""))
     }
 
-    private var content: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: row.symbol)
-                .font(.system(size: 11, weight: .semibold))
-                .frame(width: 16, height: 16)
-                .foregroundStyle(row.tint)
-            VStack(alignment: .leading, spacing: 1) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(verbatim: row.title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
-                    Spacer(minLength: 4)
-                    if let elapsed = AgentRow.elapsed(since: row.since, now: now) {
-                        Text(verbatim: elapsed).font(.system(size: 10).monospacedDigit()).foregroundStyle(.white.opacity(0.4))
-                    }
-                }
-                if !row.detailParts.isEmpty {
-                    row.detailParts.enumerated().reduce(Text(verbatim: "")) { text, item in
-                        let part = Text(verbatim: item.element.text)
-                        return text + Text(verbatim: item.offset == 0 ? "" : " · ") + (item.element.warns ? part.foregroundStyle(.orange) : part)
-                    }
-                    .font(.system(size: 11)).foregroundStyle(.white.opacity(0.6)).lineLimit(1)
-                }
-                // Unfolded, the strip shows the notes.
-                if !isUnfolded, let note = model.notes[row.id] {
-                    Text(verbatim: note).font(.system(size: 10)).foregroundStyle(.orange).lineLimit(2)
+    /// Hover is a faint surface, selected a stronger one with a thin border (white 0.4 on the panel is 3.7:1). A row that asks is
+    /// tinted orange instead, with no glow.
+    @ViewBuilder private var background: some View {
+        if row.asksForAnswer {
+            RoundedRectangle(cornerRadius: 8).fill(Ink.waiting.opacity(selected ? 0.16 : hovering ? 0.13 : 0.1))
+            RoundedRectangle(cornerRadius: 8).stroke(Ink.waiting.opacity(0.35), lineWidth: 0.75)
+        } else if selected {
+            Color.clear.surface(RoundedRectangle(cornerRadius: 8), opacity: 0.1)
+            RoundedRectangle(cornerRadius: 8).stroke(.white.opacity(0.4), lineWidth: 0.75)
+        } else if hovering || dropTargeted {
+            Color.clear.surface(RoundedRectangle(cornerRadius: 8), opacity: 0.06)
+        }
+    }
+
+    private var line: some View {
+        HStack(spacing: 8) {
+            StateMark(row: row)
+            Text(verbatim: row.title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                .foregroundStyle(.white.opacity(dim ? 0.75 : 1))
+                .frame(width: Metrics.titleWidth, alignment: .leading)
+                .help(Text(verbatim: row.title))
+            HStack(spacing: 8) {
+                Text(verbatim: row.meta).font(.system(size: 11)).foregroundStyle(.white.opacity(0.6))
+                    .lineLimit(1).truncationMode(.tail)
+                    .help(Text(verbatim: row.meta))
+                if let chip = row.modeChip {
+                    Text(verbatim: chip.text).font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(chip.warns ? Ink.waiting : .white.opacity(0.7))
+                        .padding(.horizontal, 8).frame(height: 18)
+                        .background(Capsule().strokeBorder(chip.warns ? Ink.waiting.opacity(0.7) : .white.opacity(0.4), lineWidth: 0.75))
+                        .fixedSize().layoutPriority(1)
                 }
             }
+            Spacer(minLength: 4)
+            HStack(spacing: 4) {
+                RowIconButton(symbol: "terminal", title: String(localized: "Go to terminal"), reason: row.terminalBlock,
+                              hot: selected || hovering) { model.focus(row) }
+                RowIconButton(symbol: "paperplane", title: String(localized: "Message"), reason: row.blockReason,
+                              hot: selected || hovering) { model.compose(row) }
+            }
+            .layoutPriority(2)
+            context
+            Text(verbatim: AgentRow.elapsed(since: row.since, now: now) ?? "").font(.system(size: 11).monospacedDigit())
+                .foregroundStyle(.white.opacity(0.6))
+                .frame(width: Metrics.figure, alignment: .trailing)
         }
+        .frame(height: Metrics.row)
+    }
+
+    /// The meter and the count; the space stays when the transcript has none, so the columns line up.
+    @ViewBuilder private var context: some View {
+        if let fraction = row.contextFraction, let label = row.tokensLabel, let description = row.contextDescription {
+            HStack(spacing: 4) {
+                ContextMeter(fraction: fraction)
+                Text(verbatim: label).font(.system(size: 11).monospacedDigit()).foregroundStyle(.white.opacity(0.6))
+                    .frame(width: Metrics.figure, alignment: .trailing)
+            }
+            .help(Text(verbatim: description))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(description)
+        } else {
+            Color.clear.frame(width: Metrics.meter + 4 + Metrics.figure, height: 1)
+        }
+    }
+
+    private func promptLine(_ prompt: String) -> some View {
+        HStack(spacing: 8) {
+            Text(verbatim: prompt).font(.system(size: 11)).foregroundStyle(.white.opacity(0.85)).lineLimit(1).truncationMode(.tail)
+            Spacer(minLength: 4)
+            Button { model.focus(row) } label: {
+                HStack(spacing: 4) {
+                    Text("Answer in terminal").font(.system(size: 11, weight: .medium))
+                    if selected { Keycap(key: "↵") }
+                }
+                .foregroundStyle(Ink.waiting)
+                .padding(.leading, 8).padding(.trailing, selected ? 4 : 8).frame(height: Metrics.tag)
+                .background(Capsule().fill(Ink.waiting.opacity(0.16)))
+                .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .help(Text("Answer in terminal"))
+        }
+        .padding(.leading, 24)
+        .frame(height: Metrics.expanded - Metrics.row, alignment: .top)
     }
 }
 
-/// What can be done with a session, under its row: go to its terminal, or message it. A row that can't take a message says why.
-private struct AgentActionStrip: View {
-    let row: AgentRow
+/// Under the rows: how many are in which state, then what the selected row can do. A row that can't take a message says why.
+private struct AgentFooter: View {
     @ObservedObject var model: AgentsTabModel
 
-    private var typing: Bool { model.composing == row.id }
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            if typing {
-                AgentMessageField(row: row, model: model)
-            } else {
-                HStack(spacing: 6) {
-                    StripButton(symbol: "arrow.up.forward.app", title: "Go to terminal", enabled: row.focusable) { model.focus(row) }
-                    StripButton(symbol: "paperplane.fill", title: "Message", enabled: row.acceptsInput) { model.compose(row) }
-                    Spacer(minLength: 0)
-                }
-                .frame(height: 26)
-                if let reason = row.blockReason {
-                    Text(verbatim: reason).font(.system(size: 10)).foregroundStyle(.orange.opacity(0.9)).lineLimit(2)
-                }
+        let selected = model.selectedRow
+        let note = model.footerNote
+        let left = note.map { "\($0.title): \($0.text)" } ?? AgentRow.summary(model.rows)
+        // Without room for all of it the summary goes first, but a note stays: it is the answer to what was just done. It sheds the
+        // file-drop text and the ↑↓ hint before it gives way.
+        ViewThatFits(in: .horizontal) {
+            footer(left: left, warns: note != nil, selected: selected, trimmed: false)
+            footer(left: left, warns: note != nil, selected: selected, trimmed: note != nil)
+            footer(left: nil, warns: false, selected: selected, trimmed: false)
+        }
+        .frame(height: Metrics.row)
+    }
+
+    private func footer(left: String?, warns: Bool, selected: AgentRow?, trimmed: Bool) -> some View {
+        let blocked = selected?.blockReason
+        return HStack(spacing: 16) {
+            if let left {
+                Text(verbatim: left).font(.system(size: 11)).foregroundStyle(warns ? Ink.waiting : .white.opacity(0.6)).lineLimit(1)
             }
-            if let note = model.notes[row.id] {
-                Text(verbatim: note).font(.system(size: 10)).foregroundStyle(.orange).lineLimit(2)
+            Spacer(minLength: 4)
+            // A row that can't be sent to takes no drops either.
+            if model.takesFiles, !trimmed {
+                Text("Drop files on a row").font(.system(size: 11)).foregroundStyle(.white.opacity(0.6)).lineLimit(1)
+            }
+            if !trimmed { HStack(spacing: 4) { Keycap(key: "↑↓"); hint("Select") } }
+            if let selected {
+                HStack(spacing: 4) { Keycap(key: "↵", dim: !selected.focusable); hint("Terminal", dim: !selected.focusable) }
+                HStack(spacing: 4) {
+                    Keycap(key: "⌘M", dim: blocked != nil)
+                    hint("Message", dim: blocked != nil, struck: blocked != nil)
+                    if let blocked {
+                        Text(verbatim: "· \(blocked)").font(.system(size: 11)).foregroundStyle(Ink.waiting).lineLimit(1).truncationMode(.tail)
+                            .help(Text(verbatim: blocked))
+                    }
+                }
             }
         }
     }
-}
 
-private struct StripButton: View {
-    let symbol: String
-    let title: LocalizedStringKey
-    let enabled: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 4) {
-                Image(systemName: symbol).font(.system(size: 10))
-                Text(title).font(.system(size: 10, weight: .semibold))
-            }
-            .foregroundStyle(.white.opacity(enabled ? 0.9 : 0.3))
-            .padding(.horizontal, 9).padding(.vertical, 4)
-            .background(Capsule().fill(.white.opacity(enabled ? 0.15 : 0.06)))
-            .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .disabled(!enabled)
+    private func hint(_ key: LocalizedStringKey, dim: Bool = false, struck: Bool = false) -> some View {
+        Text(key).font(.system(size: 11)).foregroundStyle(.white.opacity(dim ? 0.5 : 0.65)).lineLimit(1)
+            .strikethrough(struck, color: .white.opacity(0.5))
     }
 }
 
-/// The one-line field in the strip's place: Return sends the message to the row and closes it. Escape (see the notch's key monitor)
-/// and losing the keyboard focus close it without sending.
-private struct AgentMessageField: View {
+/// The footer while a message is typed: to whom (the row whose button was pressed), the field, and how to send or cancel. Return
+/// sends the message to the row and closes it. Escape (see the notch's key monitor) and losing the keyboard focus close it without sending.
+private struct AgentComposer: View {
     let row: AgentRow
     @ObservedObject var model: AgentsTabModel
     @State private var text = ""
@@ -939,53 +1207,126 @@ private struct AgentMessageField: View {
     private var canSend: Bool { row.acceptsInput && AgentSend.message(text) != nil }
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
+            Text("To").font(.system(size: 11)).foregroundStyle(.white.opacity(0.65))
+            HStack(spacing: 4) {
+                StateMark(row: row).scaleEffect(0.8).frame(width: 12, height: 12)
+                Text(verbatim: row.title).font(.system(size: 11, weight: .semibold)).lineLimit(1)
+                Button { model.cancelCompose() } label: {
+                    Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundStyle(.white.opacity(0.65))
+                        .frame(width: 20, height: 20).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(Text("Cancel"))
+            }
+            .padding(.leading, 8).padding(.trailing, 4).frame(height: Metrics.tag)
+            .background(Capsule().fill(.white.opacity(0.1)))
+            // The focus ring is 2 pt of the accent colour on the field itself.
             TextField("Message", text: $text)
                 .textFieldStyle(.plain)
-                .font(.system(size: 11))
+                .font(.system(size: 12))
                 .focused($focused)
+                .focusEffectDisabled()
                 .onSubmit { model.submit(message: text, to: row) }
-                .padding(.horizontal, 8).frame(height: 24)
-                .surface(RoundedRectangle(cornerRadius: 6), opacity: 0.1)
+                .padding(.horizontal, 8).frame(height: 28)
+                .background(RoundedRectangle(cornerRadius: 6).fill(.black.opacity(0.35)))
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.accentColor, lineWidth: 2))
+                .accessibilityLabel(Text("Message to \(row.title)"))
+            Keycap(key: "esc").help(Text("Cancel"))
             Button { model.submit(message: text, to: row) } label: {
-                Image(systemName: "arrow.up.circle.fill").font(.system(size: 18))
+                Image(systemName: "arrow.up.circle.fill").font(.system(size: 20))
                     .foregroundStyle(canSend ? Color.accentColor : .white.opacity(0.25))
+                    .frame(width: 28, height: 28).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .disabled(!canSend)
+            .help(Text("Send"))
+            .accessibilityLabel(Text("Send"))
         }
-        .frame(height: 26)
+        .padding(.horizontal, 8)
+        .frame(height: 40)
+        .surface(RoundedRectangle(cornerRadius: 8), opacity: 0.09)
         .onAppear { focused = true }
         .onDisappear { model.cancelCompose(row: row.id) }
         .onChange(of: focused) { _, isFocused in if !isFocused { model.cancelCompose(row: row.id) } }
     }
 }
 
+/// With no session open: the conversations that can be picked up again, and the tab's empty sentence under them.
+private struct RecentList: View {
+    @ObservedObject var model: AgentsTabModel
+    let now: Date
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Recent").font(.system(size: 11, weight: .semibold)).foregroundStyle(.white.opacity(0.65))
+                .padding(.horizontal, 8).frame(height: Metrics.row).accessibilityAddTraits(.isHeader)
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 1) {
+                    ForEach(model.recent) { RecentRowView(conversation: $0, now: now, model: model) }
+                }
+            }
+            Spacer(minLength: 0)
+            HStack(spacing: 8) {
+                Image(systemName: "moon.zzz").font(.system(size: 11)).foregroundStyle(.white.opacity(0.6)).accessibilityHidden(true)
+                Text(verbatim: model.resumeNote ?? model.emptyMessage).font(.system(size: 11))
+                    .foregroundStyle(model.resumeNote == nil ? .white.opacity(0.65) : Ink.waiting).lineLimit(1)
+                Spacer(minLength: 0)
+                HStack(spacing: 4) { Keycap(key: "↑↓"); Text("Select").font(.system(size: 11)).foregroundStyle(.white.opacity(0.65)) }
+            }
+            .padding(.horizontal, 8).frame(height: Metrics.row)
+        }
+    }
+}
+
 private struct RecentRowView: View {
     let conversation: RecentConversation
     let now: Date
-    let resume: () -> Void
+    @ObservedObject var model: AgentsTabModel
     @State private var hovering = false
 
+    private var selected: Bool { model.selected == conversation.id }
+    private var meta: String { conversation.metaParts.joined(separator: " · ") }
+
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "clock")
-                .font(.system(size: 11, weight: .semibold))
-                .frame(width: 16, height: 16)
-                .foregroundStyle(.white.opacity(0.45))
-            VStack(alignment: .leading, spacing: 1) {
-                Text(verbatim: conversation.title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
-                Text(verbatim: conversation.details(now: now).joined(separator: " · "))
-                    .font(.system(size: 11)).foregroundStyle(.white.opacity(0.6)).lineLimit(1)
+        HStack(spacing: 8) {
+            Image(systemName: "clock").font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.6))
+                .frame(width: 16).accessibilityHidden(true)
+            Text(verbatim: conversation.title).font(.system(size: 12, weight: .semibold)).foregroundStyle(.white.opacity(0.9)).lineLimit(1)
+                .frame(width: Metrics.titleWidth, alignment: .leading)
+                .help(Text(verbatim: conversation.title))
+            Text(verbatim: meta).font(.system(size: 11)).foregroundStyle(.white.opacity(0.6)).lineLimit(1).truncationMode(.tail)
+                .help(Text(verbatim: conversation.cwd))
+            Spacer(minLength: 4)
+            if selected {
+                Button { model.resume(conversation) } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.uturn.forward").font(.system(size: 11)).accessibilityHidden(true)
+                        Text("Resume").font(.system(size: 11, weight: .medium))
+                        Keycap(key: "↵")
+                    }
+                    .foregroundStyle(.white.opacity(0.9))
+                    .padding(.leading, 8).padding(.trailing, 4).frame(height: Metrics.tag)
+                    .background(Capsule().fill(.white.opacity(0.12)))
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .help(Text("Resume"))
             }
-            Spacer(minLength: 0)
+            Text(verbatim: conversation.age(now: now) ?? "").font(.system(size: 11).monospacedDigit()).foregroundStyle(.white.opacity(0.6))
+                .frame(width: Metrics.figure, alignment: .trailing)
         }
-        .opacity(0.65)
-        .padding(.horizontal, 10).padding(.vertical, 6)
-        .surface(RoundedRectangle(cornerRadius: 10), opacity: hovering ? 0.14 : 0.06)
+        .padding(.horizontal, 8).frame(height: 28)
+        .background {
+            if selected {
+                Color.clear.surface(RoundedRectangle(cornerRadius: 8), opacity: 0.1)
+            } else if hovering {
+                Color.clear.surface(RoundedRectangle(cornerRadius: 8), opacity: 0.06)
+            }
+        }
         .contentShape(Rectangle())
-        .onTapGesture(perform: resume)
+        // Resuming is what a click on a conversation always did.
+        .onTapGesture { model.select(conversation.id); model.resume(conversation) }
         .onHover { hovering = $0 }
-        .help(Text(verbatim: conversation.cwd))
     }
 }
