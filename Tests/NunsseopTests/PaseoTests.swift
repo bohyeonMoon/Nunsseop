@@ -635,6 +635,7 @@ struct PaseoModelTests {
         board.replace(source: Paseo.source, with: agents, now: paseoStart)
         let model = AgentsTabModel(board: board, home: { URL(fileURLWithPath: "/nonexistent-home") }, isConnected: { true }, scratch: [], sender: recorder.sender,
                                    clis: { TerminalCLIs(paseo: tool) })
+        model.noteDuration = eventDeadline
         model.fixedRecent = recent
         model.refresh(now: paseoStart)
         return model
@@ -681,6 +682,7 @@ struct PaseoModelTests {
         noInput.input = nil
         board.replace(source: Paseo.source, with: [paseoAgentID: noInput], now: paseoStart)
         let model = AgentsTabModel(board: board, home: { URL(fileURLWithPath: "/nonexistent-home") }, isConnected: { true }, scratch: [], sender: recorder.sender, clis: { TerminalCLIs() })
+        model.noteDuration = eventDeadline
         model.fixedRecent = []
         model.refresh(now: paseoStart)
         #expect(try row(model).inputBlock == .paseoNoCLI && !model.send(message: "hi", to: try row(model)))

@@ -256,6 +256,7 @@ struct AgentFocusModelTests {
                                    sender: AgentSender { _ in .failed }, clis: { clis },
                                    targets: AgentTargetCheck(processes: tree.table, muxyList: { _ in "42\t\(project)\tLive\ttrue\t/tmp\n" }),
                                    environments: environments, scripts: scripts, focuser: calls.focuser)
+        model.noteDuration = eventDeadline
         model.fixedRecent = []
         model.refresh(now: start)
         await eventually { !model.verifying }
@@ -375,6 +376,7 @@ struct AgentFocusModelTests {
         let drawn = try row(model)
         let empty = AgentBoard()
         let later = AgentsTabModel(board: empty, home: { URL(fileURLWithPath: "/nonexistent-home") }, isConnected: { true }, scratch: [], focuser: calls.focuser)
+        later.noteDuration = eventDeadline
         later.focus(drawn)
         try await Task.sleep(for: .milliseconds(100))
         #expect(calls.log.isEmpty)

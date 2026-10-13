@@ -529,6 +529,7 @@ struct GhosttyModelTests {
                                    sender: sent.sender, clis: { TerminalCLIs() },
                                    targets: AgentTargetCheck(processes: ProcessTable { records[$0] }, muxyList: { _ in nil }),
                                    environments: NoEnvironments(variables: environments).environment, scripts: fake.runner)
+        model.noteDuration = eventDeadline
         model.fixedRecent = []
         for (id, transcript) in transcripts { model.fixed["hooks:claude|\(id)"] = transcript }
         return model

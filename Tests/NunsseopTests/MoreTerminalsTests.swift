@@ -481,6 +481,7 @@ struct TerminalRowTests {
         board.replace(source: "hooks:claude", with: ["a": AgentBoard.Agent(state: .working, since: start, tool: "claude", input: input, pid: pid)], now: start)
         let model = AgentsTabModel(board: board, home: { URL(fileURLWithPath: "/nonexistent-home") }, isConnected: { true }, scratch: [],
                                    sender: recorder.sender, clis: { clis }, targets: check())
+        model.noteDuration = eventDeadline
         model.fixedRecent = []
         model.refresh(now: start)
         await eventually { !model.verifying }
@@ -550,6 +551,7 @@ struct TerminalRowTests {
 
     @Test func aResumeThatMacOSRefusedSaysWhereToAllowIt() async {
         let model = AgentsTabModel(board: AgentBoard(), home: { URL(fileURLWithPath: "/nonexistent-home") }, isConnected: { true }, scratch: [])
+        model.noteDuration = eventDeadline
         #expect(model.resumeNote == nil)
         NotificationCenter.default.post(name: Resume.notAllowedNotification, object: nil, userInfo: ["bundleID": "com.mitchellh.ghostty"])
         await eventually { model.resumeNote != nil }

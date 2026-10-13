@@ -449,7 +449,7 @@ final class AgentsTabModel: ObservableObject {
 
     private func showResumeNote(_ text: String) {
         resumeNote = text
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.noteDuration) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + noteDuration) { [weak self] in
             MainActor.assumeIsolated { if self?.resumeNote == text { self?.resumeNote = nil } }
         }
     }
@@ -788,13 +788,14 @@ final class AgentsTabModel: ObservableObject {
 
     private func note(_ text: String, for id: String) {
         notes[id] = text
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.noteDuration) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + noteDuration) { [weak self] in
             MainActor.assumeIsolated { if self?.notes[id] == text { self?.notes[id] = nil } }
         }
     }
 
-    /// How long the note under a row stays.
-    static let noteDuration: TimeInterval = 6
+    /// How long a note stays (the one under a row, and the one about a conversation that would not open); tests make it long, or a note
+    /// that came and went while the main actor was busy could not be waited for.
+    var noteDuration: TimeInterval = 6
 
     private func checkConnected() -> Bool {
         if let isConnected { return isConnected() }

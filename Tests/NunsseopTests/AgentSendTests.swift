@@ -371,6 +371,7 @@ struct AgentSendModelTests {
     private func makeModel(_ board: AgentBoard, sender: AgentSender, clis: TerminalCLIs? = nil) -> AgentsTabModel {
         let model = AgentsTabModel(board: board, home: { URL(fileURLWithPath: "/nonexistent-home") }, isConnected: { true }, scratch: [],
                                    sender: sender, clis: { clis ?? self.clis }, targets: terminals.check)
+        model.noteDuration = eventDeadline
         model.fixedRecent = []
         return model
     }
@@ -779,6 +780,7 @@ struct AgentSendModelTests {
         let model = AgentsTabModel(board: board, home: { URL(fileURLWithPath: "/nonexistent-home") }, isConnected: { true }, scratch: [],
                                    sender: Recorder().sender, clis: { clis }, targets: terminals.check,
                                    focuser: AgentFocuser(run: { _ in .sent }, activate: { activations.add($0) }, herdr: { _, _ in }))
+        model.noteDuration = eventDeadline
         model.fixedRecent = []
         model.refresh(now: start)
         await settle(model)
@@ -852,6 +854,7 @@ struct AgentSendModelTests {
         let model = AgentsTabModel(board: board, home: { URL(fileURLWithPath: "/nonexistent-home") }, isConnected: { true }, scratch: [],
                                    onResume: onResume, sender: Recorder().sender, clis: { clis }, targets: terminals.check,
                                    focuser: AgentFocuser(run: { _ in .sent }, activate: { activations.add($0) }, herdr: { _, _ in }))
+        model.noteDuration = eventDeadline
         model.fixedRecent = recent
         model.refresh(now: start)
         await settle(model)
@@ -1043,6 +1046,7 @@ struct AgentSendModelTests {
         board.replace(source: "hooks:claude", with: ["a": agent(.working, pid: 100), "child": agent(.working, pid: 120)], now: start)
         let model = AgentsTabModel(board: board, home: { URL(fileURLWithPath: "/nonexistent-home") }, isConnected: { true }, scratch: [],
                                    sender: recorder.sender, clis: { clis }, targets: FakeTerminals(tree).check)
+        model.noteDuration = eventDeadline
         model.fixedRecent = []
         model.refresh(now: start)
         await settle(model)
@@ -1075,6 +1079,7 @@ struct AgentSendModelTests {
         ], now: start)
         let model = AgentsTabModel(board: board, home: { URL(fileURLWithPath: "/nonexistent-home") }, isConnected: { true }, scratch: [],
                                    sender: recorder.sender, clis: { clis }, targets: terminals.check)
+        model.noteDuration = eventDeadline
         model.fixedRecent = []
         model.refresh(now: start)
         await settle(model)
@@ -1103,6 +1108,7 @@ struct AgentSendModelTests {
         let cmuxOnly = FakeTerminals()
         let other = AgentsTabModel(board: board, home: { URL(fileURLWithPath: "/nonexistent-home") }, isConnected: { true }, scratch: [],
                                    sender: Recorder().sender, clis: { clis }, targets: cmuxOnly.check)
+        other.noteDuration = eventDeadline
         other.fixedRecent = []
         other.refresh(now: start)
         await settle(other)

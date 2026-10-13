@@ -511,6 +511,7 @@ struct OrcaModelTests {
                                    sender: plans.sender, clis: { tools },
                                    targets: AgentTargetCheck(processes: ProcessTable { records[$0] }, muxyList: { _ in nil }, orcaList: list, orcaRunning: running),
                                    environments: ProcessEnvironment { _ in [:] }, scripts: AppleScriptRunner { _ in .failed }, focuser: plans.focuser)
+        model.noteDuration = eventDeadline
         model.fixedRecent = []
         await refresh(model)
         return model
@@ -657,6 +658,7 @@ struct OrcaModelTests {
                                    sender: plans.sender, clis: { TerminalCLIs(orca: cli) },
                                    targets: AgentTargetCheck(processes: ProcessTable { moved[$0] }, muxyList: { _ in nil }, orcaList: list, orcaRunning: running),
                                    environments: ProcessEnvironment { _ in [:] }, scripts: AppleScriptRunner { _ in .failed }, focuser: plans.focuser)
+        later.noteDuration = eventDeadline
         later.fixedRecent = []
         await refresh(later)
         later.focus(drawn)
