@@ -199,7 +199,7 @@ extension Herdr {
 #if DEBUG
 extension AgentBoard {
     /// Two Claude Code sessions working, one asking for input, one idle and a Codex session working. "a" and "c" are in (made-up) Muxy
-    /// sessions the demo's fakes vouch for (see `demoTargets`), so the composer can be seen taking input ("a") and refusing it ("c": a
+    /// sessions the demo's fakes vouch for (see `demoTargets`), so the Message button can be seen working ("a") and refused ("c": a
     /// prompt is open); the others have no terminal, so it refuses with its other reasons.
     static func demoAgents(now: Date = .now) -> [String: Agent] {
         [

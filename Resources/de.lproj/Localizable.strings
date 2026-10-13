@@ -407,7 +407,7 @@
 "%@ ago" = "vor %@";
 
 /* Sending to a session */
-"To %@" = "An %@";
+"Go to terminal" = "Zum Terminal";
 "Message" = "Nachricht";
 "Answer the prompt first" = "Zuerst die Rückfrage beantworten";
 "Couldn't send to this session" = "Senden an diese Sitzung fehlgeschlagen";

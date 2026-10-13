@@ -140,11 +140,11 @@ struct AgentRow: Identifiable, Equatable {
     /// Its terminal takes input, but a prompt waits for the answer first.
     var inputBlocked: Bool { offersInput && !acceptsInput }
 
-    /// Why the composer is disabled for this row, nil when it works. A prompt only counts for a row that could be typed into:
+    /// Why the Message button is disabled for this row, nil when it works. A prompt only counts for a row that could be typed into:
     /// answering it would not make any other row sendable.
     var inputBlock: InputBlock? { offersInput ? (acceptsInput ? nil : .prompt) : notOffered }
 
-    /// The sentence that says it, shown beside the composer's recipient.
+    /// The sentence that says it, shown in the row's strip.
     var blockReason: String? { inputBlock?.message }
 
     /// The rows with `promptOnTerminal` set on every one whose terminal another row's prompt may be open in: text typed there
@@ -259,12 +259,10 @@ final class AgentsTabModel: ObservableObject {
     @Published private(set) var recentLoaded = false
     /// Whether a tool that reports its sessions is connected, which tells an empty tab from one waiting for a connection.
     @Published private(set) var connected = false
-    /// The row clicked as the composer's recipient, by `AgentRow.id`; see `recipient`.
-    @Published private(set) var selected: String?
-    /// Whether the composer's field has the keyboard: the notch stays open while it does.
-    @Published private(set) var composing = false
-    /// What the composer holds; kept when the field loses the keyboard, cleared by a send or Escape.
-    @Published var draft = ""
+    /// The row whose action strip is unfolded, by `AgentRow.id`; one at a time.
+    @Published private(set) var unfolded: String?
+    /// The row whose message field is open, by `AgentRow.id`: the field has the keyboard, and the notch stays open while it does.
+    @Published private(set) var composing: String?
     /// A short note under a row whose message or files didn't go out, by `AgentRow.id`.
     @Published private(set) var notes: [String: String] = [:]
     /// Under the recent conversations: macOS didn't let Nunsseop open one in the terminal chosen (see `Resume.notAllowedNotification`).
@@ -272,7 +270,7 @@ final class AgentsTabModel: ObservableObject {
     private var denial: AnyCancellable?
     var isShowing = false {
         didSet {
-            if !isShowing { composing = false }
+            if !isShowing { composing = nil }
             guard isShowing && !oldValue else { return }
             connected = checkConnected()
             refresh()
@@ -549,35 +547,36 @@ final class AgentsTabModel: ObservableObject {
         onResume(conversation)
     }
 
-    /// Makes the row the composer's recipient. A field in use lets go when the row takes no input.
-    func select(_ row: AgentRow) {
-        selected = row.id
-        if composing && !row.acceptsInput { composing = false }
+    /// A click on a row unfolds its action strip and folds the one before it; a click on the unfolded row folds it. Folding ends typing.
+    func toggle(_ row: AgentRow) {
+        composing = nil
+        unfolded = unfolded == row.id ? nil : row.id
     }
 
-    /// Who the composer writes to: the selected row, else the first that takes input, else the first (so its reason shows).
-    var recipient: AgentRow? {
-        selected.flatMap { id in rows.first { $0.id == id } } ?? rows.first { $0.acceptsInput } ?? rows.first
+    /// Opens the message field in the strip of a row that takes input now, closing any other.
+    func compose(_ row: AgentRow) {
+        guard let current = rows.first(where: { $0.id == row.id }), current.acceptsInput else { return }
+        unfolded = current.id
+        composing = current.id
     }
 
-    /// The field took or lost the keyboard. It can't take it when the recipient takes no input. Taking it pins the default
-    /// recipient, so a refresh can't redirect the draft to another row while typing.
-    func setComposing(_ typing: Bool) {
-        composing = typing && recipient?.acceptsInput == true
-        if composing, selected == nil { selected = recipient?.id }
-    }
-
-    /// Escape: the draft goes and the field lets go of the keyboard.
+    /// Escape: the field lets go of the keyboard and goes.
     func cancelCompose() {
-        draft = ""
-        composing = false
+        composing = nil
     }
 
-    /// Sends the draft to the recipient as it is now (see `deliver`), then empties it. False when nothing was sent.
+    /// Closes the field of that row only: a row whose field is scrolled out of the list drops it, and the notch must not stay
+    /// open for a field nobody can see.
+    func cancelCompose(row id: String) {
+        if composing == id { composing = nil }
+    }
+
+    /// Return in the row's field: sends the text to that row only (see `send(message:to:)`) and closes the field. False when
+    /// nothing was sent, and the field stays.
     @discardableResult
-    func submit() -> Bool {
-        guard let recipient, send(message: draft, to: recipient) else { return false }
-        draft = ""
+    func submit(message: String, to row: AgentRow) -> Bool {
+        guard send(message: message, to: row) else { return false }
+        cancelCompose(row: row.id)
         return true
     }
 
@@ -649,7 +648,7 @@ final class AgentsTabModel: ObservableObject {
         return true
     }
 
-    /// A send that failed leaves a note, and the target is verified again: the session may be gone, and its composer with it.
+    /// A send that failed leaves a note, and the target is verified again: the session may be gone, and its Message button with it.
     private func sent(_ outcome: SendOutcome, _ id: String) {
         switch outcome {
         case .sent: return
@@ -681,7 +680,7 @@ final class AgentsTabModel: ObservableObject {
         }
     }
 
-    /// Recent conversations are listed only when no session is: with sessions open they are noise next to the composer.
+    /// Recent conversations are listed only when no session is: with sessions open they are noise next to them.
     var showsRecent: Bool { rows.isEmpty && !recent.isEmpty }
 
     /// Whether the tab says it has nothing: no session is listed and no recent conversation turned up.
@@ -756,9 +755,9 @@ final class AgentsTabModel: ObservableObject {
                      blockedBy: outcome?.block)
         }))
         if next != rows { rows = next }
-        if let selected, !rows.contains(where: { $0.id == selected }) { self.selected = nil }
-        // The field lets go when its recipient goes away or starts waiting on a prompt: typing could answer it.
-        if composing && recipient?.acceptsInput != true { composing = false }
+        if let unfolded, !rows.contains(where: { $0.id == unfolded }) { self.unfolded = nil }
+        // The field lets go when its row goes away or starts waiting on a prompt: typing could answer it.
+        if let composing, !rows.contains(where: { $0.id == composing && $0.acceptsInput }) { self.composing = nil }
         let kept = notes.filter { id, _ in rows.contains { $0.id == id } }
         if kept.count != notes.count { notes = kept }
     }
@@ -775,31 +774,25 @@ struct AgentsTab: View {
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                VStack(spacing: 0) {
-                    // The times count on from the minute they were drawn.
-                    TimelineView(.everyMinute) { context in
-                        ScrollView(.vertical, showsIndicators: false) {
-                            LazyVStack(spacing: 4) {
-                                ForEach(model.rows) { AgentRowView(row: $0, now: context.date, model: model) }
-                                if model.showsRecent {
-                                    Text("Recent")
-                                        .font(.system(size: 10, weight: .semibold)).foregroundStyle(.white.opacity(0.4))
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .padding(.horizontal, 10)
-                                    if let note = model.resumeNote {
-                                        Text(verbatim: note).font(.system(size: 10)).foregroundStyle(.orange).lineLimit(2)
-                                            .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 10)
-                                    }
-                                    ForEach(model.recent) { conversation in
-                                        RecentRowView(conversation: conversation, now: context.date) { model.resume(conversation) }
-                                    }
+                // The times count on from the minute they were drawn.
+                TimelineView(.everyMinute) { context in
+                    ScrollView(.vertical, showsIndicators: false) {
+                        LazyVStack(spacing: 4) {
+                            ForEach(model.rows) { AgentRowView(row: $0, now: context.date, model: model) }
+                            if model.showsRecent {
+                                Text("Recent")
+                                    .font(.system(size: 10, weight: .semibold)).foregroundStyle(.white.opacity(0.4))
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.horizontal, 10)
+                                if let note = model.resumeNote {
+                                    Text(verbatim: note).font(.system(size: 10)).foregroundStyle(.orange).lineLimit(2)
+                                        .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 10)
+                                }
+                                ForEach(model.recent) { conversation in
+                                    RecentRowView(conversation: conversation, now: context.date) { model.resume(conversation) }
                                 }
                             }
                         }
-                    }
-                    // Pinned below the list, which scrolls in the room left.
-                    if let recipient = model.recipient {
-                        AgentComposer(recipient: recipient, model: model).padding(.top, 4)
                     }
                 }
             }
@@ -816,29 +809,36 @@ private struct AgentRowView: View {
     @ObservedObject var model: AgentsTabModel
     @State private var hovering = false
     @State private var dropTargeted = false
-    @State private var goHovering = false
 
-    private var isRecipient: Bool { model.recipient?.id == row.id }
+    private var isUnfolded: Bool { model.unfolded == row.id }
 
     var body: some View {
-        // A click picks the row as the composer's recipient; going to its terminal is the button at the end.
-        HStack(alignment: .top, spacing: 4) {
+        // A click always does something: it unfolds the strip with what can be done with the session. The strip is outside the
+        // clickable part, so its field and buttons take their own clicks.
+        VStack(alignment: .leading, spacing: 4) {
             content
-            if row.focusable { goButton }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 10).padding(.top, 6).padding(.bottom, isUnfolded ? 0 : 6)
+                .contentShape(Rectangle())
+                .onTapGesture { model.toggle(row) }
+            if isUnfolded {
+                AgentActionStrip(row: row, model: model).padding(.horizontal, 10).padding(.bottom, 6)
+            }
         }
         .opacity(row.state == .idle ? 0.6 : 1)
-        .padding(.horizontal, 10).padding(.vertical, 6)
-        .contentShape(Rectangle())
-        .onTapGesture { model.select(row) }
-        .surface(RoundedRectangle(cornerRadius: 10), opacity: isRecipient || dropTargeted ? 0.16 : hovering ? 0.12 : 0.08)
+        .surface(RoundedRectangle(cornerRadius: 10), opacity: isUnfolded || dropTargeted ? 0.16 : hovering ? 0.12 : 0.08)
         .overlay {
             if dropTargeted {
                 RoundedRectangle(cornerRadius: 10).stroke(Color.accentColor.opacity(0.9), lineWidth: 1.5)
-            } else if isRecipient {
+            } else if isUnfolded {
                 RoundedRectangle(cornerRadius: 10).stroke(Color.accentColor.opacity(0.6), lineWidth: 1)
             }
         }
-        .onHover { hovering = $0 }
+        .onHover { inside in
+            hovering = inside
+            if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+        }
+        .onDisappear { if hovering { hovering = false; NSCursor.pop() } }
         // Only a session that takes input accepts files; otherwise the drop isn't taken at all.
         .onDrop(of: row.acceptsInput ? [.fileURL] : [], isTargeted: $dropTargeted) { providers in
             ShelfSharing.loadURLs(from: providers) { model.send(files: $0, to: row) }
@@ -868,75 +868,96 @@ private struct AgentRowView: View {
                     }
                     .font(.system(size: 11)).foregroundStyle(.white.opacity(0.6)).lineLimit(1)
                 }
-                // The recipient's notes are under the composer.
-                if !isRecipient, let note = model.notes[row.id] {
+                // Unfolded, the strip shows the notes.
+                if !isUnfolded, let note = model.notes[row.id] {
                     Text(verbatim: note).font(.system(size: 10)).foregroundStyle(.orange).lineLimit(2)
                 }
             }
         }
     }
-
-    /// Goes to where the session runs.
-    private var goButton: some View {
-        Button { model.focus(row) } label: {
-            Image(systemName: "arrow.up.forward.app")
-                .font(.system(size: 11))
-                .foregroundStyle(.white.opacity(goHovering ? 0.9 : 0.5))
-                .frame(width: 18, height: 16)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { goHovering = $0 }
-        .help("Go to where it came from")
-    }
 }
 
-/// The one-line field pinned under the list, writing to the recipient: Return sends and keeps the keyboard, Escape (see the notch's
-/// key monitor) empties it. The notch stays open while it has the keyboard.
-private struct AgentComposer: View {
-    let recipient: AgentRow
+/// What can be done with a session, under its row: go to its terminal, or message it. A row that can't take a message says why.
+private struct AgentActionStrip: View {
+    let row: AgentRow
     @ObservedObject var model: AgentsTabModel
-    @FocusState private var focused: Bool
 
-    private var canSend: Bool {
-        recipient.acceptsInput && AgentSend.message(model.draft) != nil
-    }
+    private var typing: Bool { model.composing == row.id }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 4) {
-                Image(systemName: recipient.symbol).font(.system(size: 9, weight: .semibold)).foregroundStyle(recipient.tint)
-                Text("To \(recipient.title)").font(.system(size: 10, weight: .semibold)).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
-                if let reason = recipient.blockReason {
-                    Text(verbatim: reason).font(.system(size: 10)).foregroundStyle(.orange.opacity(0.9)).lineLimit(1)
-                        .truncationMode(.tail)
+            if typing {
+                AgentMessageField(row: row, model: model)
+            } else {
+                HStack(spacing: 6) {
+                    StripButton(symbol: "arrow.up.forward.app", title: "Go to terminal", enabled: row.focusable) { model.focus(row) }
+                    StripButton(symbol: "paperplane.fill", title: "Message", enabled: row.acceptsInput) { model.compose(row) }
+                    Spacer(minLength: 0)
                 }
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 4)
-            HStack(spacing: 6) {
-                TextField("Message", text: $model.draft)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 11))
-                    .focused($focused)
-                    .disabled(!recipient.acceptsInput)
-                    .onSubmit { model.submit() }
-                    .padding(.horizontal, 8).frame(height: 24)
-                    .surface(RoundedRectangle(cornerRadius: 6), opacity: 0.1)
-                Button { model.submit() } label: {
-                    Image(systemName: "arrow.up.circle.fill").font(.system(size: 18))
-                        .foregroundStyle(canSend ? Color.accentColor : .white.opacity(0.25))
+                .frame(height: 26)
+                if let reason = row.blockReason {
+                    Text(verbatim: reason).font(.system(size: 10)).foregroundStyle(.orange.opacity(0.9)).lineLimit(2)
                 }
-                .buttonStyle(.plain)
-                .disabled(!canSend)
             }
-            if let note = model.notes[recipient.id] {
-                Text(verbatim: note).font(.system(size: 10)).foregroundStyle(.orange).lineLimit(2).padding(.horizontal, 4)
+            if let note = model.notes[row.id] {
+                Text(verbatim: note).font(.system(size: 10)).foregroundStyle(.orange).lineLimit(2)
             }
         }
-        .onChange(of: focused) { _, isFocused in model.setComposing(isFocused) }
-        // Escape, or a recipient that can't take input, takes the keyboard away.
-        .onChange(of: model.composing) { _, typing in if !typing { focused = false } }
+    }
+}
+
+private struct StripButton: View {
+    let symbol: String
+    let title: LocalizedStringKey
+    let enabled: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: symbol).font(.system(size: 10))
+                Text(title).font(.system(size: 10, weight: .semibold))
+            }
+            .foregroundStyle(.white.opacity(enabled ? 0.9 : 0.3))
+            .padding(.horizontal, 9).padding(.vertical, 4)
+            .background(Capsule().fill(.white.opacity(enabled ? 0.15 : 0.06)))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+    }
+}
+
+/// The one-line field in the strip's place: Return sends the message to the row and closes it. Escape (see the notch's key monitor)
+/// and losing the keyboard focus close it without sending.
+private struct AgentMessageField: View {
+    let row: AgentRow
+    @ObservedObject var model: AgentsTabModel
+    @State private var text = ""
+    @FocusState private var focused: Bool
+
+    private var canSend: Bool { row.acceptsInput && AgentSend.message(text) != nil }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            TextField("Message", text: $text)
+                .textFieldStyle(.plain)
+                .font(.system(size: 11))
+                .focused($focused)
+                .onSubmit { model.submit(message: text, to: row) }
+                .padding(.horizontal, 8).frame(height: 24)
+                .surface(RoundedRectangle(cornerRadius: 6), opacity: 0.1)
+            Button { model.submit(message: text, to: row) } label: {
+                Image(systemName: "arrow.up.circle.fill").font(.system(size: 18))
+                    .foregroundStyle(canSend ? Color.accentColor : .white.opacity(0.25))
+            }
+            .buttonStyle(.plain)
+            .disabled(!canSend)
+        }
+        .frame(height: 26)
+        .onAppear { focused = true }
+        .onDisappear { model.cancelCompose(row: row.id) }
+        .onChange(of: focused) { _, isFocused in if !isFocused { model.cancelCompose(row: row.id) } }
     }
 }
 

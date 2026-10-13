@@ -282,9 +282,8 @@ struct InputBlockModelTests {
         #expect(model.verifying)
         for id in ["named", "unnamed", "ghostty"] {
             #expect(try row(model, id).inputBlock == .checking, Comment(rawValue: id))
-            model.select(try row(model, id))
-            model.setComposing(true)
-            #expect(!model.composing, Comment(rawValue: id))
+            model.compose(try row(model, id))
+            #expect(model.composing == nil, Comment(rawValue: id))
         }
         // Nothing to check without a process.
         #expect(try row(model, "oldHook").inputBlock == .noProcess)
@@ -341,9 +340,8 @@ struct InputBlockModelTests {
         for id in ["hookTmux", "ghostty", "oldHook", "gone", "asking"] {
             let blocked = try row(model, id)
             #expect(blocked.inputBlock != nil && !blocked.acceptsInput, Comment(rawValue: id))
-            model.select(blocked)
-            model.setComposing(true)
-            #expect(!model.composing, Comment(rawValue: id))
+            model.compose(blocked)
+            #expect(model.composing == nil, Comment(rawValue: id))
             #expect(!model.send(message: "hello", to: blocked), Comment(rawValue: id))
             #expect(!model.send(files: [URL(fileURLWithPath: "/tmp/a.png")], to: blocked), Comment(rawValue: id))
             #expect(model.notes[blocked.id] == nil, Comment(rawValue: id))
