@@ -13,11 +13,12 @@ enum AgentFocus {
         case nothing
     }
 
-    /// What a click on this row does. `ghostty` is the terminal picked for a Ghostty row (see `Ghostty.resolve`).
-    static func plan(for row: AgentRow, clis: TerminalCLIs, ghostty: GhosttyPick? = nil) -> Plan {
+    /// What a click on this row does. `ghostty` is the terminal picked for a Ghostty row (see `Ghostty.resolve`), `orca` the handle of
+    /// the pane of an Orca row.
+    static func plan(for row: AgentRow, clis: TerminalCLIs, ghostty: GhosttyPick? = nil, orca: OrcaPick? = nil) -> Plan {
         if case .herdr(let pane, let socket)? = row.target { return .herdr(pane: pane, socket: socket) }
         if row.offersInput, let input = row.input, let app = bundleID(of: input) {
-            return steps(input, clis: clis, ghostty: ghostty).map { .terminal($0, app: app) } ?? .app(app)
+            return steps(input, clis: clis, ghostty: ghostty, orca: orca).map { .terminal($0, app: app) } ?? .app(app)
         }
         if case .app(let id)? = row.target { return .app(id) }
         return .nothing
@@ -34,13 +35,14 @@ enum AgentFocus {
         case .wezterm: WezTerm.bundleID
         case .kitty: Kitty.bundleID
         case .ghostty: TerminalScripts.ghosttyID
+        case .orca: Orca.bundleID
         }
     }
 
     /// The calls that select the session's tab or pane, with the same ids and the same check of the tab as sending; nil when the
     /// terminal's tool isn't there (or, for Ghostty, no tab was picked). Muxy has no call for a session's tab (tabs belong to the
     /// app's UI), so it goes to the session's project.
-    static func steps(_ input: AgentInput, clis: TerminalCLIs, ghostty: GhosttyPick?) -> [AgentStep]? {
+    static func steps(_ input: AgentInput, clis: TerminalCLIs, ghostty: GhosttyPick?, orca: OrcaPick? = nil) -> [AgentStep]? {
         switch input {
         case .muxy(let session):
             guard let cli = clis.muxy else { return nil }
@@ -65,6 +67,9 @@ enum AgentFocus {
             let usable = Ghostty.usableName(name)
             return [.script(TerminalScripts.ghosttyFocus(terminal: ghostty.terminal, folders: Ghostty.spellings(of: folder), name: usable,
                                                          needsName: ghostty.usesName && !usable.isEmpty))]
+        case .orca(let paneKey):
+            guard let cli = clis.orca, let orca, orca.paneKey == paneKey else { return nil }
+            return [.run(cli, ["terminal", "switch", "--terminal", orca.handle])]
         }
     }
 
