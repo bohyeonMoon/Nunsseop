@@ -293,8 +293,12 @@ struct PaseoClientTests {
     }
 
     @Test func aPasswordTheDaemonAsksForIsNotTriedAgainAtOnce() async throws {
+        // The wait after a refusal is long beside the test, not the 5 seconds of `quickTiming`: the main actor can keep the test from looking
+        // for most of a minute on a busy machine, and a client that waited out 5 seconds meanwhile did try again, as it should.
+        var timing = quickTiming
+        timing.refused = 3600
         let sockets = PaseoSockets()
-        let (client, _) = make(sockets)
+        let (client, _) = make(sockets, timing: timing)
         client.start()
         await eventually { !sockets.all.isEmpty && !sockets.all[0].sent.isEmpty }
         sockets.all[0].push(#"{"type":"hello.rejected","reason":"password_required","accepts":["password"]}"#)
@@ -311,8 +315,12 @@ struct PaseoClientTests {
         let socket = try #require(await connect(client, sockets))
         #expect(client.respond(agent: agentA, request: "r1", allow: true) && client.respond(agent: agentB, request: "r2", allow: false))
         await eventually { socket.sent("agent_permission_response").count == 2 }
+        // Two answers to different requests go out on tasks of their own, so which is first on the wire is not a contract.
         let answers = socket.sent("agent_permission_response").compactMap { $0["message"] as? [String: Any] }
-        #expect(answers.map { $0["requestId"] as? String } == ["r1", "r2"] && answers.map { ($0["response"] as? [String: String])?["behavior"] } == ["allow", "deny"])
+        let behaviors = Dictionary(uniqueKeysWithValues: answers.compactMap { answer in
+            (answer["requestId"] as? String).map { ($0, (answer["response"] as? [String: String])?["behavior"]) }
+        })
+        #expect(answers.count == 2 && behaviors == ["r1": "allow", "r2": "deny"])
         client.stop()
         #expect(!client.respond(agent: agentA, request: "r3", allow: true))
     }
