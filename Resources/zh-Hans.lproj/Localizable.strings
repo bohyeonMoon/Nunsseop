@@ -407,7 +407,8 @@
 "%@ ago" = "%@前";
 
 /* Sending to a session */
-"Send a message" = "发送消息";
+"To %@" = "发送给 %@";
+"Message" = "消息";
 "Answer the prompt first" = "请先回答提示";
 "Couldn't send to this session" = "无法发送到此会话";
 

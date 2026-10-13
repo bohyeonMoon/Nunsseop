@@ -585,7 +585,7 @@ struct GhosttyModelTests {
         for id in ["a", "b"] {
             let blocked = try row(model, id)
             #expect(blocked.inputBlock == .ambiguousTab && !blocked.acceptsInput && blocked.input == nil, Comment(rawValue: id))
-            #expect(blocked.sendHelp == String(localized: "There are several Ghostty tabs in this folder, so Nunsseop can't tell which one"))
+            #expect(blocked.blockReason == String(localized: "There are several Ghostty tabs in this folder, so Nunsseop can't tell which one"))
             #expect(!model.send(message: "hi", to: blocked) && !model.send(files: [URL(fileURLWithPath: "/tmp/a.png")], to: blocked))
         }
         #expect(sent.plans.isEmpty)
@@ -633,8 +633,8 @@ struct GhosttyModelTests {
         let model = make(["a": agent(100)], transcripts: ["a": AgentTranscript(cwd: "/Users/me/proj")], fake: fake)
         await settle(model)
         #expect(try row(model, "a").inputBlock == .notAllowed("com.mitchellh.ghostty"))
-        #expect(try row(model, "a").sendHelp == TerminalScripts.notAllowedNote("com.mitchellh.ghostty"))
-        #expect(try row(model, "a").sendHelp.contains("Ghostty") && !row(model, "a").acceptsInput)
+        #expect(try row(model, "a").blockReason == TerminalScripts.notAllowedNote("com.mitchellh.ghostty"))
+        #expect(try row(model, "a").blockReason?.contains("Ghostty") == true && !row(model, "a").acceptsInput)
         // Allowed later: the next pass lists the tabs.
         fake.tabs([tab("T1", "/Users/me/proj")])
         await settle(model)

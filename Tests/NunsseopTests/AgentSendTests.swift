@@ -446,8 +446,9 @@ struct AgentSendModelTests {
         let blocked = try row(model)
         #expect(!model.send(message: "yes", to: blocked))
         #expect(!model.send(files: [URL(fileURLWithPath: "/tmp/a.png")], to: blocked))
-        model.compose(blocked)
-        #expect(model.composing == nil)
+        model.select(blocked)
+        model.setComposing(true)
+        #expect(!model.composing)
         try await Task.sleep(for: .milliseconds(100))
         #expect(recorder.recorded.isEmpty)
     }
@@ -501,42 +502,47 @@ struct AgentSendModelTests {
         #expect(recorder.recorded.isEmpty)
     }
 
-    @Test func oneMessageFieldIsOpenAtATime() async throws {
-        let model = await make(Recorder(), agents: ["a": agent(.working), "b": agent(.idle)])
-        model.compose(try row(model, "a"))
-        #expect(model.composing == "hooks:claude|a")
-        model.compose(try row(model, "b"))
-        #expect(model.composing == "hooks:claude|b")
-        model.cancelCompose()
-        #expect(model.composing == nil)
-    }
-
-    @Test func theFieldClosesWhenItsSessionStartsWaitingOnAPromptOrGoesAway() async throws {
+    @Test func theFieldHoldsTheKeyboardOnlyWhileItsRecipientTakesInputAndWhileTheTabShows() async throws {
         let board = AgentBoard()
         board.replace(source: "hooks:claude", with: ["a": agent(.working)], now: start)
         let model = makeModel(board, sender: Recorder().sender)
         model.refresh(now: start)
         await settle(model)
-        model.compose(try row(model))
-        #expect(model.composing != nil)
+        model.setComposing(true)
+        #expect(model.composing)
+        model.setComposing(false)
+        #expect(!model.composing)
+        // The session starts waiting on a prompt: typing could answer it.
+        model.setComposing(true)
         board.replace(source: "hooks:claude", with: ["a": agent(.waiting)], now: start)
         model.refresh(now: start)
-        #expect(model.composing == nil)
+        #expect(!model.composing)
         board.replace(source: "hooks:claude", with: ["a": agent(.working)], now: start)
         model.refresh(now: start)
-        model.compose(try row(model))
+        model.setComposing(true)
         board.replace(source: "hooks:claude", with: [:], now: start)
         model.refresh(now: start)
-        #expect(model.composing == nil)
+        #expect(!model.composing)
     }
 
-    @Test func leavingTheTabClosesTheField() async throws {
+    @Test func leavingTheTabLetsGoOfTheField() async throws {
         let model = await make(Recorder(), agents: ["a": agent(.working)])
         model.isShowing = true
-        model.compose(try row(model))
-        #expect(model.composing != nil)
+        model.setComposing(true)
+        #expect(model.composing)
         model.isShowing = false
-        #expect(model.composing == nil)
+        #expect(!model.composing)
+    }
+
+    @Test func escapeEmptiesTheDraftAndLetsGoButLosingTheKeyboardKeepsIt() async throws {
+        let model = await make(Recorder(), agents: ["a": agent(.working)])
+        model.draft = "half a thought"
+        model.setComposing(true)
+        model.setComposing(false)
+        #expect(model.draft == "half a thought")
+        model.setComposing(true)
+        model.cancelCompose()
+        #expect(model.draft.isEmpty && !model.composing)
     }
 
     @Test func aPromptLeftOpenPastTheActiveWindowStillTakesNoInput() async throws {
@@ -559,8 +565,9 @@ struct AgentSendModelTests {
         #expect(row.state == .idle && !row.acceptsInput && row.inputBlocked)
         #expect(!model.send(message: "no, stop", to: row))
         #expect(!model.send(files: [URL(fileURLWithPath: "/tmp/a.png")], to: row))
-        model.compose(row)
-        #expect(model.composing == nil)
+        model.select(row)
+        model.setComposing(true)
+        #expect(!model.composing)
         try await Task.sleep(for: .milliseconds(100))
         #expect(recorder.recorded.isEmpty)
 
@@ -598,8 +605,9 @@ struct AgentSendModelTests {
         #expect(!child.acceptsInput && child.inputBlocked)
         #expect(!model.send(message: "yes", to: child))
         #expect(!model.send(files: [URL(fileURLWithPath: "/tmp/a.png")], to: child))
-        model.compose(child)
-        #expect(model.composing == nil)
+        model.select(child)
+        model.setComposing(true)
+        #expect(!model.composing)
         // A session of another terminal is not held back.
         #expect(try row(model, "other").acceptsInput)
         #expect(model.send(message: "hello", to: try row(model, "other")))
@@ -608,27 +616,202 @@ struct AgentSendModelTests {
         #expect(recorder.recorded.first?.contains(.run(URL(fileURLWithPath: "/m/muxy"), ["session", "send", "7", "hello"])) == true)
     }
 
-    @Test func aPromptOpenInASharedTerminalPastTheWindowClosesTheSiblingsField() async throws {
+    @Test func aPromptOpenInASharedTerminalPastTheWindowLetsGoOfTheSiblingsField() async throws {
         let board = AgentBoard()
         board.replace(source: "hooks:claude", with: ["parent": agent(.working), "child": agent(.working)], now: start)
         let model = makeModel(board, sender: Recorder().sender)
         model.refresh(now: start)
         await settle(model)
-        model.compose(try row(model, "child"))
-        #expect(model.composing != nil)
+        model.select(try row(model, "child"))
+        model.setComposing(true)
+        #expect(model.composing)
         board.replace(source: "hooks:claude", with: ["parent": agent(.waiting), "child": agent(.working)], now: start)
         model.refresh(now: start)
-        #expect(model.composing == nil)
+        #expect(!model.composing)
     }
 
-    @Test func aFieldIsClosedByItsOwnRowOnlyWhenItsViewGoesAway() async throws {
-        let model = await make(Recorder(), agents: ["a": agent(.working), "b": agent(.working)])
-        model.compose(try row(model, "a"))
-        // Another row's field going away (the one just replaced) leaves this one open.
-        model.cancelCompose(row: "hooks:claude|b")
-        #expect(model.composing == "hooks:claude|a")
-        model.cancelCompose(row: "hooks:claude|a")
-        #expect(model.composing == nil)
+    // MARK: The shared composer
+
+    @Test func theRecipientDefaultsToTheFirstRowThatTakesInputElseTheFirstRow() async throws {
+        // Waiting rows are listed first; this one has a prompt open, so the working one below it is the recipient.
+        let model = await make(Recorder(), agents: ["w": agent(.waiting, input: .muxy("1")), "b": agent(.working, input: .muxy("2"))])
+        #expect(model.rows.map(\.id) == ["hooks:claude|w", "hooks:claude|b"])
+        #expect(model.selected == nil && model.recipient?.id == "hooks:claude|b")
+        let none = await make(Recorder(), agents: ["w": agent(.waiting, input: .muxy("1")), "p": agent(.working, input: nil)])
+        #expect(none.recipient?.id == none.rows.first?.id && none.recipient?.acceptsInput == false)
+        let empty = await make(Recorder(), agents: [:])
+        #expect(empty.recipient == nil)
+    }
+
+    @Test func aSelectionSurvivesRefreshesAndFallsBackWhenItsRowGoesAway() async throws {
+        let board = AgentBoard()
+        board.replace(source: "hooks:claude", with: ["a": agent(.working, input: .muxy("1")), "b": agent(.working, input: .muxy("2"))], now: start)
+        let model = makeModel(board, sender: Recorder().sender)
+        model.refresh(now: start)
+        await settle(model)
+        let first = try #require(model.recipient)
+        let other = try #require(model.rows.first { $0.id != first.id })
+        model.select(other)
+        #expect(model.recipient?.id == other.id)
+        model.refresh(now: start)
+        await settle(model)
+        #expect(model.selected == other.id && model.recipient?.id == other.id)
+        board.replace(source: "hooks:claude", with: ["a": agent(.working, input: .muxy("1")), "b": agent(.working, input: .muxy("2"))].filter { "hooks:claude|\($0.key)" != other.id }, now: start)
+        model.refresh(now: start)
+        await settle(model)
+        #expect(model.selected == nil && model.recipient?.id == first.id)
+    }
+
+    @Test func takingTheKeyboardPinsTheDefaultRecipientSoARefreshCannotRedirectTheDraft() async throws {
+        let recorder = Recorder()
+        let board = AgentBoard()
+        board.replace(source: "hooks:claude", with: ["a": agent(.working, input: .muxy("1")), "b": agent(.working, input: .muxy("2"))], now: start)
+        let model = makeModel(board, sender: recorder.sender)
+        model.refresh(now: start)
+        await settle(model)
+        let first = try #require(model.recipient)
+        #expect(model.selected == nil)
+        model.setComposing(true)
+        model.draft = "for first"
+        #expect(model.selected == first.id)
+        // The first row starts waiting on a prompt: the draft stays addressed to it and the field lets go.
+        board.replace(source: "hooks:claude", with: ["a": agent(.working, input: .muxy("1")), "b": agent(.working, input: .muxy("2"))]
+            .reduce(into: [:]) { $0[$1.key] = "hooks:claude|\($1.key)" == first.id ? agent(.waiting, input: $1.value.input) : $1.value }, now: start)
+        model.refresh(now: start)
+        await settle(model)
+        #expect(model.recipient?.id == first.id && !model.composing)
+        #expect(!model.submit())
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(recorder.recorded.isEmpty && model.draft == "for first")
+    }
+
+    @Test func clickingARowThatTakesNoInputWhileTypingLetsGoOfTheField() async throws {
+        let model = await make(Recorder(), agents: ["w": agent(.waiting, input: .muxy("1")), "b": agent(.working, input: .muxy("2"))])
+        model.select(try row(model, "b"))
+        model.setComposing(true)
+        #expect(model.composing)
+        model.select(try row(model, "w"))
+        #expect(!model.composing)
+    }
+
+    @Test func aSelectedRowThatTakesNoInputStaysTheRecipientSoItsReasonShows() async throws {
+        let model = await make(Recorder(), agents: ["w": agent(.waiting, input: .muxy("1")), "b": agent(.working, input: .muxy("2"))])
+        let waiting = try row(model, "w")
+        model.select(waiting)
+        #expect(model.recipient?.id == waiting.id && model.recipient?.blockReason == AgentRow.InputBlock.prompt.message)
+        #expect(model.recipient?.acceptsInput == false)
+    }
+
+    @Test func returnSendsToTheSelectedRecipientOnlyAndEmptiesTheDraft() async throws {
+        let recorder = Recorder()
+        let model = await make(recorder, agents: ["a": agent(.working, input: .muxy("1")), "b": agent(.working, input: .muxy("2"))])
+        model.select(try row(model, "b"))
+        model.draft = "  run the tests\n"
+        #expect(model.submit())
+        #expect(model.draft.isEmpty)
+        await eventually { !recorder.recorded.isEmpty }
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(recorder.recorded == [[
+            .listed(clis.muxy!, ["session", "list"], id: "2"),
+            .run(clis.muxy!, ["session", "send", "2", "run the tests"]),
+            .run(clis.muxy!, ["session", "send-keys", "2", "Enter"]),
+        ]])
+    }
+
+    @Test func withoutASelectionReturnGoesToTheDefaultRecipient() async throws {
+        let recorder = Recorder()
+        let model = await make(recorder, agents: ["w": agent(.waiting, input: .muxy("1")), "b": agent(.working, input: .muxy("2"))])
+        model.draft = "hello"
+        #expect(model.submit())
+        await eventually { !recorder.recorded.isEmpty }
+        let plan = try #require(recorder.recorded.first)
+        #expect(plan.contains(.run(clis.muxy!, ["session", "send", "2", "hello"])))
+    }
+
+    @Test func aRecipientThatTakesNoInputSendsNothingAndKeepsTheDraft() async throws {
+        let recorder = Recorder()
+        let model = await make(recorder, agents: ["w": agent(.waiting, input: .muxy("1")), "b": agent(.working, input: .muxy("2"))])
+        model.select(try row(model, "w"))
+        model.draft = "yes"
+        #expect(!model.submit())
+        #expect(model.draft == "yes")
+        model.select(try row(model, "b"))
+        model.draft = " \n "
+        #expect(!model.submit())
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(recorder.recorded.isEmpty)
+    }
+
+    @Test func aFailureNoteBelongsToTheRecipientAndAClearedRowLosesIt() async throws {
+        let recorder = Recorder()
+        recorder.passes = false
+        let model = await make(recorder, agents: ["a": agent(.working, input: .muxy("1"))])
+        model.draft = "hello"
+        #expect(model.submit())
+        let id = try #require(model.recipient?.id)
+        await eventually { model.notes[id] != nil }
+        #expect(model.notes[id] == String(localized: "Couldn't send to this session"))
+    }
+
+    @Test func aTapSelectsTheRowAndOnlyTheButtonGoesToItsTerminal() async throws {
+        final class Activations: @unchecked Sendable {
+            private let lock = NSLock()
+            private var apps: [String] = []
+            func add(_ app: String) { lock.withLock { apps.append(app) } }
+            var list: [String] { lock.withLock { apps } }
+        }
+        let activations = Activations()
+        let board = AgentBoard()
+        board.replace(source: "hooks:claude", with: [
+            "a": AgentBoard.Agent(state: .working, since: start, tool: "claude", app: "com.apple.Terminal"),
+            "b": AgentBoard.Agent(state: .working, since: start, tool: "claude", app: "com.apple.dt.Xcode"),
+        ], now: start)
+        let model = AgentsTabModel(board: board, home: { URL(fileURLWithPath: "/nonexistent-home") }, isConnected: { true }, scratch: [],
+                                   sender: Recorder().sender, clis: { clis }, targets: terminals.check,
+                                   focuser: AgentFocuser(run: { _ in .sent }, activate: { activations.add($0) }, herdr: { _, _ in }))
+        model.fixedRecent = []
+        model.refresh(now: start)
+        await settle(model)
+        let a = try row(model, "a"), b = try row(model, "b")
+        #expect(a.focusable && b.focusable)
+        model.select(b)
+        #expect(model.recipient?.id == b.id && activations.list.isEmpty)
+        model.focus(a)
+        #expect(activations.list == ["com.apple.Terminal"])
+        // Going to a terminal doesn't change who the composer writes to.
+        #expect(model.recipient?.id == b.id)
+    }
+
+    @Test func recentConversationsShowOnlyWhenNoSessionIsListed() async throws {
+        let board = AgentBoard()
+        let model = makeModel(board, sender: Recorder().sender)
+        model.fixedRecent = AgentBoard.demoRecent()
+        model.refresh(now: start)
+        #expect(model.rows.isEmpty && model.showsRecent && !model.showsEmptyMessage)
+        board.replace(source: "hooks:claude", with: ["a": agent(.working)], now: start)
+        model.refresh(now: start)
+        #expect(!model.rows.isEmpty && !model.recent.isEmpty && !model.showsRecent)
+        board.replace(source: "hooks:claude", with: [:], now: start)
+        model.refresh(now: start)
+        #expect(model.showsRecent)
+        model.fixedRecent = []
+        model.refresh(now: start)
+        #expect(!model.showsRecent && model.showsEmptyMessage)
+    }
+
+    @Test func theComposerSentencesAreTranslatedIntoEveryLanguageAndTheBubbleOneIsGone() throws {
+        let resources = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Resources")
+        for language in ["de", "es", "fr", "ja", "ko", "zh-Hans"] {
+            let table = try #require(NSDictionary(contentsOfFile: resources.appendingPathComponent("\(language).lproj/Localizable.strings").path), Comment(rawValue: language))
+            for key in ["To %@", "Message"] {
+                let text = table[key] as? String ?? ""
+                // French writes it the same.
+                #expect(!text.isEmpty && (text != key || language == "fr"), Comment(rawValue: "\(language): \(key)"))
+            }
+            #expect((table["To %@"] as? String)?.contains("%@") == true, Comment(rawValue: language))
+            #expect(table["Send a message"] == nil, Comment(rawValue: language))
+        }
     }
 
     // MARK: Verifying the target
@@ -695,8 +878,9 @@ struct AgentSendModelTests {
             #expect(!unverified.offersInput && !unverified.acceptsInput && !unverified.inputBlocked, Comment(rawValue: id))
             #expect(!model.send(message: "hello", to: unverified), Comment(rawValue: id))
             #expect(!model.send(files: [URL(fileURLWithPath: "/tmp/a.png")], to: unverified), Comment(rawValue: id))
-            model.compose(unverified)
-            #expect(model.composing == nil && model.notes[unverified.id] == nil, Comment(rawValue: id))
+            model.select(unverified)
+            model.setComposing(true)
+            #expect(!model.composing && model.notes[unverified.id] == nil, Comment(rawValue: id))
         }
         try await Task.sleep(for: .milliseconds(100))
         #expect(recorder.recorded.isEmpty)
@@ -759,8 +943,9 @@ struct AgentSendModelTests {
         await eventually { (try? row(model))?.offersInput == false }
         let after = try row(model)
         #expect(!after.offersInput && !after.acceptsInput)
-        model.compose(after)
-        #expect(model.composing == nil)
+        model.select(after)
+        model.setComposing(true)
+        #expect(!model.composing)
     }
 
     @Test func aFailedSendToAStillVerifiedSessionKeepsTheBubble() async throws {

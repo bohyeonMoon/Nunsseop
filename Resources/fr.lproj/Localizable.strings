@@ -407,7 +407,8 @@
 "%@ ago" = "il y a %@";
 
 /* Sending to a session */
-"Send a message" = "Envoyer un message";
+"To %@" = "À %@";
+"Message" = "Message";
 "Answer the prompt first" = "Répondez d'abord à la question";
 "Couldn't send to this session" = "Envoi à cette session impossible";
 

@@ -432,7 +432,8 @@
 "%@ ago" = "%@ 전";
 
 /* Sending to a session */
-"Send a message" = "메시지 보내기";
+"To %@" = "%@에게";
+"Message" = "메시지";
 "Answer the prompt first" = "먼저 질문에 답하세요";
 "Couldn't send to this session" = "이 세션으로 보내지 못했습니다";
 

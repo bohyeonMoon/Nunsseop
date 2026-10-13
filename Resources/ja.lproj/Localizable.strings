@@ -407,7 +407,8 @@
 "%@ ago" = "%@前";
 
 /* Sending to a session */
-"Send a message" = "メッセージを送信";
+"To %@" = "%@ へ";
+"Message" = "メッセージ";
 "Answer the prompt first" = "先にプロンプトに答えてください";
 "Couldn't send to this session" = "このセッションに送信できませんでした";
 

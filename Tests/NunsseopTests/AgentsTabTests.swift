@@ -290,6 +290,22 @@ struct AgentsTabModelTests {
         #expect(model.rows[4].details == ["Idle", "Claude Code", "Sonnet 5.5", "12k"])
     }
 
+    @Test func theDemoOffersAComposerThatTakesInputAndOneThatRefuses() async {
+        let board = AgentBoard()
+        board.replace(source: "demo", with: AgentBoard.demoAgents())
+        let model = AgentsTabModel(board: board, isConnected: { true }, sender: AgentBoard.demoSender, clis: { AgentBoard.demoCLIs },
+                                   targets: AgentBoard.demoTargets)
+        model.fixed = AgentBoard.demoTranscripts
+        model.refresh()
+        let settled = await eventually { !model.verifying && model.rows.contains { $0.acceptsInput } }
+        #expect(settled)
+        let waiting = model.rows.first { $0.title == "api-server" }
+        #expect(waiting?.acceptsInput == false && waiting?.blockReason == AgentRow.InputBlock.prompt.message)
+        // The waiting row is listed first but cannot take input, so the working one is who the composer writes to.
+        #expect(model.recipient?.title == "Agents tab" && model.recipient?.acceptsInput == true)
+        #expect(model.rows.filter { !$0.acceptsInput && $0.blockReason != nil }.count == 4)
+    }
+
     @Test func anEmptyTabSaysSoWhenConnectedAndHowToConnectWhenNot() {
         let board = AgentBoard()
         var connected = false

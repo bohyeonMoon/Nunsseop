@@ -198,16 +198,34 @@ extension Herdr {
 
 #if DEBUG
 extension AgentBoard {
-    /// Two Claude Code sessions working, one asking for input, one idle and a Codex session working.
+    /// Two Claude Code sessions working, one asking for input, one idle and a Codex session working. "a" and "c" are in (made-up) Muxy
+    /// sessions the demo's fakes vouch for (see `demoTargets`), so the composer can be seen taking input ("a") and refusing it ("c": a
+    /// prompt is open); the others have no terminal, so it refuses with its other reasons.
     static func demoAgents(now: Date = .now) -> [String: Agent] {
         [
-            "a": Agent(state: .working, since: now.addingTimeInterval(-190), tool: "claude", cwd: "/Users/demo/Projects/nunsseop"),
+            "a": Agent(state: .working, since: now.addingTimeInterval(-190), tool: "claude", cwd: "/Users/demo/Projects/nunsseop", input: .muxy("demo-a"), pid: 9_101),
             "b": Agent(state: .working, since: now.addingTimeInterval(-45), tool: "claude", cwd: "/Users/demo/Projects/site"),
-            "c": Agent(state: .waiting, since: now.addingTimeInterval(-720), tool: "claude", cwd: "/Users/demo/Projects/api-server"),
+            "c": Agent(state: .waiting, since: now.addingTimeInterval(-720), tool: "claude", cwd: "/Users/demo/Projects/api-server", input: .muxy("demo-c"), pid: 9_201),
             "d": Agent(state: .working, since: now.addingTimeInterval(-3_900), tool: "codex", cwd: "/Users/demo/Projects/ios-app"),
             "e": Agent(state: .idle, since: now.addingTimeInterval(-2_400), tool: "claude", cwd: "/Users/demo/Projects/docs"),
         ]
     }
+
+    /// The demo's process tree: each of the two Muxy sessions has the shell and Muxy's server above it.
+    static let demoTargets = AgentTargetCheck(
+        processes: ProcessTable { pid in
+            switch pid {
+            case 9_101, 9_201: ProcessRecord(parent: pid + 1, executable: "/usr/local/bin/claude", hasTTY: true)
+            case 9_102, 9_202: ProcessRecord(parent: pid + 1, executable: "/bin/zsh", hasTTY: true)
+            case 9_103, 9_203: ProcessRecord(parent: pid + 1, executable: "/Applications/Muxy.app/Contents/MacOS/muxy-server", hasTTY: false)
+            case 9_104, 9_204: ProcessRecord(parent: 1, executable: "/Applications/Muxy.app/Contents/MacOS/muxy-app", hasTTY: false)
+            default: nil
+            }
+        },
+        muxyList: { _ in "demo-a\ta\tLive\ttrue\t/tmp\ndemo-c\tc\tLive\ttrue\t/tmp\n" })
+    /// The demo never types into a real terminal.
+    static let demoSender = AgentSender { _ in .sent }
+    static let demoCLIs = TerminalCLIs(muxy: URL(fileURLWithPath: "/demo/muxy"))
 
     /// What their transcripts would say, by `Entry.key`.
     static let demoTranscripts: [String: AgentTranscript] = [

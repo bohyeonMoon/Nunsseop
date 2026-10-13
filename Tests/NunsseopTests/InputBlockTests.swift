@@ -18,7 +18,7 @@ private func agent(state: AgentBoard.State = .working, app: String? = nil, input
 struct InputBlockDerivationTests {
     @Test func aSendableRowHasNoBlock() {
         let row = AgentRow(entry(agent(input: .muxy("42"))), transcript: nil, inputVerified: true)
-        #expect(row.acceptsInput && row.inputBlock == nil && row.sendHelp == String(localized: "Send a message"))
+        #expect(row.acceptsInput && row.inputBlock == nil && row.blockReason == nil)
     }
 
     @Test func aPromptBlocksARowThatCouldOtherwiseBeTypedInto() {
@@ -26,7 +26,7 @@ struct InputBlockDerivationTests {
         // Not through `promptMayBeOpen`, which `effective(at:)` sets: ask for it as the board does.
         let asking = AgentRow(AgentBoard.Entry(source: "hooks:claude", id: "a", agent: agent(state: .waiting, input: .muxy("42")).effective(at: start)),
                               transcript: nil, inputVerified: true)
-        #expect(!asking.acceptsInput && asking.inputBlock == .prompt && asking.sendHelp == String(localized: "Answer the prompt first"))
+        #expect(!asking.acceptsInput && asking.inputBlock == .prompt && asking.blockReason == String(localized: "Answer the prompt first"))
         #expect(row.inputBlock == .prompt)
     }
 
@@ -269,7 +269,7 @@ struct InputBlockModelTests {
         #expect(try row(model, "ghosttyApp").inputBlock == .unconfirmed)
         // Found in the process tree: no bundle is on disk here, so it is named by the app's folder.
         #expect(try row(model, "ghosttyTree").inputBlock == .unsupportedApp("NoSuchTerm"))
-        #expect(try row(model, "ghosttyTree").sendHelp == AgentRow.InputBlock.unsupportedApp("NoSuchTerm").message)
+        #expect(try row(model, "ghosttyTree").blockReason == AgentRow.InputBlock.unsupportedApp("NoSuchTerm").message)
         #expect(try row(model, "oldHook").inputBlock == .noProcess)
         #expect(try row(model, "gone").inputBlock == .unconfirmed)
     }
@@ -282,8 +282,9 @@ struct InputBlockModelTests {
         #expect(model.verifying)
         for id in ["named", "unnamed", "ghostty"] {
             #expect(try row(model, id).inputBlock == .checking, Comment(rawValue: id))
-            model.compose(try row(model, id))
-            #expect(model.composing == nil, Comment(rawValue: id))
+            model.select(try row(model, id))
+            model.setComposing(true)
+            #expect(!model.composing, Comment(rawValue: id))
         }
         // Nothing to check without a process.
         #expect(try row(model, "oldHook").inputBlock == .noProcess)
@@ -340,8 +341,9 @@ struct InputBlockModelTests {
         for id in ["hookTmux", "ghostty", "oldHook", "gone", "asking"] {
             let blocked = try row(model, id)
             #expect(blocked.inputBlock != nil && !blocked.acceptsInput, Comment(rawValue: id))
-            model.compose(blocked)
-            #expect(model.composing == nil, Comment(rawValue: id))
+            model.select(blocked)
+            model.setComposing(true)
+            #expect(!model.composing, Comment(rawValue: id))
             #expect(!model.send(message: "hello", to: blocked), Comment(rawValue: id))
             #expect(!model.send(files: [URL(fileURLWithPath: "/tmp/a.png")], to: blocked), Comment(rawValue: id))
             #expect(model.notes[blocked.id] == nil, Comment(rawValue: id))
