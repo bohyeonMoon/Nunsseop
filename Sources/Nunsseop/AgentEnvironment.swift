@@ -7,7 +7,7 @@ struct ProcessEnvironment: Sendable {
     /// The variables the hook reads (`agentHookCommand`); nothing else is extracted, kept or logged.
     static let keys: Set<String> = [
         "MUXY_SESSION_ID", "CMUX_SURFACE_ID", "WEZTERM_PANE", "WEZTERM_UNIX_SOCKET", "KITTY_WINDOW_ID", "KITTY_LISTEN_ON",
-        "ITERM_SESSION_ID", "HERDR_PANE_ID", "TMUX", "ZELLIJ", "STY",
+        "ITERM_SESSION_ID", "ORCA_PANE_KEY", "HERDR_PANE_ID", "TMUX", "ZELLIJ", "STY",
     ]
 
     /// The environment of a process; nil when it can't be read. Tests give it made-up ones.

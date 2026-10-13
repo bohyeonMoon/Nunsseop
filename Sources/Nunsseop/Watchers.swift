@@ -177,7 +177,7 @@ enum AgentHook {
         let pid = background ? nil : pid(headers["x-pid"])
         let target = background || inHerdr || inMultiplexer ? nil : input(
             muxy: headers["x-muxy"], cmux: headers["x-cmux"], wezterm: headers["x-wezterm"], weztermSocket: headers["x-wezterm-socket"],
-            kitty: headers["x-kitty"], kittySocket: headers["x-kitty-socket"], iterm: headers["x-iterm"], app: app,
+            kitty: headers["x-kitty"], kittySocket: headers["x-kitty-socket"], orca: headers["x-orca"], iterm: headers["x-iterm"], app: app,
             tty: { pid.flatMap { processes.lookup($0)?.tty } },
             hosted: { AgentTargetCheck(processes: processes).hosted($0, pid: pid) })
         return AgentEvent(session: session, action: action, app: app, inHerdr: inHerdr, agent: agent, pid: pid, input: target,
@@ -185,7 +185,7 @@ enum AgentHook {
     }
 
     /// Where text for the session can go. Muxy before cmux: a Muxy session started from a cmux terminal inherits its variables
-    /// too; they come before WezTerm, kitty, iTerm2 and Terminal for the same reason. Of those the first whose terminal the session's
+    /// too; they come before WezTerm, kitty, Orca, iTerm2 and Terminal for the same reason. Of those the first whose terminal the session's
     /// process tree is really in (`hosted`) is taken, so a kitty started from a WezTerm shell, which has both terminals' variables,
     /// is told from the one it runs in; when none is, the first is kept and the check of the process tree (`AgentTargetCheck`)
     /// refuses it later. Terminal.app and iTerm2 export nothing a hook could use as an address, so they are told by the app
@@ -193,13 +193,14 @@ enum AgentHook {
     /// Not for a session in a herdr pane, tmux, zellij or screen, or a background one: the variables are those of the
     /// terminal around the multiplexer, or of the daemon, and text typed there reaches whichever pane is active, not the session.
     static func input(muxy: String?, cmux: String?, wezterm: String? = nil, weztermSocket: String? = nil, kitty: String? = nil,
-                      kittySocket: String? = nil, iterm: String? = nil, app: String? = nil, tty: () -> String? = { nil },
+                      kittySocket: String? = nil, orca: String? = nil, iterm: String? = nil, app: String? = nil, tty: () -> String? = { nil },
                       hosted: (AgentInput) -> Bool = { _ in true }) -> AgentInput? {
         if let session = AgentInput.muxySession(muxy) { return .muxy(session) }
         if let surface = AgentInput.cmuxSurface(cmux) { return .cmux(surface) }
         var candidates: [AgentInput] = []
         if let pane = AgentInput.numericID(wezterm), let socket = AgentInput.weztermSocket(weztermSocket) { candidates.append(.wezterm(pane: pane, socket: socket)) }
         if let window = AgentInput.numericID(kitty), let socket = AgentInput.kittySocket(kittySocket) { candidates.append(.kitty(window: window, socket: socket)) }
+        if let pane = AgentInput.orcaPane(orca) { candidates.append(.orca(paneKey: pane)) }
         if app == TerminalScripts.itermID, AgentInput.itermSession(iterm) != nil, let device = AgentInput.ttyDevice(tty()) { candidates.append(.iterm(tty: device)) }
         if app == TerminalScripts.terminalID, let device = AgentInput.ttyDevice(tty()) { candidates.append(.terminalApp(tty: device)) }
         return candidates.first(where: hosted) ?? candidates.first
@@ -213,7 +214,7 @@ enum AgentHook {
         guard !inMultiplexer(environment: environment), environment["HERDR_PANE_ID"]?.isEmpty != false else { return nil }
         return input(muxy: environment["MUXY_SESSION_ID"], cmux: environment["CMUX_SURFACE_ID"],
                      wezterm: environment["WEZTERM_PANE"], weztermSocket: environment["WEZTERM_UNIX_SOCKET"],
-                     kitty: environment["KITTY_WINDOW_ID"], kittySocket: environment["KITTY_LISTEN_ON"],
+                     kitty: environment["KITTY_WINDOW_ID"], kittySocket: environment["KITTY_LISTEN_ON"], orca: environment["ORCA_PANE_KEY"],
                      iterm: environment["ITERM_SESSION_ID"], app: app, tty: tty, hosted: hosted)
     }
 
@@ -292,8 +293,8 @@ final class NotifyServer: @unchecked Sendable {
     /// stdin; only the ids and names below leave it, as headers (no prompt, reply, folder or transcript), trimmed to
     /// safe characters so a stray newline can't break one. `$PPID` is the `claude` process itself (the same is assumed for
     /// Codex, whose hook runs under it the same way; not checkable without running Codex), whose end tells that a session is
-    /// gone and whose terminal `AgentTargetCheck` looks up. `X-Muxy`, `X-Cmux`, `X-Wezterm` (with `X-Wezterm-Socket`), `X-Kitty` (with `X-Kitty-Socket`) and
-    /// `X-Iterm` carry the ids of the terminal it runs in (empty when it isn't in one), which `AgentHook.event` checks again before they say where to type; `X-Mux` says it runs
+    /// gone and whose terminal `AgentTargetCheck` looks up. `X-Muxy`, `X-Cmux`, `X-Wezterm` (with `X-Wezterm-Socket`), `X-Kitty` (with `X-Kitty-Socket`),
+    /// `X-Orca` (the pane key Orca puts in `ORCA_PANE_KEY`) and `X-Iterm` carry the ids of the terminal it runs in (empty when it isn't in one), which `AgentHook.event` checks again before they say where to type; `X-Mux` says it runs
     /// inside tmux, zellij or screen.
     /// Nothing may reach stdout, which `UserPromptSubmit` and `SessionStart` add to Claude's context, and a closed or stuck
     /// Nunsseop costs a session at most a second.
@@ -310,7 +311,7 @@ final class NotifyServer: @unchecked Sendable {
             + "-H \"X-Muxy: ${MUXY_SESSION_ID}\" -H \"X-Cmux: ${CMUX_SURFACE_ID}\" "
             + "-H \"X-Mux: ${TMUX:+1}${ZELLIJ:+1}${STY:+1}\" "
             + "-H \"X-Wezterm: ${WEZTERM_PANE}\" -H \"X-Wezterm-Socket: ${WEZTERM_UNIX_SOCKET}\" -H \"X-Kitty: ${KITTY_WINDOW_ID}\" -H \"X-Kitty-Socket: ${KITTY_LISTEN_ON}\" "
-            + "-H \"X-Iterm: ${ITERM_SESSION_ID}\" "
+            + "-H \"X-Iterm: ${ITERM_SESSION_ID}\" -H \"X-Orca: ${ORCA_PANE_KEY}\" "
             + "-H \"X-Background: ${CLAUDE_JOB_DIR:+1}\" "
             + "-H \"X-Pid: $PPID\" "
             + (agent == .claude ? "" : "-H 'X-Agent: \(agent.rawValue)' ")

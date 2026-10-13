@@ -70,6 +70,7 @@ enum OpenCodePlugin {
                 "X-Kitty": clean(env.KITTY_WINDOW_ID),
                 "X-Kitty-Socket": cleanPath(env.KITTY_LISTEN_ON),
                 "X-Iterm": clean(env.ITERM_SESSION_ID),
+                "X-Orca": clean(env.ORCA_PANE_KEY),
                 "X-Pid": String(process.pid),
               },
               signal: AbortSignal.timeout(1000),

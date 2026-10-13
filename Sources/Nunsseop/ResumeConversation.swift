@@ -3,7 +3,7 @@ import Foundation
 
 /// The terminal a conversation is resumed in. Muxy is left out: it can't open a visible tab from outside.
 enum ResumeTerminal: String, CaseIterable, Identifiable {
-    case ghostty, iterm, wezterm, kitty, cmux, terminal
+    case ghostty, iterm, wezterm, kitty, cmux, orca, terminal
 
     var id: String { rawValue }
 
@@ -14,6 +14,7 @@ enum ResumeTerminal: String, CaseIterable, Identifiable {
         case .wezterm: "WezTerm"
         case .kitty: "kitty"
         case .cmux: "cmux"
+        case .orca: "Orca"
         case .terminal: "Terminal"
         }
     }
@@ -25,6 +26,7 @@ enum ResumeTerminal: String, CaseIterable, Identifiable {
         case .wezterm: WezTerm.bundleID
         case .kitty: Kitty.bundleID
         case .cmux: Cmux.bundleID
+        case .orca: Orca.bundleID
         case .terminal: TerminalScripts.terminalID
         }
     }
@@ -32,18 +34,21 @@ enum ResumeTerminal: String, CaseIterable, Identifiable {
     var appURL: URL? { NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) }
 
     /// Terminal is always there. WezTerm may be only its command-line tool. kitty can be told from outside only through a socket, which
-    /// a session in it reported and which still exists: without one it isn't offered.
+    /// a session in it reported and which still exists: without one it isn't offered. Orca is offered while it runs, since its tool
+    /// can't open a tab in an Orca that isn't (and must not start one), nor in one with no window left to show it in.
     static var installed: [ResumeTerminal] {
-        installed(appURL: \.appURL, weztermInstalled: WezTerm.isInstalled, kittyCLI: Kitty.cli, kittySocket: Kitty.socket, socketExists: Kitty.socketExists)
+        installed(appURL: \.appURL, weztermInstalled: WezTerm.isInstalled, kittyCLI: Kitty.cli, kittySocket: Kitty.socket, socketExists: Kitty.socketExists,
+                  orcaCLI: Orca.cli, orcaRunning: Orca.isRunning && Orca.hasWindow)
     }
 
     /// `installed` for the given state of the machine.
     static func installed(appURL: (ResumeTerminal) -> URL?, weztermInstalled: Bool, kittyCLI: URL?, kittySocket: String?,
-                          socketExists: (String) -> Bool) -> [ResumeTerminal] {
+                          socketExists: (String) -> Bool, orcaCLI: URL? = nil, orcaRunning: Bool = false) -> [ResumeTerminal] {
         allCases.filter { terminal in
             switch terminal {
             case .terminal: true
             case .wezterm: weztermInstalled
+            case .orca: appURL(terminal) != nil && orcaCLI != nil && orcaRunning
             case .kitty: appURL(terminal) != nil && kittyCLI != nil && kittySocket.map(socketExists) == true
             default: appURL(terminal) != nil
             }
@@ -81,6 +86,9 @@ enum Resume {
         var kittyCLI: URL?
         /// The socket of kitty's remote control (`unix:/path`), as a session in it reported.
         var kittySocket: String?
+        var orcaCLI: URL?
+        /// Whether Orca has a window to open a tab in (see `Orca.hasWindow`).
+        var orcaHasWindow = true
         /// The bundle ids of the apps that are running.
         var running: Set<String> = []
         /// Whether an app runs now, for waiting on one that was just started.
@@ -97,6 +105,7 @@ enum Resume {
         static var live: Setup {
             Setup(installed: ResumeTerminal.installed, ghostty: ResumeTerminal.ghostty.appURL, cmuxCLI: Cmux.cli,
                   wezterm: ResumeTerminal.wezterm.appURL, weztermCLI: WezTerm.cli, kittyCLI: Kitty.cli, kittySocket: Kitty.socket,
+                  orcaCLI: Orca.cli, orcaHasWindow: Orca.hasWindow,
                   running: Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier)),
                   cmuxRunning: !NSRunningApplication.runningApplications(withBundleIdentifier: Cmux.bundleID).isEmpty,
                   shell: Resume.shell(from: ProcessInfo.processInfo.environment["SHELL"]),
@@ -194,6 +203,7 @@ enum Resume {
             case .wezterm: opened = openInWezTerm(conversation.cwd, line, setup: setup, launcher: launcher)
             case .kitty: opened = openInKitty(conversation.cwd, line, setup: setup, launcher: launcher)
             case .cmux: opened = openInCmux(conversation.cwd, line, setup: setup, launcher: launcher)
+            case .orca: opened = openInOrca(conversation.cwd, line, setup: setup, launcher: launcher)
             case .terminal: opened = openInTerminal(line, setup: setup, launcher: launcher)
             }
             if opened { return candidate }
@@ -309,6 +319,22 @@ enum Resume {
         if launcher.run(cli, cmuxArguments(cwd: cwd, script: script.path)) != nil { return true }
         discard(script)
         return false
+    }
+
+    /// A focused tab of the worktree the folder is in or is, through the running Orca's tool, which opens tabs only in worktrees Orca
+    /// knows. The tab is given the plain path of a script, which its shell runs; Orca is brought forward after. Not started: with none
+    /// running or none with a window (it would run the script in a hidden process), or a folder in no worktree of Orca's, the next
+    /// terminal takes the conversation. A reply that doesn't say the tab is on screen counts as a failure.
+    private static func openInOrca(_ cwd: String, _ line: String, setup: Setup, launcher: Launcher) -> Bool {
+        guard setup.running.contains(Orca.bundleID), setup.orcaHasWindow, let cli = setup.orcaCLI,
+              let listing = launcher.run(cli, Orca.worktreeListArguments), let worktree = Orca.worktree(containing: cwd, in: listing),
+              let script = writeScript(line, setup: setup) else { return false }
+        if !(launcher.run(cli, Orca.createArguments(worktree: worktree, script: script.path)).map(Orca.isVisible(created:)) ?? false) {
+            discard(script)
+            return false
+        }
+        _ = launcher.run(openTool, ["-b", Orca.bundleID])
+        return true
     }
 
     private static func openInTerminal(_ line: String, setup: Setup, launcher: Launcher) -> Bool {

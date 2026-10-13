@@ -89,7 +89,7 @@ struct AgentHookShellTests {
             "-s", "-m", "1", "--connect-timeout", "1", "-X", "POST", "http://127.0.0.1:\(NotifyServer.port)/agent", "-d", "",
             "-H", sent.authArgument, "-H", "X-Session: abc-123", "-H", "X-Event: Stop",
             "-H", "X-Type: permission_prompt", "-H", "X-Subagent: ", "-H", "X-App: com.x",
-            "-H", "X-Herdr: ", "-H", "X-Muxy: ", "-H", "X-Cmux: ", "-H", "X-Mux: ", "-H", "X-Wezterm: ", "-H", "X-Wezterm-Socket: ", "-H", "X-Kitty: ", "-H", "X-Kitty-Socket: ", "-H", "X-Iterm: ", "-H", "X-Background: ", "-H", "X-Pid: \(getpid())",
+            "-H", "X-Herdr: ", "-H", "X-Muxy: ", "-H", "X-Cmux: ", "-H", "X-Mux: ", "-H", "X-Wezterm: ", "-H", "X-Wezterm-Socket: ", "-H", "X-Kitty: ", "-H", "X-Kitty-Socket: ", "-H", "X-Iterm: ", "-H", "X-Orca: ", "-H", "X-Background: ", "-H", "X-Pid: \(getpid())",
         ])
         #expect(sent.curlCalls == 1)
         #expect(sent.stdout.isEmpty)
@@ -128,6 +128,18 @@ struct AgentHookShellTests {
             #expect(sent.args.contains("X-Wezterm-Socket: /tmp/wezterm-gui-sock-1"))
             #expect(sent.args.contains("X-Kitty-Socket: unix:/tmp/kitty-1234"))
             #expect(sent.args.contains("X-Iterm: w0t0p0:6F1B2C3D-0000-4000-8000-000000000001"))
+            #expect(sent.stdout.isEmpty && sent.status == 0)
+        }
+    }
+
+    @Test func theOrcaPaneKeyIsSentAsItIsForBothTools() throws {
+        let stdin = json(["session_id": "s", "hook_event_name": "Stop"])
+        let key = "7d1e6f0a-4b2c-4a85-9c3d-0e5f1a2b3c4d:2c9a0f1e-8b7d-4e6a-a1b2-c3d4e5f60718"
+        for command in [NotifyServer.agentHookCommand, NotifyServer.agentHookCommand(for: .codex)] {
+            let sent = try ShellRun.run({ _ in ["-c", command] }, stdin: stdin, environment: ["__CFBundleIdentifier": "com.x", "ORCA_PANE_KEY": key])
+            #expect(sent.args.contains("X-Orca: \(key)"))
+            // Nothing else of Orca's environment is sent: the hook endpoint's port and token are not Nunsseop's to use.
+            #expect(sent.args.allSatisfy { !$0.contains("ORCA_AGENT_HOOK") })
             #expect(sent.stdout.isEmpty && sent.status == 0)
         }
     }
@@ -200,7 +212,7 @@ struct CodexAgentHookShellTests {
             "-s", "-m", "1", "--connect-timeout", "1", "-X", "POST", "http://127.0.0.1:\(NotifyServer.port)/agent", "-d", "",
             "-H", sent.authArgument, "-H", "X-Session: 019e5b2c-7a41-7c10-8d3e-2f6a9c1b4e07",
             "-H", "X-Event: PermissionRequest", "-H", "X-Type: ", "-H", "X-Subagent: ", "-H", "X-App: com.x",
-            "-H", "X-Herdr: ", "-H", "X-Muxy: ", "-H", "X-Cmux: ", "-H", "X-Mux: ", "-H", "X-Wezterm: ", "-H", "X-Wezterm-Socket: ", "-H", "X-Kitty: ", "-H", "X-Kitty-Socket: ", "-H", "X-Iterm: ", "-H", "X-Background: ", "-H", "X-Pid: \(getpid())",
+            "-H", "X-Herdr: ", "-H", "X-Muxy: ", "-H", "X-Cmux: ", "-H", "X-Mux: ", "-H", "X-Wezterm: ", "-H", "X-Wezterm-Socket: ", "-H", "X-Kitty: ", "-H", "X-Kitty-Socket: ", "-H", "X-Iterm: ", "-H", "X-Orca: ", "-H", "X-Background: ", "-H", "X-Pid: \(getpid())",
             "-H", "X-Agent: codex",
         ])
         #expect(sent.body.isEmpty)

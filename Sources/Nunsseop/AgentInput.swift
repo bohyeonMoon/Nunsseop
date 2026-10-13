@@ -21,6 +21,9 @@ enum AgentInput: Equatable {
     /// A Ghostty terminal, found by the session's folder among the tabs with a Claude title and, among several in it, by its name in
     /// that title: Ghostty gives a shell no id of its own. Which terminal it is comes from `Ghostty.resolve`, so the id is not part of this.
     case ghostty(cwd: String, name: String?)
+    /// An Orca pane (`ORCA_PANE_KEY`, `<tab id>:<leaf UUID>`). Orca's tool addresses a terminal by a handle it lists for the pane (see
+    /// `OrcaPick`), which is looked up on every verification pass, so the key alone sends nothing.
+    case orca(paneKey: String)
 
     /// A Muxy session id from the hook: 1 to 20 ASCII digits (a 64-bit id).
     static func muxySession(_ value: String?) -> String? {
@@ -34,6 +37,37 @@ enum AgentInput: Equatable {
         guard let value, (8...64).contains(value.utf8.count), value.utf8.first != UInt8(ascii: "-"),
               value.utf8.allSatisfy({ $0 == UInt8(ascii: "-") || Character(UnicodeScalar($0)).isHexDigit }) else { return nil }
         return value
+    }
+
+    /// An Orca pane key from the hook: a tab id (1 to 64 ASCII letters, digits, `_`, `.` and `-`), a colon and the pane's UUID as Orca
+    /// writes it (lowercase, version 1 to 5, variant 8 to b).
+    static func orcaPane(_ value: String?) -> String? {
+        guard let value, value.utf8.count <= 101, let colon = value.firstIndex(of: ":") else { return nil }
+        let tab = value[..<colon], leaf = Array(value[value.index(after: colon)...].utf8)
+        guard (1...64).contains(tab.utf8.count), tab.utf8.allSatisfy(isPlainID), leaf.count == 36 else { return nil }
+        let hex = { (byte: UInt8) in (UInt8(ascii: "0")...UInt8(ascii: "9")).contains(byte) || (UInt8(ascii: "a")...UInt8(ascii: "f")).contains(byte) }
+        for (index, byte) in leaf.enumerated() {
+            switch index {
+            case 8, 13, 18, 23: if byte != UInt8(ascii: "-") { return nil }
+            case 14: if !(UInt8(ascii: "1")...UInt8(ascii: "5")).contains(byte) { return nil }
+            case 19: if !"89ab".utf8.contains(byte) { return nil }
+            default: if !hex(byte) { return nil }
+            }
+        }
+        return value
+    }
+
+    /// A terminal handle from Orca's listing (`term_` and a UUID): 1 to 128 ASCII letters, digits, `_` and `-`, not starting with a dash,
+    /// which the tool would take for an option.
+    static func orcaHandle(_ value: String?) -> String? {
+        guard let value, (1...128).contains(value.utf8.count), value.utf8.first != UInt8(ascii: "-"),
+              value.utf8.allSatisfy({ $0 == UInt8(ascii: "-") || isPlainID($0) && $0 != UInt8(ascii: ".") }) else { return nil }
+        return value
+    }
+
+    private static func isPlainID(_ byte: UInt8) -> Bool {
+        (UInt8(ascii: "0")...UInt8(ascii: "9")).contains(byte) || (UInt8(ascii: "a")...UInt8(ascii: "z")).contains(byte)
+            || (UInt8(ascii: "A")...UInt8(ascii: "Z")).contains(byte) || "_.-".utf8.contains(byte)
     }
 
     /// A WezTerm pane or kitty window id from the hook: 1 to 10 ASCII digits.
@@ -107,8 +141,9 @@ struct TerminalCLIs {
     var cmux: URL?
     var wezterm: URL?
     var kitty: URL?
+    var orca: URL?
 
-    static var live: TerminalCLIs { TerminalCLIs(muxy: MuxyNotice.cli, cmux: Cmux.cli, wezterm: WezTerm.cli, kitty: Kitty.cli) }
+    static var live: TerminalCLIs { TerminalCLIs(muxy: MuxyNotice.cli, cmux: Cmux.cli, wezterm: WezTerm.cli, kitty: Kitty.cli, orca: Orca.cli) }
 }
 
 extension MuxyNotice {
@@ -168,8 +203,9 @@ enum AgentSend {
     }
 
     /// The calls that put `text` into the session, followed by Return when `submit`; nil when its terminal's tool isn't there.
-    /// `ghostty` is the terminal picked for a Ghostty session (see `Ghostty.resolve`); without it there is no plan.
-    static func steps(_ input: AgentInput, text: String, submit: Bool, clis: TerminalCLIs, ghostty: GhosttyPick? = nil) -> [AgentStep]? {
+    /// `ghostty` is the terminal picked for a Ghostty session (see `Ghostty.resolve`); without it there is no plan. `orca` is the same
+    /// for an Orca pane, and must be the pane's own.
+    static func steps(_ input: AgentInput, text: String, submit: Bool, clis: TerminalCLIs, ghostty: GhosttyPick? = nil, orca: OrcaPick? = nil) -> [AgentStep]? {
         switch input {
         case .muxy(let session):
             guard let cli = clis.muxy else { return nil }
@@ -214,6 +250,14 @@ enum AgentSend {
             let usable = Ghostty.usableName(name)
             return [.script(TerminalScripts.ghosttySend(terminal: ghostty.terminal, folders: Ghostty.spellings(of: folder), name: usable,
                                                         needsName: ghostty.usesName && !usable.isEmpty, text: text, submit: submit))]
+        case .orca(let paneKey):
+            // Orca's tool reads no escapes in a text: it goes to the terminal as JSON. The Return is a call of its own: text and `--enter`
+            // together make newer Orca builds hold the call 1.5 to 8 seconds in Claude Code and Codex (past `TerminalFocus.run`'s limit,
+            // which would leave the message typed and unsent), and older ones, or other agents, write both in one go, which a TUI can
+            // swallow the Return of. `--text=` because a text starting with `--` would be taken for an option.
+            guard let cli = clis.orca, let orca, orca.paneKey == paneKey else { return nil }
+            let send = ["terminal", "send", "--terminal", orca.handle]
+            return [.run(cli, send + ["--text=" + text])] + (submit ? [.run(cli, send + ["--enter"])] : [])
         }
     }
 
@@ -226,9 +270,10 @@ enum AgentSend {
         json(["id": id, "method": method, "params": params]) ?? ""
     }
 
-    /// The environment the terminals' tools run in: Nunsseop's own, less `terminalVariables`.
+    /// The environment the terminals' tools run in: Nunsseop's own, less `terminalVariables` and Orca's `ORCA_*` (which pick the instance
+    /// Orca's tool talks to, a paired server, and the terminal it acts for).
     static var cleanEnvironment: [String: String] {
-        ProcessInfo.processInfo.environment.filter { !terminalVariables.contains($0.key) }
+        ProcessInfo.processInfo.environment.filter { !terminalVariables.contains($0.key) && !$0.key.hasPrefix("ORCA_") }
     }
 
     /// Runs a step; false when it fails or the tool doesn't answer in time.

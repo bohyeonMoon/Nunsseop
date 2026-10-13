@@ -69,7 +69,7 @@ struct AgentRow: Identifiable, Equatable {
 
     /// The terminals that have an input API (see `AgentInput`); the other apps a session can run in have none.
     static let inputApps: Set<String> = [TerminalScripts.terminalID, TerminalScripts.itermID, MuxyNotice.bundleID, Cmux.bundleID,
-                                         WezTerm.bundleID, Kitty.bundleID, TerminalScripts.ghosttyID]
+                                         WezTerm.bundleID, Kitty.bundleID, TerminalScripts.ghosttyID, Orca.bundleID]
 
     /// An app's name for the tooltip: the installed app's own, else the last part of its bundle id; a name with a space or no dot is
     /// an app folder's (see `AgentTargetCheck.hostApp`) and stays whole. `installed` finds the name by bundle id.
@@ -127,7 +127,7 @@ struct AgentRow: Identifiable, Equatable {
         switch input {
         case nil: false
         case .herdr: true
-        case .muxy, .cmux, .terminalApp, .iterm, .wezterm, .kitty, .ghostty: inputVerified
+        case .muxy, .cmux, .terminalApp, .iterm, .wezterm, .kitty, .ghostty, .orca: inputVerified
         }
     }
 
@@ -347,6 +347,8 @@ final class AgentsTabModel: ObservableObject {
     private var ghosttyListing: GhosttyListing?
     /// The terminal each row that can be sent to in Ghostty was resolved to, by `Entry.key`; what a send finds the tab again by.
     private var ghosttyPicks: [String: GhosttyPick] = [:]
+    /// The handle Orca's tool gave the pane of each row verified in Orca, by `Entry.key`: found in the same pass as the proof.
+    private var orcaPicks: [String: OrcaPick] = [:]
     /// The app found above the process of each session whose hook named none, by `Entry.key`; for the tooltip of a row that can't be typed into.
     private var hostApps: [String: String] = [:]
     /// The entries a verification pass has covered: `Entry.key` and process, see `checkedKey`. A row outside it is still being checked.
@@ -460,13 +462,15 @@ final class AgentsTabModel: ObservableObject {
             if !environmentCache.isEmpty { environmentCache = [:] }
             if !hostApps.isEmpty { hostApps = [:] }
             if !ghosttyHosted.isEmpty { ghosttyHosted = [:] }
+            if !orcaPicks.isEmpty { orcaPicks = [:] }
             ghosttyListing = nil
             if !checked.isEmpty { checked = [] }
             return
         }
         guard !verifying else { verifyWanted = true; return }
         verifying = true
-        let targets = targets, environments = environments, muxy = clis().muxy, others = Set(entries.compactMap { $0.agent.pid })
+        let tools = clis()
+        let targets = targets, environments = environments, muxy = tools.muxy, orca = tools.orca, others = Set(entries.compactMap { $0.agent.pid })
         let pids = Set(unnamed.map(\.pid))
         let covered = Set(entries.compactMap { entry in entry.agent.pid.map { Self.checkedKey(entry.key, $0) } })
         let unplaced = entries.compactMap { entry -> (key: String, pid: Int32)? in
@@ -495,7 +499,14 @@ final class AgentsTabModel: ObservableObject {
             let candidates = named + derived.map { (key: $0.key, target: $0.value) }
             let wantsList = candidates.contains { if case .muxy = $0.target.input { true } else { false } }
             let sessions = wantsList ? targets.muxySessions(cli: muxy) : nil
-            let verified = candidates.filter { targets.verified($0.target.input, pid: $0.target.pid, muxySessions: sessions, others: others) }
+            // Orca's panes are listed once for all of them, and only if one session says it is in Orca.
+            let wantsOrca = candidates.contains { if case .orca = $0.target.input { true } else { false } }
+            let panes = wantsOrca ? targets.orcaPanes(cli: orca) : nil
+            let verified = candidates.filter { targets.verified($0.target.input, pid: $0.target.pid, muxySessions: sessions, orcaPanes: panes, others: others) }
+            var picks: [String: OrcaPick] = [:]
+            for session in verified {
+                if case .orca(let key) = session.target.input, let handle = panes?[key] { picks[session.key] = OrcaPick(paneKey: key, handle: handle) }
+            }
             var hosts: [String: String] = [:]
             for session in unplaced { hosts[session.key] = targets.hostApp(pid: session.pid) }
             let taken = Set(verified.map(\.key))
@@ -510,13 +521,15 @@ final class AgentsTabModel: ObservableObject {
             }
             let listing = inGhostty.isEmpty ? nil : Ghostty.list(scripts: scripts)
             await self?.verified(Dictionary(uniqueKeysWithValues: verified.map { ($0.key, $0.target) }), derived: derived, environments: cache, hosts: hosts, covered: covered,
-                                 ghostty: (inGhostty, listing))
+                                 ghostty: (inGhostty, listing), orca: picks)
         }
     }
 
     private func verified(_ targets: [String: VerifiedTarget], derived: [String: VerifiedTarget], environments: [Int32: [String: String]],
-                          hosts: [String: String], covered: Set<String>, ghostty: (hosted: [String: Int32], listing: GhosttyListing?)) {
+                          hosts: [String: String], covered: Set<String>, ghostty: (hosted: [String: Int32], listing: GhosttyListing?),
+                          orca: [String: OrcaPick]) {
         checked = covered
+        orcaPicks = orca
         ghosttyHosted = ghostty.hosted
         ghosttyListing = ghostty.listing
         verifiedTargets = targets
@@ -638,7 +651,7 @@ final class AgentsTabModel: ObservableObject {
     func focus(_ row: AgentRow) {
         guard let current = rows.first(where: { $0.id == row.id }) else { return }
         notes[row.id] = nil
-        switch AgentFocus.plan(for: current, clis: clis(), ghostty: ghosttyPicks[row.id]) {
+        switch AgentFocus.plan(for: current, clis: clis(), ghostty: ghosttyPicks[row.id], orca: orcaPicks[row.id]) {
         case .herdr(let pane, let socket): focuser.herdr(pane, socket)
         case .app(let app): focuser.activate(app)
         case .nothing: break
@@ -669,7 +682,7 @@ final class AgentsTabModel: ObservableObject {
     private func deliver(_ text: String, submit: Bool, to row: AgentRow) -> Bool {
         guard let current = rows.first(where: { $0.id == row.id }), current.acceptsInput, let input = current.input else { return false }
         notes[row.id] = nil
-        guard let steps = AgentSend.steps(input, text: text, submit: submit, clis: clis(), ghostty: ghosttyPicks[row.id]) else {
+        guard let steps = AgentSend.steps(input, text: text, submit: submit, clis: clis(), ghostty: ghosttyPicks[row.id], orca: orcaPicks[row.id]) else {
             note(Self.failure, for: row.id)
             return true
         }
