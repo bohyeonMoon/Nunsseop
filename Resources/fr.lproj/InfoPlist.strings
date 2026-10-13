@@ -1,4 +1,4 @@
-"NSAppleEventsUsageDescription" = "Affiche ce que lisent Music, Spotify et vos navigateurs, et contrôle la lecture.";
+"NSAppleEventsUsageDescription" = "Affiche ce que lisent Music, Spotify et vos navigateurs, et contrôle la lecture. Saisit aussi vos messages dans les sessions d'agent de Terminal et d'iTerm2, et ouvre les conversations dans de nouveaux onglets d'iTerm2 et de Ghostty.";
 "NSCalendarsFullAccessUsageDescription" = "Affiche les évènements du jour et de la semaine dans l’onglet Accueil de l’encoche.";
 "NSRemindersFullAccessUsageDescription" = "Affiche les rappels du jour sous le calendrier et permet de les terminer.";
 "NSCameraUsageDescription" = "Affiche votre caméra dans l’onglet Miroir de l’encoche. Rien n’est enregistré ni envoyé.";

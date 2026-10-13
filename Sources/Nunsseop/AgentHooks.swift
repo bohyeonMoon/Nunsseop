@@ -208,6 +208,13 @@ struct ToolHooks {
         byKind[event.agent]?.apply(event, now: now)
     }
 
+    /// What the notch does with an event the server received: a kitty session's socket is kept (it is how a conversation is later
+    /// resumed in kitty), then the event goes to the board.
+    func receive(_ event: AgentEvent, defaults: UserDefaults = .standard) {
+        Kitty.remember(event.input, in: defaults)
+        apply(event)
+    }
+
     func reset() {
         byKind.values.forEach { $0.reset() }
     }

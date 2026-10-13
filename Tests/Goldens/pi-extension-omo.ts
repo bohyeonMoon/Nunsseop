@@ -11,6 +11,7 @@ const SETTLES = true
 const AUTH = `${homedir()}/Library/Application Support/Nunsseop/notify-auth`
 
 const clean = (value) => String(value ?? "").replace(/[^A-Za-z0-9_.:%-]/g, "")
+const cleanPath = (value) => String(value ?? "").replace(/[^A-Za-z0-9_.:%+=,@\/-]/g, "")
 
 // One request at a time, in the order the events came: a Stop that overtook the UserPromptSubmit before it would leave the
 // session working. Each is given up on after a second.
@@ -44,6 +45,11 @@ function send(event, session, type) {
           "X-Muxy": clean(env.MUXY_SESSION_ID),
           "X-Cmux": clean(env.CMUX_SURFACE_ID),
           "X-Mux": env.TMUX || env.ZELLIJ || env.STY ? "1" : "",
+          "X-Wezterm": clean(env.WEZTERM_PANE),
+          "X-Wezterm-Socket": cleanPath(env.WEZTERM_UNIX_SOCKET),
+          "X-Kitty": clean(env.KITTY_WINDOW_ID),
+          "X-Kitty-Socket": cleanPath(env.KITTY_LISTEN_ON),
+          "X-Iterm": clean(env.ITERM_SESSION_ID),
           "X-Pid": String(process.pid),
         },
       })

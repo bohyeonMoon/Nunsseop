@@ -680,8 +680,12 @@ enum WezTerm {
     static let bundleID = "com.github.wez.wezterm"
 
     static var isInstalled: Bool {
-        NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) != nil
-            || ["/opt/homebrew/bin/wezterm", "/usr/local/bin/wezterm"].contains { FileManager.default.isExecutableFile(atPath: $0) }
+        isInstalled(app: NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID), isExecutable: FileManager.default.isExecutableFile(atPath:))
+    }
+
+    /// The app, or only its command-line tool.
+    static func isInstalled(app: URL?, isExecutable: (String) -> Bool) -> Bool {
+        app != nil || ["/opt/homebrew/bin/wezterm", "/usr/local/bin/wezterm"].contains(where: isExecutable)
     }
 
     static var cli: URL? {
@@ -938,15 +942,26 @@ enum TerminalFocus {
 
     /// Runs a command and returns its output, or nil when it fails; for the terminals' own command-line tools.
     /// - environment: what the command gets in place of Nunsseop's own.
-    static func run(_ executable: URL, _ arguments: [String], environment: [String: String]? = nil) -> String? {
+    /// - input: written to its standard input, which is closed after it; without it the command has none.
+    static func run(_ executable: URL, _ arguments: [String], environment: [String: String]? = nil, input: String? = nil) -> String? {
         let process = Process()
         process.executableURL = executable
         process.arguments = arguments
         if let environment { process.environment = environment }
         let output = Pipe()
+        let stdin = Pipe()
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice
+        if input != nil {
+            process.standardInput = stdin
+            // A command that has ended is not written to with a signal that would end Nunsseop.
+            _ = fcntl(stdin.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)
+        }
         guard (try? process.run()) != nil else { return nil }
+        if let input {
+            try? stdin.fileHandleForWriting.write(contentsOf: Data(input.utf8))
+            try? stdin.fileHandleForWriting.close()
+        }
         DispatchQueue.global().asyncAfter(deadline: .now() + 5) { if process.isRunning { process.terminate() } }
         let data = output.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()

@@ -63,7 +63,7 @@ struct AgentRow: Identifiable, Equatable {
         switch input {
         case nil: false
         case .herdr: true
-        case .muxy, .cmux: inputVerified
+        case .muxy, .cmux, .terminalApp, .iterm, .wezterm, .kitty: inputVerified
         }
     }
 
@@ -183,6 +183,9 @@ final class AgentsTabModel: ObservableObject {
     @Published private(set) var composing: String?
     /// A short note under a row whose message or files didn't go out, by `AgentRow.id`.
     @Published private(set) var notes: [String: String] = [:]
+    /// Under the recent conversations: macOS didn't let Nunsseop open one in the terminal chosen (see `Resume.notAllowedNotification`).
+    @Published private(set) var resumeNote: String?
+    private var denial: AnyCancellable?
     var isShowing = false {
         didSet {
             if !isShowing { composing = nil }
@@ -254,6 +257,19 @@ final class AgentsTabModel: ObservableObject {
         #endif
         observer = board.$revision.sink { [weak self] _ in
             MainActor.assumeIsolated { if self?.isShowing == true { self?.refresh() } }
+        }
+        denial = NotificationCenter.default.publisher(for: Resume.notAllowedNotification).sink { [weak self] note in
+            let app = note.userInfo?["bundleID"] as? String ?? ""
+            MainActor.assumeIsolated { self?.resumeNotAllowed(app) }
+        }
+    }
+
+    /// Says where to allow the terminal, for as long as a note stays.
+    func resumeNotAllowed(_ app: String) {
+        let text = TerminalScripts.notAllowedNote(app)
+        resumeNote = text
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.noteDuration) { [weak self] in
+            MainActor.assumeIsolated { if self?.resumeNote == text { self?.resumeNote = nil } }
         }
     }
 
@@ -387,6 +403,10 @@ final class AgentsTabModel: ObservableObject {
     @discardableResult
     func send(files urls: [URL], to row: AgentRow) -> Bool {
         guard let text = AgentSend.paths(urls) else { return false }
+        if row.input?.takesFiles == false {
+            note(String(localized: "Terminal can't take text without running it"), for: row.id)
+            return false
+        }
         return deliver(text, submit: false, to: row)
     }
 
@@ -402,16 +422,20 @@ final class AgentsTabModel: ObservableObject {
         let sender = sender, targets = targets, pid = current.pid, id = row.id
         let others = Set(board.entries(now: asOf).compactMap { $0.agent.pid })
         Task.detached(priority: .userInitiated) { [weak self] in
-            let sent = targets.hosted(input, pid: pid, others: others) && sender.run(steps)
-            await self?.sent(sent, id)
+            let outcome = targets.hosted(input, pid: pid, others: others) ? sender.run(steps) : .failed
+            await self?.sent(outcome, id)
         }
         return true
     }
 
     /// A send that failed leaves a note, and the target is verified again: the session may be gone, and its bubble with it.
-    private func sent(_ sent: Bool, _ id: String) {
-        guard !sent else { return }
-        note(Self.failure, for: id)
+    private func sent(_ outcome: SendOutcome, _ id: String) {
+        switch outcome {
+        case .sent: return
+        case .failed: note(Self.failure, for: id)
+        // Not a gone session: the target stays, and the note says where to allow it.
+        case .notAllowed(let app): return note(TerminalScripts.notAllowedNote(app), for: id)
+        }
         verifyTargets(board.entries(now: asOf))
     }
 
@@ -479,6 +503,10 @@ struct AgentsTab: View {
                                     .font(.system(size: 10, weight: .semibold)).foregroundStyle(.white.opacity(0.4))
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .padding(.horizontal, 10).padding(.top, model.rows.isEmpty ? 0 : 4)
+                                if let note = model.resumeNote {
+                                    Text(verbatim: note).font(.system(size: 10)).foregroundStyle(.orange).lineLimit(2)
+                                        .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 10)
+                                }
                                 ForEach(model.recent) { conversation in
                                     RecentRowView(conversation: conversation, now: context.date) { model.resume(conversation) }
                                 }

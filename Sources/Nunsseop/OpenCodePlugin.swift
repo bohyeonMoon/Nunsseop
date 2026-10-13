@@ -27,6 +27,7 @@ enum OpenCodePlugin {
         const MAX_BODY = \#(PermissionGate.maxBodyBytes)
         const read = (name) => readFileSync(`${FOLDER}/${name}`, "utf8")
         const clean = (value) => String(value ?? "").replace(/[^A-Za-z0-9_.:%-]/g, "")
+        const cleanPath = (value) => String(value ?? "").replace(/[^A-Za-z0-9_.:%+=,@\/-]/g, "")
 
         async function notify() {
           try {
@@ -64,6 +65,11 @@ enum OpenCodePlugin {
                 "X-Muxy": clean(env.MUXY_SESSION_ID),
                 "X-Cmux": clean(env.CMUX_SURFACE_ID),
                 "X-Mux": env.TMUX || env.ZELLIJ || env.STY ? "1" : "",
+                "X-Wezterm": clean(env.WEZTERM_PANE),
+                "X-Wezterm-Socket": cleanPath(env.WEZTERM_UNIX_SOCKET),
+                "X-Kitty": clean(env.KITTY_WINDOW_ID),
+                "X-Kitty-Socket": cleanPath(env.KITTY_LISTEN_ON),
+                "X-Iterm": clean(env.ITERM_SESSION_ID),
                 "X-Pid": String(process.pid),
               },
               signal: AbortSignal.timeout(1000),

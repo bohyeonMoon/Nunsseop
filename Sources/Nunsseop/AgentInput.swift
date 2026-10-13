@@ -9,6 +9,15 @@ enum AgentInput: Equatable {
     case cmux(String)
     /// A herdr pane and the socket of its session.
     case herdr(pane: String, socket: String)
+    /// Terminal.app: the tab whose `tty` is this device (`/dev/ttysNNN`), which only takes text together with a Return.
+    case terminalApp(tty: String)
+    /// iTerm2: the session whose `tty` is this device.
+    case iterm(tty: String)
+    /// A WezTerm pane (`WEZTERM_PANE`) and the socket of the instance it is in (`WEZTERM_UNIX_SOCKET`): pane ids start at 0 in
+    /// each GUI process, so the tool must be pointed at that one.
+    case wezterm(pane: String, socket: String)
+    /// A kitty window (`KITTY_WINDOW_ID`) and the socket its remote control listens on (`KITTY_LISTEN_ON`, `unix:/path`).
+    case kitty(window: String, socket: String)
 
     /// A Muxy session id from the hook: 1 to 20 ASCII digits (a 64-bit id).
     static func muxySession(_ value: String?) -> String? {
@@ -23,25 +32,77 @@ enum AgentInput: Equatable {
               value.utf8.allSatisfy({ $0 == UInt8(ascii: "-") || Character(UnicodeScalar($0)).isHexDigit }) else { return nil }
         return value
     }
+
+    /// A WezTerm pane or kitty window id from the hook: 1 to 10 ASCII digits.
+    static func numericID(_ value: String?) -> String? {
+        guard let value, (1...10).contains(value.utf8.count),
+              value.utf8.allSatisfy({ (UInt8(ascii: "0")...UInt8(ascii: "9")).contains($0) }) else { return nil }
+        return value
+    }
+
+    /// The address kitty's remote control listens on, from `KITTY_LISTEN_ON`: `unix:` and an absolute path of at most 100 plain
+    /// characters (a socket path holds 103) without a `..` part. A TCP address or an abstract socket is refused.
+    static func kittySocket(_ value: String?) -> String? {
+        guard let value, value.hasPrefix("unix:/"), value.utf8.count <= 105, plainSocketPath(value.dropFirst("unix:".count)) else { return nil }
+        return value
+    }
+
+    /// The socket of a WezTerm instance, from `WEZTERM_UNIX_SOCKET`: an absolute path (no `unix:`), as plain as kitty's.
+    static func weztermSocket(_ value: String?) -> String? {
+        guard let value, value.hasPrefix("/"), value.utf8.count <= 100, plainSocketPath(value[...]) else { return nil }
+        return value
+    }
+
+    private static func plainSocketPath(_ path: Substring) -> Bool {
+        path.unicodeScalars.allSatisfy { $0.isASCII && ($0.properties.isAlphabetic || ("0"..."9").contains($0) || "/._-+=,@%:".unicodeScalars.contains($0)) }
+            && !path.split(separator: "/").contains("..")
+    }
+
+    /// An iTerm2 session id from the hook (`w0t0p0:` and a UUID): letters, digits, colons and dashes, up to 64.
+    static func itermSession(_ value: String?) -> String? {
+        guard let value, (1...64).contains(value.utf8.count),
+              value.unicodeScalars.allSatisfy({ $0.isASCII && ($0.properties.isAlphabetic || ("0"..."9").contains($0) || $0 == ":" || $0 == "-") }) else { return nil }
+        return value
+    }
+
+    /// A terminal device as Terminal.app and iTerm2 name it: `/dev/ttys` and 1 to 6 digits.
+    static func ttyDevice(_ value: String?) -> String? {
+        guard let value, value.hasPrefix("/dev/ttys") else { return nil }
+        let digits = value.dropFirst("/dev/ttys".count)
+        return (1...6).contains(digits.utf8.count) && digits.utf8.allSatisfy({ (UInt8(ascii: "0")...UInt8(ascii: "9")).contains($0) }) ? value : nil
+    }
+
+    /// Whether dropped file paths can be typed there. Terminal.app can't: it runs what it is given.
+    var takesFiles: Bool {
+        if case .terminalApp = self { false } else { true }
+    }
 }
 
 /// One call to a terminal's input API; a plan is a list of them, run in order until one fails.
 enum AgentStep: Equatable {
     /// Runs a command-line tool with exactly these arguments (never through a shell); passes on exit status 0.
     case run(URL, [String])
+    /// Like `run`, with these variables added to the environment.
+    case runWith(URL, [String], variables: [String: String])
     /// Runs a tool and passes only when a line of its output starts with `id` and a tab: Muxy's session list.
     case listed(URL, [String], id: String)
     /// Sends JSON requests to a Unix socket, each on a connection of its own (herdr answers one request per connection, then
     /// closes it); passes when each is answered and none with an error.
     case socket(path: String, requests: [String])
+    /// Runs a tool with `stdin` as its standard input, which it takes as it is (kitty's `send-text --stdin` does not read escapes).
+    case runInput(URL, [String], stdin: String)
+    /// Calls a handler of an AppleScript in a terminal app, which takes the text as an argument. Passes when it answers `expecting`.
+    case script(AppleScriptCall)
 }
 
 /// The command-line tools of the terminals that take input; nil for one that isn't installed.
 struct TerminalCLIs {
     var muxy: URL?
     var cmux: URL?
+    var wezterm: URL?
+    var kitty: URL?
 
-    static var live: TerminalCLIs { TerminalCLIs(muxy: MuxyNotice.cli, cmux: Cmux.cli) }
+    static var live: TerminalCLIs { TerminalCLIs(muxy: MuxyNotice.cli, cmux: Cmux.cli, wezterm: WezTerm.cli, kitty: Kitty.cli) }
 }
 
 extension MuxyNotice {
@@ -59,7 +120,8 @@ enum AgentSend {
 
     /// Variables that would point a terminal's tool at Nunsseop's own terminal, if it was started from one: `muxy session send`
     /// types into the terminal named by `MUXY_SESSION_ID` when it is not given a live session of its own.
-    static let terminalVariables = ["MUXY_SESSION_ID", "CMUX_SURFACE_ID", "CMUX_WORKSPACE_ID", "CMUX_PANEL_ID", "CMUX_PANE_ID", "CMUX_TAB_ID"]
+    static let terminalVariables = ["MUXY_SESSION_ID", "CMUX_SURFACE_ID", "CMUX_WORKSPACE_ID", "CMUX_PANEL_ID", "CMUX_PANE_ID", "CMUX_TAB_ID",
+                                    "WEZTERM_PANE", "WEZTERM_UNIX_SOCKET", "KITTY_WINDOW_ID", "KITTY_LISTEN_ON"]
 
     /// A message as the one line the agent takes: control characters (CR, LF and TAB too) and line separators become spaces,
     /// the ends are trimmed, and it is cut at `maxLength`. nil when nothing is left.
@@ -119,6 +181,24 @@ enum AgentSend {
             // One request does both: herdr's socket closes after answering the first, so a second one would never arrive.
             let params: [String: Any] = ["pane_id": pane, "text": text]
             return [.socket(path: socket, requests: [request("in", "pane.send_input", submit ? params.merging(["keys": ["enter"]]) { $1 } : params)])]
+        case .terminalApp(let tty):
+            // `do script` types the text and presses Return in one go: there is no way to type without it.
+            return submit ? [.script(TerminalScripts.terminalSend(tty: tty, text: text))] : nil
+        case .iterm(let tty):
+            return [.script(TerminalScripts.itermSend(tty: tty, text: text, submit: submit))]
+        case .wezterm(let pane, let socket):
+            // Typed (not pasted), so the Return after it is not part of a paste; `--` keeps a text starting with a dash from being an option.
+            // The tool finds its instance by the socket in its environment, and the pane id means nothing in another one.
+            guard let cli = clis.wezterm else { return nil }
+            let send = ["cli", "--no-auto-start", "send-text", "--pane-id", pane, "--no-paste", "--"]
+            let variables = ["WEZTERM_UNIX_SOCKET": socket]
+            return [.runWith(cli, send + [text], variables: variables)] + (submit ? [.runWith(cli, send + ["\r"], variables: variables)] : [])
+        case .kitty(let window, let socket):
+            // The text goes in on stdin, which kitty sends as it is; as an argument it would read `\r` and the like as escapes.
+            guard let cli = clis.kitty else { return nil }
+            let remote = ["@", "--to", socket]
+            return [.runInput(cli, remote + ["send-text", "--match", "id:\(window)", "--stdin"], stdin: text)]
+                + (submit ? [.run(cli, remote + ["send-key", "--match", "id:\(window)", "enter"])] : [])
         }
     }
 
@@ -137,26 +217,61 @@ enum AgentSend {
     }
 
     /// Runs a step; false when it fails or the tool doesn't answer in time.
-    static func execute(_ step: AgentStep) -> Bool {
+    static func execute(_ step: AgentStep, scripts: AppleScriptRunner = .live) -> Bool {
+        perform(step, scripts: scripts) == .sent
+    }
+
+    /// Runs a step. `notAllowed` when macOS refused Nunsseop's Apple Events to the app (Automation, -1743).
+    static func perform(_ step: AgentStep, scripts: AppleScriptRunner = .live) -> SendOutcome {
         let environment = cleanEnvironment
         switch step {
         case .run(let cli, let arguments):
-            return TerminalFocus.run(cli, arguments, environment: environment) != nil
+            return TerminalFocus.run(cli, arguments, environment: environment) != nil ? .sent : .failed
+        case .runWith(let cli, let arguments, let variables):
+            return TerminalFocus.run(cli, arguments, environment: environment.merging(variables) { $1 }) != nil ? .sent : .failed
+        case .runInput(let cli, let arguments, let stdin):
+            return TerminalFocus.run(cli, arguments, environment: environment, input: stdin) != nil ? .sent : .failed
         case .listed(let cli, let arguments, let id):
             return TerminalFocus.run(cli, arguments, environment: environment)?
-                .split(separator: "\n").contains { $0.split(separator: "\t", omittingEmptySubsequences: false).first == Substring(id) } == true
+                .split(separator: "\n").contains { $0.split(separator: "\t", omittingEmptySubsequences: false).first == Substring(id) } == true ? .sent : .failed
         case .socket(let path, let requests):
             return requests.allSatisfy { request in
                 guard let reply = TerminalFocus.send([request], toSocket: path).first else { return false }
                 return ((try? JSONSerialization.jsonObject(with: Data(reply.utf8))) as? [String: Any]).map { $0["error"] == nil } ?? false
+            } ? .sent : .failed
+        case .script(let call):
+            switch scripts.run(call) {
+            case .value(let answer): return answer == call.expecting ? .sent : .failed
+            case .notAllowed: return .notAllowed(call.bundleID)
+            case .failed: return .failed
             }
         }
     }
+
+    /// Runs a plan, step by step, until one fails.
+    static func run(_ steps: [AgentStep], scripts: AppleScriptRunner = .live) -> SendOutcome {
+        for step in steps {
+            let outcome = perform(step, scripts: scripts)
+            if outcome != .sent { return outcome }
+        }
+        return .sent
+    }
+}
+
+/// How a plan ended.
+enum SendOutcome: Equatable {
+    case sent
+    case failed
+    /// macOS refused to let Nunsseop control the app with this bundle id.
+    case notAllowed(String)
 }
 
 /// Runs a plan off the main thread. Tests give it a runner that records the steps instead of running them.
 struct AgentSender {
-    var run: @Sendable ([AgentStep]) -> Bool
+    var run: @Sendable ([AgentStep]) -> SendOutcome
 
-    static let live = AgentSender { steps in steps.allSatisfy(AgentSend.execute) }
+    static let live = AgentSender { AgentSend.run($0) }
+
+    /// The real tools, but with `scripts` for the AppleScript steps.
+    static func live(scripts: AppleScriptRunner) -> AgentSender { AgentSender { AgentSend.run($0, scripts: scripts) } }
 }

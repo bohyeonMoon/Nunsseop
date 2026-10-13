@@ -8,6 +8,8 @@ struct ProcessRecord: Equatable, Sendable {
     var executable: String?
     /// Whether it has a controlling terminal.
     var hasTTY: Bool
+    /// That terminal's device as Terminal.app and iTerm2 name it (`/dev/ttys003`); nil without one, or for a device of another kind.
+    var tty: String? = nil
 }
 
 /// The process table as a lookup: nil for a process that is gone or is a zombie. Tests give it a made-up tree.
@@ -21,8 +23,11 @@ struct ProcessTable: Sendable {
         guard sysctl(&mib, 4, &info, &size, nil, 0) == 0, size > 0, info.kp_proc.p_stat != SZOMB else { return nil }
         var path = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
         let length = proc_pidpath(pid, &path, UInt32(path.count))
+        let device = info.kp_eproc.e_tdev
+        var name = [CChar](repeating: 0, count: 64)
+        let tty = device != -1 && devname_r(device, S_IFCHR, &name, Int32(name.count)) != nil ? AgentInput.ttyDevice("/dev/" + String(cString: name)) : nil
         return ProcessRecord(parent: info.kp_eproc.e_ppid, executable: length > 0 ? String(cString: path) : nil,
-                             hasTTY: info.kp_eproc.e_tdev != -1)
+                             hasTTY: device != -1, tty: tty)
     }
 }
 
@@ -57,12 +62,18 @@ struct AgentTargetCheck: Sendable {
     /// The process part of `verified`, which is what can be checked right before sending.
     func hosted(_ input: AgentInput, pid: Int32?, others: Set<Int32> = []) -> Bool {
         let host: (String) -> Bool
+        var tty: String?
         switch input {
         case .herdr: return true
         case .muxy: host = Self.isMuxyServer
         case .cmux: host = Self.isCmuxApp
+        case .terminalApp(let device): (host, tty) = (Self.isTerminalApp, device)
+        case .iterm(let device): (host, tty) = (Self.isITerm, device)
+        case .wezterm: host = Self.isWezTerm
+        case .kitty: host = Self.isKitty
         }
-        guard let pid, processes.lookup(pid)?.hasTTY == true else { return false }
+        // Terminal.app and iTerm2 find the session by its device, so the process must be on that one.
+        guard let pid, let own = processes.lookup(pid), own.hasTTY, tty == nil || own.tty == tty else { return false }
         var current = pid
         var seen = Set<Int32>()
         for _ in 0..<64 {
@@ -84,6 +95,25 @@ struct AgentTargetCheck: Sendable {
     /// Muxy's server, the parent of its terminals' shells: `Muxy.app/Contents/MacOS/muxy-server`.
     static func isMuxyServer(_ path: String) -> Bool { path.hasSuffix("/Muxy.app/Contents/MacOS/muxy-server") }
 
+    /// Terminal.app, which its tabs' `login` processes run under.
+    static func isTerminalApp(_ path: String) -> Bool { path == "/System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal" }
+
+    /// iTerm2's app, or its `iTermServer-<version>`, which runs the shells and outlives the app (it is then a child of launchd). It runs
+    /// from `~/Library/Application Support/iTerm2/` as well as from the app bundle, so a server is taken at either place.
+    static func isITerm(_ path: String) -> Bool {
+        path.hasSuffix("/iTerm.app/Contents/MacOS/iTerm2")
+            || (isITermServer(path) && (path.contains("/iTerm.app/Contents/MacOS/") || path.contains("/Application Support/iTerm2/")))
+    }
+
+    /// A file named `iTermServer…`, wherever it sits.
+    private static func isITermServer(_ path: String) -> Bool { (path as NSString).lastPathComponent.hasPrefix("iTermServer") }
+
+    /// WezTerm's window process, or its mux server: the parents of the shells in its panes.
+    static func isWezTerm(_ path: String) -> Bool { ["wezterm-gui", "wezterm-mux-server"].contains((path as NSString).lastPathComponent) }
+
+    /// kitty, which runs the shells of its windows itself.
+    static func isKitty(_ path: String) -> Bool { (path as NSString).lastPathComponent == "kitty" }
+
     /// cmux's app, which its terminals' shells run under: the executable in the `Contents/MacOS` of an app bundle named cmux.
     static func isCmuxApp(_ path: String) -> Bool {
         let parts = path.split(separator: "/", omittingEmptySubsequences: true)
@@ -94,7 +124,7 @@ struct AgentTargetCheck: Sendable {
     /// A process that is some other terminal or multiplexer: anything in an app bundle (Ghostty, Terminal, iTerm, cmux...) or a
     /// multiplexer or emulator that isn't one. A session whose chain meets one before its own terminal's process runs in that one.
     static func isOtherTerminal(_ path: String) -> Bool {
-        path.contains(".app/Contents/") || ["herdr", "tmux", "zellij", "screen", "wezterm", "wezterm-gui", "alacritty", "kitty", "ghostty"]
+        path.contains(".app/Contents/") || isITermServer(path) || ["herdr", "tmux", "zellij", "screen", "wezterm", "wezterm-gui", "alacritty", "kitty", "ghostty"]
             .contains((path as NSString).lastPathComponent.lowercased())
     }
 }

@@ -147,6 +147,8 @@ struct AgentHookEventTests {
             + #"-H "X-Subagent: $(k agent_id)" -H "X-App: $__CFBundleIdentifier" -H "X-Herdr: ${HERDR_PANE_ID:+1}" "#
             + #"-H "X-Muxy: ${MUXY_SESSION_ID}" -H "X-Cmux: ${CMUX_SURFACE_ID}" "#
             + #"-H "X-Mux: ${TMUX:+1}${ZELLIJ:+1}${STY:+1}" "#
+            + #"-H "X-Wezterm: ${WEZTERM_PANE}" -H "X-Wezterm-Socket: ${WEZTERM_UNIX_SOCKET}" -H "X-Kitty: ${KITTY_WINDOW_ID}" -H "X-Kitty-Socket: ${KITTY_LISTEN_ON}" "#
+            + #"-H "X-Iterm: ${ITERM_SESSION_ID}" "#
             + #"-H "X-Background: ${CLAUDE_JOB_DIR:+1}" -H "X-Pid: $PPID" -H 'X-Agent: codex' >/dev/null 2>&1 || true"#
         #expect(NotifyServer.port == 47750)
         #expect(NotifyServer.agentHookCommand(for: .codex) == pinned)

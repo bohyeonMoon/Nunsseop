@@ -89,7 +89,7 @@ struct AgentHookShellTests {
             "-s", "-m", "1", "--connect-timeout", "1", "-X", "POST", "http://127.0.0.1:\(NotifyServer.port)/agent", "-d", "",
             "-H", sent.authArgument, "-H", "X-Session: abc-123", "-H", "X-Event: Stop",
             "-H", "X-Type: permission_prompt", "-H", "X-Subagent: ", "-H", "X-App: com.x",
-            "-H", "X-Herdr: ", "-H", "X-Muxy: ", "-H", "X-Cmux: ", "-H", "X-Mux: ", "-H", "X-Background: ", "-H", "X-Pid: \(getpid())",
+            "-H", "X-Herdr: ", "-H", "X-Muxy: ", "-H", "X-Cmux: ", "-H", "X-Mux: ", "-H", "X-Wezterm: ", "-H", "X-Wezterm-Socket: ", "-H", "X-Kitty: ", "-H", "X-Kitty-Socket: ", "-H", "X-Iterm: ", "-H", "X-Background: ", "-H", "X-Pid: \(getpid())",
         ])
         #expect(sent.curlCalls == 1)
         #expect(sent.stdout.isEmpty)
@@ -114,6 +114,20 @@ struct AgentHookShellTests {
             let sent = try ShellRun.run({ _ in ["-c", command] }, stdin: stdin, environment: environment)
             #expect(sent.args.contains("X-Muxy: 1978299613479001934"))
             #expect(sent.args.contains("X-Cmux: 6F1B2C3D-0000-4000-8000-000000000001"))
+            #expect(sent.stdout.isEmpty && sent.status == 0)
+        }
+    }
+
+    @Test func theIdsOfWezTermKittyAndITerm2AreSentForBothTools() throws {
+        let stdin = json(["session_id": "s", "hook_event_name": "Stop"])
+        let environment = ["__CFBundleIdentifier": "com.x", "WEZTERM_PANE": "7", "WEZTERM_UNIX_SOCKET": "/tmp/wezterm-gui-sock-1", "KITTY_WINDOW_ID": "3",
+                           "KITTY_LISTEN_ON": "unix:/tmp/kitty-1234", "ITERM_SESSION_ID": "w0t0p0:6F1B2C3D-0000-4000-8000-000000000001"]
+        for command in [NotifyServer.agentHookCommand, NotifyServer.agentHookCommand(for: .codex)] {
+            let sent = try ShellRun.run({ _ in ["-c", command] }, stdin: stdin, environment: environment)
+            #expect(sent.args.contains("X-Wezterm: 7") && sent.args.contains("X-Kitty: 3"))
+            #expect(sent.args.contains("X-Wezterm-Socket: /tmp/wezterm-gui-sock-1"))
+            #expect(sent.args.contains("X-Kitty-Socket: unix:/tmp/kitty-1234"))
+            #expect(sent.args.contains("X-Iterm: w0t0p0:6F1B2C3D-0000-4000-8000-000000000001"))
             #expect(sent.stdout.isEmpty && sent.status == 0)
         }
     }
@@ -186,7 +200,7 @@ struct CodexAgentHookShellTests {
             "-s", "-m", "1", "--connect-timeout", "1", "-X", "POST", "http://127.0.0.1:\(NotifyServer.port)/agent", "-d", "",
             "-H", sent.authArgument, "-H", "X-Session: 019e5b2c-7a41-7c10-8d3e-2f6a9c1b4e07",
             "-H", "X-Event: PermissionRequest", "-H", "X-Type: ", "-H", "X-Subagent: ", "-H", "X-App: com.x",
-            "-H", "X-Herdr: ", "-H", "X-Muxy: ", "-H", "X-Cmux: ", "-H", "X-Mux: ", "-H", "X-Background: ", "-H", "X-Pid: \(getpid())",
+            "-H", "X-Herdr: ", "-H", "X-Muxy: ", "-H", "X-Cmux: ", "-H", "X-Mux: ", "-H", "X-Wezterm: ", "-H", "X-Wezterm-Socket: ", "-H", "X-Kitty: ", "-H", "X-Kitty-Socket: ", "-H", "X-Iterm: ", "-H", "X-Background: ", "-H", "X-Pid: \(getpid())",
             "-H", "X-Agent: codex",
         ])
         #expect(sent.body.isEmpty)

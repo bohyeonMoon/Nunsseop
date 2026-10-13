@@ -124,7 +124,9 @@ struct ResumeTerminalChoiceTests {
         #expect(ResumeTerminal.effective(saved: "ghostty", installed: [.terminal]) == .terminal)
         #expect(ResumeTerminal.effective(saved: "muxy", installed: all) == .ghostty)
         #expect(ResumeTerminal.installed.contains(.terminal))
-        #expect(ResumeTerminal.allCases.map(\.name) == ["Ghostty", "cmux", "Terminal"])
+        #expect(ResumeTerminal.allCases.map(\.name) == ["Ghostty", "iTerm2", "WezTerm", "kitty", "cmux", "Terminal"])
+        #expect(ResumeTerminal.effective(saved: "iterm", installed: all) == .iterm)
+        #expect(ResumeTerminal.effective(saved: "kitty", installed: [.ghostty, .terminal]) == .ghostty)
     }
 }
 

@@ -240,7 +240,7 @@ final class NotchViewModel: ObservableObject {
             self?.agents.replace(source: "herdr:\(socket)", with: Herdr.boardAgents(panes, socket: socket))
         }
         // Claude Code and Codex sessions anywhere, through their hooks; kept only while the count or the tab is shown.
-        notifyServer.onAgent = { [agentHooks] in agentHooks.apply($0) }
+        notifyServer.onAgent = { [agentHooks] in agentHooks.receive($0) }
         // Claude Code's permission prompts wait here until answered, or until their hook is gone.
         PermissionLink.connect(board: approvals, gate: notifyServer.permissions, isOn: settings.$permissionPrompts.eraseToAnyPublisher(),
                                enabled: { AppSettings.load("permissionPrompts", default: true) })

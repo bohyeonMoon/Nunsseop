@@ -18,7 +18,7 @@ private final class Recorder: @unchecked Sendable {
                 plans.append(steps)
                 threads.append(Thread.isMainThread)
             }
-            return passes
+            return passes ? .sent : .failed
         }
     }
 }
@@ -293,6 +293,10 @@ struct AgentSendPlanTests {
                     #expect(!["sh", "bash", "zsh", "dash", "env"].contains(tool.lastPathComponent))
                     #expect(!arguments.contains("-c"))
                 case .socket: break
+                case .runInput(let tool, let arguments, _), .runWith(let tool, let arguments, _):
+                    #expect(!["sh", "bash", "zsh", "dash", "env"].contains(tool.lastPathComponent))
+                    #expect(!arguments.contains("-c"))
+                case .script: break
                 }
             }
         }
@@ -390,7 +394,7 @@ struct AgentSendModelTests {
         let genuine: Int32? = switch input {
         case .muxy: 100
         case .cmux: 200
-        case .herdr, nil: nil
+        case .herdr, .terminalApp, .iterm, .wezterm, .kitty, nil: nil
         }
         return AgentBoard.Agent(state: state, since: start, finished: finished, tool: "claude", input: input, pid: pid ?? genuine)
     }
@@ -1042,6 +1046,23 @@ struct AgentHookMigrationTests {
         }
     }
 
+    @Test func theCommandsOfTheVersionBeforeWezTermKittyAndITermHeadersAreReplacedInPlace() throws {
+        let headers = #"-H "X-Wezterm: ${WEZTERM_PANE}" -H "X-Wezterm-Socket: ${WEZTERM_UNIX_SOCKET}" -H "X-Kitty: ${KITTY_WINDOW_ID}" -H "X-Kitty-Socket: ${KITTY_LISTEN_ON}" -H "X-Iterm: ${ITERM_SESSION_ID}" "#
+        for agent in [AgentKind.claude, .codex] {
+            let current = NotifyServer.agentHookCommand(for: agent)
+            let previous = current.replacingOccurrences(of: headers, with: "")
+            #expect(previous != current && !previous.contains("X-Wezterm") && previous.contains("X-Muxy"))
+            let table: JSONHook.Table = [("Stop", current), ("Interrupt", current)]
+            let mine: [String: Any] = ["hooks": [["type": "command", "command": "mine.sh"]]]
+            let before: [String: Any] = ["hooks": ["Stop": [mine, ours(previous), mine], "Interrupt": [ours(previous)]]]
+            let after = try #require(try JSONHook.updating(table, in: before))
+            // The same groups at the same positions, only the command replaced.
+            #expect(commands(after, "Stop") == ["mine.sh", current, "mine.sh"] && commands(after, "Interrupt") == [current])
+            #expect(groups(after, "Stop")[0] as NSDictionary == mine as NSDictionary)
+            #expect(JSONHook.isCurrent(table, in: after))
+        }
+    }
+
     @Test func aHookThatChangedInMoreThanItsCommandStillRewritesTheWholeSet() throws {
         let agent = NotifyServer.agentHookCommand(for: .codex)
         let table: JSONHook.Table = [("Stop", agent), ("Interrupt", agent)]
@@ -1095,7 +1116,7 @@ struct AgentSendExecutionTests {
         let dir = try scratch()
         defer { try? FileManager.default.removeItem(at: dir) }
         let tool = try stub(#"echo "$1" >> "\#(dir.path)/calls"; [ "$1" = "bad" ] && exit 1; exit 0"#, in: dir)
-        #expect(!AgentSender.live.run([.run(tool, ["one"]), .run(tool, ["bad"]), .run(tool, ["three"])]))
+        #expect(AgentSender.live.run([.run(tool, ["one"]), .run(tool, ["bad"]), .run(tool, ["three"])]) == .failed)
         #expect(try String(contentsOf: dir.appendingPathComponent("calls"), encoding: .utf8) == "one\nbad\n")
     }
 
@@ -1149,7 +1170,7 @@ struct AgentSendExecutionTests {
         let server = try serve(replying: "ok", at: path)
         defer { server.terminate(); try? FileManager.default.removeItem(atPath: path); try? FileManager.default.removeItem(atPath: path + ".log") }
         let steps = try #require(AgentSend.steps(.herdr(pane: "w1:p1", socket: path), text: "go on", submit: true, clis: TerminalCLIs()))
-        #expect(AgentSender.live.run(steps))
+        #expect(AgentSender.live.run(steps) == .sent)
         let requests = try logged(path)
         #expect(requests.count == 1 && requests[0].connection == 1)
         #expect(requests[0].request["method"] as? String == "pane.send_input")
@@ -1158,7 +1179,7 @@ struct AgentSendExecutionTests {
 
         // A dropped path goes without keys.
         let drop = try #require(AgentSend.steps(.herdr(pane: "w1:p1", socket: path), text: "/tmp/a.png ", submit: false, clis: TerminalCLIs()))
-        #expect(AgentSender.live.run(drop))
+        #expect(AgentSender.live.run(drop) == .sent)
         let all = try logged(path)
         #expect(all.count == 2 && all[1].connection == 2)
         #expect((all[1].request["params"] as? [String: String]) == ["pane_id": "w1:p1", "text": "/tmp/a.png "])
@@ -1181,7 +1202,7 @@ struct AgentSendExecutionTests {
         let broken = try serve(replying: "error", at: failing)
         defer { broken.terminate(); try? FileManager.default.removeItem(atPath: failing); try? FileManager.default.removeItem(atPath: failing + ".log") }
         let steps = try #require(AgentSend.steps(.herdr(pane: "gone", socket: failing), text: "x", submit: true, clis: TerminalCLIs()))
-        #expect(!AgentSender.live.run(steps))
+        #expect(AgentSender.live.run(steps) == .failed)
         #expect(try logged(failing).count == 1)
         // An error stops the step: the requests after it aren't sent.
         #expect(!AgentSend.execute(.socket(path: failing, requests: ["{\"id\":\"a\"}", "{\"id\":\"b\"}"])))
