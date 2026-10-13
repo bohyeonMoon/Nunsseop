@@ -57,6 +57,8 @@ final class AppSettings: ObservableObject {
     }
     /// herdr is watched for its notifications, for the agents count in the closed notch or the Agents tab, or any of them.
     @Published private(set) var watchesHerdr = false
+    /// Announces the agents of Paseo that finish or stop with an error, from its local daemon.
+    @Published var paseoNotifications: Bool = AppSettings.load("paseoNotifications", default: true) { didSet { save(paseoNotifications, "paseoNotifications") } }
     /// Shows bells from tmux windows, through a hook on the running tmux server.
     @Published var tmuxBells: Bool = AppSettings.load("tmuxBells", default: true) { didSet { save(tmuxBells, "tmuxBells") } }
     /// Asks Anthropic for Claude's limits with Claude Code's sign-in. Off until the user agrees, in the AI tab or Settings.

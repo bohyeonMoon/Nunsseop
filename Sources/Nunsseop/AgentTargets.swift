@@ -77,7 +77,7 @@ struct AgentTargetCheck: Sendable {
         let host: (String) -> Bool
         var tty: String?
         switch input {
-        case .herdr: return true
+        case .herdr, .paseo: return true
         case .muxy: host = Self.isMuxyServer
         case .cmux: host = Self.isCmuxApp
         case .terminalApp(let device): (host, tty) = (Self.isTerminalApp, device)

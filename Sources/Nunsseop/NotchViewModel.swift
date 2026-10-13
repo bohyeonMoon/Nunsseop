@@ -115,6 +115,8 @@ final class NotchViewModel: ObservableObject {
     let agentHooks: ToolHooks
     /// gjc has no hook to send events, so its state files are polled.
     let gjcWatcher: GjcWatcher
+    /// Paseo's agents for the count and the tab, and its permissions and finished agents from its local daemon.
+    let paseoWatcher: PaseoWatcher
     let tmux = TmuxWatcher()
     let stats = SystemStats()
     let launcher = AppLauncher()
@@ -176,8 +178,12 @@ final class NotchViewModel: ObservableObject {
         self.gjcWatcher = GjcWatcher(board: agents, isOn: isOn)
         self.muxy = MuxyActivityWatcher(board: agents)
         muxy.wantsBoard = isOn
+        self.paseoWatcher = PaseoWatcher(board: agents, permissions: approvals, isOn: isOn, wantsApprovals: { settings.permissionPrompts },
+                                         wantsNotices: { settings.paseoNotifications })
         // Looks only while the count or the tab is showing (every poll asks `isOn`).
         gjcWatcher.start()
+        // The agents likewise; the connection to Paseo's daemon runs while cards or notices are wanted, and only if Paseo has been used.
+        paseoWatcher.start()
         // Looks only while Muxy runs and a notice or the count wants it (every poll asks).
         muxy.start()
         // The bridge extension the user loads in Muxy is kept current beside Nunsseop's other files.
@@ -249,7 +255,8 @@ final class NotchViewModel: ObservableObject {
         notifyServer.onAgent = { [agentHooks] in agentHooks.receive($0) }
         // Claude Code's permission prompts wait here until answered, or until their hook is gone.
         PermissionLink.connect(board: approvals, gate: notifyServer.permissions, isOn: settings.$permissionPrompts.eraseToAnyPublisher(),
-                               enabled: { AppSettings.load("permissionPrompts", default: true) })
+                               enabled: { AppSettings.load("permissionPrompts", default: true) },
+                               other: { [paseoWatcher] in paseoWatcher.approvals.answer($0, $1) })
             .forEach { $0.store(in: &cancellables) }
         approvals.$prompts
             .sink { [weak self] _ in self?.objectWillChange.send() }
@@ -264,6 +271,7 @@ final class NotchViewModel: ObservableObject {
             .sink { [weak self] _ in
                 self?.agentHooks.reset()
                 self?.gjcWatcher.reset()
+                self?.paseoWatcher.reset()
             }
             .store(in: &cancellables)
         agents.$counts

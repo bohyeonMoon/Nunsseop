@@ -9,17 +9,19 @@ struct RecentConversation: Identifiable, Equatable {
     var name: String? = nil
     /// The last thing the user asked, cleaned for one line.
     var prompt: String? = nil
+    /// Set for an agent of Paseo, which is brought back through Paseo and not in a terminal.
+    var paseo: PaseoResume? = nil
 
-    var id: String { "\(kind.rawValue)|\(session)" }
+    var id: String { paseo.map { "\(Paseo.source)|\($0.agent)" } ?? "\(kind.rawValue)|\(session)" }
     var folder: String { (cwd as NSString).lastPathComponent }
-    var tool: String { AgentRow.toolName(kind.rawValue) }
+    var tool: String { AgentRow.toolName(paseo.map { Paseo.tool(provider: $0.provider) } ?? kind.rawValue) }
 
     /// The session's name, else the last prompt, else the folder.
     var title: String { name ?? prompt ?? folder }
 
     /// The folder (unless it is the title) and the tool.
     var metaParts: [String] {
-        (folder.caseInsensitiveCompare(title) != .orderedSame ? [folder] : []) + [tool]
+        (folder.caseInsensitiveCompare(title) != .orderedSame ? [folder] : []) + [tool] + (paseo != nil ? [Paseo.name] : [])
     }
 
     /// How long ago it was last used: "3h".

@@ -408,6 +408,9 @@ final class NotchWindowController {
             self?.announce(symbol: "terminal", title: String(title.prefix(80)), detail: String(detail.prefix(200)),
                            action: { Herdr.focus(notice) })
         }
+        model.paseoWatcher.onNotice = { [weak self] notice in
+            self?.announce(symbol: "sparkles", title: notice.title, detail: notice.detail, action: notice.open)
+        }
         model.muxy.onNotice = { [weak self] event, project, folder in
             guard let title = event.notice(project: project) else { return }
             let session = event.session

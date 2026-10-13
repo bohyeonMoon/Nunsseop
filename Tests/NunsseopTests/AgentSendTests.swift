@@ -394,7 +394,7 @@ struct AgentSendModelTests {
         let genuine: Int32? = switch input {
         case .muxy: 100
         case .cmux: 200
-        case .herdr, .terminalApp, .iterm, .wezterm, .kitty, .ghostty, .orca, nil: nil
+        case .herdr, .terminalApp, .iterm, .wezterm, .kitty, .ghostty, .orca, .paseo, nil: nil
         }
         return AgentBoard.Agent(state: state, since: start, finished: finished, tool: "claude", input: input, pid: pid ?? genuine)
     }
