@@ -423,12 +423,14 @@ const pickLang = async (page, lang) => {
     // FAQ: an answer opens to its full height and closes again.
     const d = mp.locator('.faq details').first();
     await d.locator('summary').scrollIntoViewIfNeeded();
+    // Waits for the animation's end rather than a fixed time, which a busy machine overruns.
+    const answerHeight = el => { const a = [...el.querySelectorAll('.a')].find(a => a.getClientRects().length); return a ? a.getBoundingClientRect().height : 0; };
     await d.locator('summary').click();
-    await sleep(450);
-    const faqH = await d.evaluate(el => [...el.querySelectorAll('.a')].find(a => a.getClientRects().length).getBoundingClientRect().height);
+    await mp.waitForFunction(el => el.open && el.getAnimations({ subtree: true }).length === 0, await d.elementHandle(), { timeout: 30000 }).catch(() => {});
+    const faqH = await d.evaluate(answerHeight);
     check(faqH > 20, `motion: FAQ answer is ${faqH}px tall after opening`);
     await d.locator('summary').click();
-    await sleep(450);
+    await mp.waitForFunction(el => !el.open && getComputedStyle(el, '::details-content').blockSize === '0px', await d.elementHandle(), { timeout: 30000 }).catch(() => {});
     check(await d.evaluate(el => getComputedStyle(el, '::details-content').blockSize === '0px' && !el.open), 'motion: FAQ answer still shown after closing');
 
     // A failed copy says so and shakes.
