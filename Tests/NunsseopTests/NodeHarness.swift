@@ -40,11 +40,21 @@ final class NodeScript {
         return (lines, result.status)
     }
 
-    /// Helpers every script starts with: `out(value)` prints a JSON line, `sleep(ms)`, `until(predicate)`.
+    /// Lets a script that waits at `gate(name)` go on. The test calls it once what the script is to wait for has happened, so the
+    /// script's order does not rest on how long anything takes.
+    func open(_ name: String) {
+        FileManager.default.createFile(atPath: folder.appendingPathComponent(name).path, contents: Data())
+    }
+
+    /// Helpers every script starts with: `out(value)` prints a JSON line, `sleep(ms)`, `until(predicate)` and `gate(name)`, which wait for
+    /// an event as long as the test does (`eventDeadline`) and only a hang makes them give up: the main actor can keep the test from
+    /// answering for most of a minute on a busy machine, and a script that stopped waiting before that went on without the answer.
     static let prelude = """
+        import { existsSync } from "node:fs"
         const out = (value) => console.log(JSON.stringify(value))
         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
-        const until = async (predicate, ms = 30000) => { const end = Date.now() + ms; while (!predicate() && Date.now() < end) await sleep(20) }
+        const until = async (predicate, ms = \(Int(eventDeadline * 1000))) => { const end = Date.now() + ms; while (!predicate() && Date.now() < end) await sleep(20) }
+        const gate = (name) => until(() => existsSync(name))
 
         """
 }

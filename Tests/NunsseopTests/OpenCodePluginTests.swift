@@ -156,20 +156,24 @@ struct OpenCodePluginRunTests {
         // "Answer in terminal" in the notch: no reply of the plugin's own.
         let (first, _, _) = try start(server, body: Self.setUp + """
             await event("permission.asked", request("per_4"))
-            await sleep(1500)
+            await gate("answered")
+            await sleep(500)
             out({ replies })
             """)
         await eventually { server.events.prompts.count == 1 }
         server.server.permissions.answer(try #require(server.events.prompts.last).id, .terminal)
+        first.open("answered")
         #expect((try #require(await first.finish()).lines.first?["replies"] as? [Any])?.isEmpty == true)
         // Answered in OpenCode first: the plugin hears of it and drops its request, which takes the card down.
         let (second, _, _) = try start(server, body: Self.setUp + """
             await event("permission.asked", request("per_5"))
-            await sleep(1000)
+            await gate("shown")
             await event("permission.replied", { sessionID: "ses_main1", requestID: "per_5", reply: "once" })
             await sleep(500)
             out({ replies })
             """)
+        await eventually { server.events.prompts.count == 2 }
+        second.open("shown")
         await eventually { server.events.goneIDs.count == 1 }
         #expect(server.events.prompts.count == 2 && server.events.goneIDs == [server.events.prompts[1].id])
         #expect((try #require(await second.finish()).lines.first?["replies"] as? [Any])?.isEmpty == true)
