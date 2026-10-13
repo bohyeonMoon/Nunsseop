@@ -198,9 +198,7 @@ struct OrcaStepsTests {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         let tool = dir.appendingPathComponent("orca")
-        try "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"\(dir.path)/log\"\ncase \"$*\" in *--text=*) exit 1;; esac\n"
-            .write(to: tool, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tool.path)
+        try StubTool.write("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"\(dir.path)/log\"\ncase \"$*\" in *--text=*) exit 1;; esac\n", to: tool)
         let steps = try #require(AgentSend.steps(.orca(paneKey: key1), text: "x", submit: true, clis: TerminalCLIs(orca: tool), orca: pick))
         #expect(AgentSend.run(steps) == .failed)
         #expect(try String(contentsOf: dir.appendingPathComponent("log"), encoding: .utf8) == "terminal send --terminal \(handle1) --text=x\n")
@@ -255,10 +253,8 @@ struct OrcaStepsTests {
         defer { try? FileManager.default.removeItem(at: dir) }
         // A stand-in for the tool: it records its arguments and the variables that would pick the instance, the server or the terminal.
         let tool = dir.appendingPathComponent("orca")
-        try ("#!/bin/sh\nfor a; do printf '%s\\n' \"$a\"; done >> \"\(dir.path)/args\"\n"
-             + "echo \"[${ORCA_PANE_KEY-unset}][${ORCA_USER_DATA_PATH-unset}][${ORCA_ENVIRONMENT-unset}][${ORCA_TERMINAL_HANDLE-unset}][${ORCA_PAIRING_CODE-unset}][${MUXY_SESSION_ID-unset}]\" > \"\(dir.path)/env\"\n")
-            .write(to: tool, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tool.path)
+        try StubTool.write("#!/bin/sh\nfor a; do printf '%s\\n' \"$a\"; done >> \"\(dir.path)/args\"\n"
+                           + "echo \"[${ORCA_PANE_KEY-unset}][${ORCA_USER_DATA_PATH-unset}][${ORCA_ENVIRONMENT-unset}][${ORCA_TERMINAL_HANDLE-unset}][${ORCA_PAIRING_CODE-unset}][${MUXY_SESSION_ID-unset}]\" > \"\(dir.path)/env\"\n", to: tool)
         let names = ["ORCA_PANE_KEY", "ORCA_USER_DATA_PATH", "ORCA_ENVIRONMENT", "ORCA_TERMINAL_HANDLE", "ORCA_PAIRING_CODE", "MUXY_SESSION_ID"]
         let saved = names.map { ($0, ProcessInfo.processInfo.environment[$0]) }
         for name in names { setenv(name, "x", 1) }
@@ -284,8 +280,7 @@ struct OrcaStepsTests {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         let tool = dir.appendingPathComponent("orca")
-        try "#!/bin/sh\nexit 1\n".write(to: tool, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tool.path)
+        try StubTool.write("#!/bin/sh\nexit 1\n", to: tool)
         let steps = try #require(AgentSend.steps(.orca(paneKey: key1), text: "x", submit: true, clis: TerminalCLIs(orca: tool), orca: pick))
         #expect(AgentSend.run(steps) == .failed)
         #expect(Orca.run(tool, Orca.terminalListArguments) == nil)

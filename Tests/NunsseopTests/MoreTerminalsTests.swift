@@ -433,8 +433,7 @@ struct TerminalExecutionTests {
         let dir = try scratch()
         defer { try? FileManager.default.removeItem(at: dir) }
         let tool = dir.appendingPathComponent("tool")
-        try "#!/bin/sh\necho \"[${WEZTERM_UNIX_SOCKET-unset}][${WEZTERM_PANE-unset}]\" > \"\(dir.path)/env\"\n".write(to: tool, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tool.path)
+        try StubTool.write("#!/bin/sh\necho \"[${WEZTERM_UNIX_SOCKET-unset}][${WEZTERM_PANE-unset}]\" > \"\(dir.path)/env\"\n", to: tool)
         let saved = ProcessInfo.processInfo.environment["WEZTERM_UNIX_SOCKET"]
         setenv("WEZTERM_UNIX_SOCKET", "/tmp/nunsseops-own", 1)
         setenv("WEZTERM_PANE", "9", 1)
@@ -451,10 +450,8 @@ struct TerminalExecutionTests {
         let dir = try scratch()
         defer { try? FileManager.default.removeItem(at: dir) }
         let tool = dir.appendingPathComponent("tool")
-        try ("#!/bin/sh\ncat > \"\(dir.path)/stdin\"\nfor a; do printf '%s\\n' \"$a\"; done > \"\(dir.path)/args\"\n"
-             + "echo \"[${WEZTERM_PANE-unset}][${KITTY_WINDOW_ID-unset}][${KITTY_LISTEN_ON-unset}]\" > \"\(dir.path)/env\"\n")
-            .write(to: tool, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tool.path)
+        try StubTool.write("#!/bin/sh\ncat > \"\(dir.path)/stdin\"\nfor a; do printf '%s\\n' \"$a\"; done > \"\(dir.path)/args\"\n"
+                           + "echo \"[${WEZTERM_PANE-unset}][${KITTY_WINDOW_ID-unset}][${KITTY_LISTEN_ON-unset}]\" > \"\(dir.path)/env\"\n", to: tool)
         let names = ["WEZTERM_PANE", "KITTY_WINDOW_ID", "KITTY_LISTEN_ON"]
         let saved = names.map { ($0, ProcessInfo.processInfo.environment[$0]) }
         for name in names { setenv(name, "9", 1) }
@@ -468,8 +465,7 @@ struct TerminalExecutionTests {
         #expect(!FileManager.default.fileExists(atPath: dir.appendingPathComponent("pwn").path))
         // A tool that ends without reading its input fails or passes by its status, and doesn't end Nunsseop with a broken pipe.
         let quiet = dir.appendingPathComponent("quiet")
-        try "#!/bin/sh\nexit 0\n".write(to: quiet, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: quiet.path)
+        try StubTool.write("#!/bin/sh\nexit 0\n", to: quiet)
         _ = AgentSend.execute(.runInput(quiet, [], stdin: String(repeating: "x", count: 4000)))
         #expect(!AgentSend.execute(.runInput(dir.appendingPathComponent("missing"), [], stdin: "x")))
     }

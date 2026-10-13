@@ -23,7 +23,7 @@ private final class StubbedHook {
         let bin = dir.appendingPathComponent("bin")
         try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
         let curl = bin.appendingPathComponent("curl")
-        try """
+        try StubTool.write("""
         #!/bin/sh
         for a; do printf '%s\\0' "$a"; done > "$D/args"
         echo $$ > "$D/pid"
@@ -40,8 +40,7 @@ private final class StubbedHook {
           answer) while [ ! -f "$D/response" ]; do sleep 0.02; done; cat "$D/response" ;;
         esac
         exit 0
-        """.write(to: curl, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: curl.path)
+        """, to: curl)
         process = try HookProcess(command: command, home: home.url, stdin: input,
                                   path: path ?? "\(bin.path):/usr/bin:/bin", environment: ["D": dir.path, "MODE": mode.rawValue])
     }
@@ -260,17 +259,15 @@ struct PermissionHookShellTests {
         let shims = FileManager.default.temporaryDirectory.appendingPathComponent("nunsseop-shims-\(UUID().uuidString.prefix(8))")
         try FileManager.default.createDirectory(at: shims, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: shims) }
-        let shim = shims.appendingPathComponent("shim")
-        try """
-        #!/bin/sh
-        t=${0##*/}
-        printf '%s\\0' "$t" "$@" >> "$LOG"
-        for d in /usr/bin /bin; do [ -x "$d/$t" ] && exec "$d/$t" "$@"; done
-        exit 127
-        """.write(to: shim, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: shim.path)
+        // One program under each name the hook might run, each recording the name it was started by.
         for name in ["openssl", "curl", "tr", "od", "dd", "sed", "wc", "cat", "sleep"] {
-            try FileManager.default.createSymbolicLink(at: shims.appendingPathComponent(name), withDestinationURL: shim)
+            try StubTool.write("""
+            #!/bin/sh
+            t=${0##*/}; t=${t%.body}
+            printf '%s\\0' "$t" "$@" >> "$LOG"
+            for d in /usr/bin /bin; do [ -x "$d/$t" ] && exec "$d/$t" "$@"; done
+            exit 127
+            """, to: shims.appendingPathComponent(name))
         }
         let log = shims.appendingPathComponent("argv.log")
 

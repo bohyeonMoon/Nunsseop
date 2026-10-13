@@ -1452,8 +1452,7 @@ struct AgentSendExecutionTests {
 
     private func stub(_ body: String, in dir: URL) throws -> URL {
         let url = dir.appendingPathComponent("tool")
-        try ("#!/bin/sh\n" + body + "\n").write(to: url, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+        try StubTool.write("#!/bin/sh\n" + body + "\n", to: url)
         return url
     }
 
@@ -1504,8 +1503,9 @@ struct AgentSendExecutionTests {
     /// herdr's socket: answers one request per connection, then closes it. Every request is logged with the number of its connection.
     private func serve(replying reply: String, at path: String) throws -> Process {
         let server = try StandIn.python("""
-        import json, socket, sys
-        s = socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(8)
+        import json, os, socket, sys
+        # The socket has its name once it listens: a file that exists is not yet one a client can connect to.
+        s = socket.socket(socket.AF_UNIX); s.bind(sys.argv[1] + ".bind"); s.listen(8); os.rename(sys.argv[1] + ".bind", sys.argv[1])
         n = 0
         while True:
             c, _ = s.accept(); n += 1; f = c.makefile("rwb")

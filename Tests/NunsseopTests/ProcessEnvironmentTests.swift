@@ -80,18 +80,7 @@ struct ProcessEnvironmentParseTests {
     /// Reads the environment of a child that this test starts, by its pid, with the real `sysctl`; nothing else's. macOS gives no
     /// environment for a system binary such as /bin/sleep itself, so the child is a copy of it, signed ad hoc.
     @Test func theLiveReaderReadsAChildsOwnEnvironmentAndOnlyTheListedVariables() throws {
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("nunsseop-env-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let sleep = folder.appendingPathComponent("sleep")
-        try FileManager.default.copyItem(at: URL(fileURLWithPath: "/bin/sleep"), to: sleep)
-        let sign = Process()
-        sign.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
-        sign.arguments = ["-s", "-", "--force", sleep.path]
-        sign.standardError = FileHandle.nullDevice
-        try sign.run()
-        sign.waitUntilExit()
-        try #require(sign.terminationStatus == 0)
+        let sleep = try StubTool.signedCopy(of: "/bin/sleep", named: "sleep")
 
         let child = Process()
         child.executableURL = sleep

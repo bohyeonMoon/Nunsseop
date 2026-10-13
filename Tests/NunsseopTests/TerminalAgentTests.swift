@@ -128,7 +128,8 @@ struct TerminalAgentWatcherTests {
         quiet = len(sys.argv) > 2
         lists = []
         server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        server.bind(path); server.listen(4)
+        # The socket has its name once it listens: a file that exists is not yet one a client can connect to.
+        server.bind(path + ".bind"); server.listen(4); os.rename(path + ".bind", path)
         def serve(conn):
             reader = conn.makefile("r")
             for line in reader:
@@ -273,9 +274,8 @@ struct TerminalAgentWatcherTests {
         let cli = temporary("cmux")
         // A stand-in that stays until the watcher stops it. One that ended on its own, as `sleep 30` did, would be started again by the retry
         // the watcher is meant to make, and a test held up for more than those 30 s (a busy machine does that) would count the second start.
-        try "#!/bin/sh\nexec sleep 3600\n".write(to: cli, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: cli.path)
-        defer { try? FileManager.default.removeItem(at: cli) }
+        try StubTool.write("#!/bin/sh\nexec sleep 3600\n", to: cli)
+        defer { StubTool.remove(cli) }
         installed = cli
         let before = watcher.launches
         // Found on the next retry, and started once...
@@ -288,7 +288,7 @@ struct TerminalAgentWatcherTests {
 
     @Test func cmuxWatcherLooksUpCreatedNotifications() async throws {
         let cli = temporary("cmux")
-        try """
+        try StubTool.write("""
         #!/bin/sh
         if [ "$1" = events ]; then
           echo '{"type":"event","name":"notification.created","category":"notification","payload":{"notification_id":"N1","title":null}}'
@@ -296,9 +296,8 @@ struct TerminalAgentWatcherTests {
         elif [ "$1" = rpc ]; then
           echo '{"notifications":[{"id":"N1","title":"Pi","subtitle":"","body":"Turn complete","is_read":false}]}'
         fi
-        """.write(to: cli, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: cli.path)
-        defer { try? FileManager.default.removeItem(at: cli) }
+        """, to: cli)
+        defer { StubTool.remove(cli) }
 
         let watcher = CmuxWatcher(cli: cli)
         var received: [Cmux.Notice] = []
@@ -385,14 +384,13 @@ struct TmuxWatcherTests {
         try FileManager.default.createDirectory(at: home.appendingPathComponent("bin"), withIntermediateDirectories: true)
         try "token".write(to: support.appendingPathComponent("notify-token"), atomically: true, encoding: .utf8)
         let curl = home.appendingPathComponent("bin/curl")
-        try """
+        try StubTool.write("""
         #!/bin/sh
         out=$(mktemp "\(requests.path)/req.XXXXXX")
         for arg; do printf '%s\\n' "$arg"; done > "$out.args"
         cat > "$out.body"
         rm "$out"
-        """.write(to: curl, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: curl.path)
+        """, to: curl)
 
         let environment = ["HOME": home.path, "PATH": "\(home.path)/bin:/usr/bin:/bin", "TERM": "xterm"]
         // Names a program could set: braces, commas and ~ must arrive as typed, not expanded by sh.
@@ -452,18 +450,17 @@ struct TerminalBellScriptTests {
         let bin = dir.appendingPathComponent("bin")
         try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
         let curl = bin.appendingPathComponent("curl")
-        try """
+        try StubTool.write("""
         #!/bin/sh
         for arg; do printf '%s\\n' "$arg"; done > "\(dir.path)/args"
         cat > "\(dir.path)/body"
-        """.write(to: curl, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: curl.path)
+        """, to: curl)
         let script = dir.appendingPathComponent("terminal-notify.sh")
         TerminalBell.install(at: script)
 
         let process = Process()
-        process.executableURL = script
-        process.arguments = arguments
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = [script.path] + arguments
         process.environment = ["HOME": dir.path, "PATH": "\(bin.path):/usr/bin:/bin", "__CFBundleIdentifier": "com.mitchellh.ghostty"]
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
@@ -480,15 +477,14 @@ struct TerminalBellScriptTests {
         try FileManager.default.createDirectory(at: dir.appendingPathComponent("bin"), withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         let curl = dir.appendingPathComponent("bin/curl"), tmux = dir.appendingPathComponent("tmux")
-        try "#!/bin/sh\ntouch \(dir.path)/sent\n".write(to: curl, atomically: true, encoding: .utf8)
-        try "#!/bin/sh\nexit 1\n".write(to: tmux, atomically: true, encoding: .utf8)
-        for file in [curl, tmux] { try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: file.path) }
+        try StubTool.write("#!/bin/sh\ntouch \(dir.path)/sent\n", to: curl)
+        try StubTool.write("#!/bin/sh\nexit 1\n", to: tmux)
         let script = dir.appendingPathComponent("terminal-notify.sh")
         TerminalBell.install(at: script)
         for window in ["@9", "@9;x", "9", ""] {
             let process = Process()
-            process.executableURL = script
-            process.arguments = ["tmux-window", tmux.path, "", window]
+            process.executableURL = URL(fileURLWithPath: "/bin/sh")
+            process.arguments = [script.path, "tmux-window", tmux.path, "", window]
             process.environment = ["HOME": dir.path, "PATH": "\(dir.path)/bin:/usr/bin:/bin"]
             process.standardOutput = FileHandle.nullDevice
             process.standardError = FileHandle.nullDevice
@@ -540,8 +536,7 @@ struct WezTermSnippetTests {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         let cli = dir.appendingPathComponent("wezterm")
-        try "#!/bin/sh\nprintf '%s ' \"$@\" >> \(dir.path)/args\n".write(to: cli, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: cli.path)
+        try StubTool.write("#!/bin/sh\nprintf '%s ' \"$@\" >> \(dir.path)/args\n", to: cli)
         WezTerm.focus(pane: "١٢", cli: cli)   // not ASCII digits: ignored
         WezTerm.focus(pane: "7", cli: cli)
         let args = dir.appendingPathComponent("args")
@@ -679,8 +674,8 @@ struct NoticeClickTests {
     @Test func socketClientReadsOneReplyPerLine() throws {
         let path = "/tmp/nunsseop-test-\(UUID().uuidString.prefix(8)).sock"
         let script = """
-        import socket, sys
-        s = socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(1)
+        import os, socket, sys
+        s = socket.socket(socket.AF_UNIX); s.bind(sys.argv[1] + ".bind"); s.listen(1); os.rename(sys.argv[1] + ".bind", sys.argv[1])
         c, _ = s.accept(); f = c.makefile("rwb")
         for line in f:
             f.write(b"ok:" + line); f.flush()
@@ -697,8 +692,8 @@ struct NoticeClickTests {
         // Like herdr: one reply, then the connection closes.
         let path = "/tmp/nunsseop-test-\(UUID().uuidString.prefix(8)).sock"
         let script = """
-        import socket, sys
-        s = socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(4)
+        import os, socket, sys
+        s = socket.socket(socket.AF_UNIX); s.bind(sys.argv[1] + ".bind"); s.listen(4); os.rename(sys.argv[1] + ".bind", sys.argv[1])
         while True:
             c, _ = s.accept(); line = c.makefile("rb").readline()
             c.sendall(b"ok " + line); c.close()

@@ -99,8 +99,7 @@ struct ResumeLineTests {
         let record = bin.appendingPathComponent("record")
         for tool in ["claude", "codex"] {
             let script = bin.appendingPathComponent(tool)
-            try "#!/bin/sh\nprintf '%s\\n' \"$(pwd)\" \"$@\" > \(Resume.quote(record.path))\n".write(to: script, atomically: true, encoding: .utf8)
-            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+            try StubTool.write("#!/bin/sh\nprintf '%s\\n' \"$(pwd)\" \"$@\" > \(Resume.quote(record.path))\n", to: script)
         }
         for (kind, arguments) in [(AgentKind.claude, ["--resume", session]), (.codex, ["resume", session])] {
             try? FileManager.default.removeItem(at: record)
@@ -271,8 +270,7 @@ struct ResumeOpenTests {
         // A stand-in for the login shell, which records what it is given and runs the line the way `-c` does.
         let shellArguments = scripts.appendingPathComponent("shell-arguments")
         let shell = scripts.appendingPathComponent("login shell")
-        try "#!/bin/sh\nprintf '%s\\n' \"$@\" > \(Resume.quote(shellArguments.path))\nexec /bin/sh -c \"$2\"\n".write(to: shell, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: shell.path)
+        try StubTool.write("#!/bin/sh\nprintf '%s\\n' \"$@\" > \(Resume.quote(shellArguments.path))\nexec /bin/sh -c \"$2\"\n", to: shell)
         var setup = setup(scripts: scripts)
         setup.shell = shell.path
         let recorder = Recorder()
@@ -294,8 +292,7 @@ struct ResumeOpenTests {
         try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
         let record = scripts.appendingPathComponent("record")
         let tool = bin.appendingPathComponent("claude")
-        try "#!/bin/sh\nprintf '%s\\n' \"$(pwd)\" \"$@\" > \(Resume.quote(record.path))\n".write(to: tool, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tool.path)
+        try StubTool.write("#!/bin/sh\nprintf '%s\\n' \"$(pwd)\" \"$@\" > \(Resume.quote(record.path))\n", to: tool)
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         process.arguments = [path]

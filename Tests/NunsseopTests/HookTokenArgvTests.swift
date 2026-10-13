@@ -114,8 +114,7 @@ private struct Sandbox {
         let bin = home.url.appendingPathComponent("bin")
         try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
         let curl = bin.appendingPathComponent("curl")
-        try ("#!/bin/sh\n" + body).write(to: curl, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: curl.path)
+        try StubTool.write("#!/bin/sh\n" + body, to: curl)
     }
 
     var authFile: URL { dir.appendingPathComponent("Library/Application Support/Nunsseop/notify-auth") }
@@ -245,12 +244,11 @@ struct HookTokenRealRunTests {
         let bin = server.home.url.appendingPathComponent("bin")
         try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
         let shim = bin.appendingPathComponent("curl")
-        try """
+        try StubTool.write("""
             #!/bin/sh
             ps -axww -o command= > "$HOME/ps-snapshot"
             exec /usr/bin/curl "$@"
-            """.write(to: shim, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: shim.path)
+            """, to: shim)
         return (server, seen)
     }
 

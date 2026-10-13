@@ -139,15 +139,7 @@ struct GjcScannerTests {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("nunsseop-gjcproc-\(UUID().uuidString.prefix(8))")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
-        let link = folder.appendingPathComponent("gjc")
-        try FileManager.default.copyItem(at: URL(fileURLWithPath: "/bin/sleep"), to: link)
-        let sign = Process()
-        sign.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
-        sign.arguments = ["-s", "-", "-f", link.path]
-        sign.standardError = FileHandle.nullDevice
-        try sign.run()
-        sign.waitUntilExit()
-        try #require(sign.terminationStatus == 0, "codesign is needed to run a copy of a system tool")
+        let link = try StubTool.signedCopy(of: "/bin/sleep", named: "gjc")
         let process = Process()
         process.executableURL = link
         process.arguments = ["30"]

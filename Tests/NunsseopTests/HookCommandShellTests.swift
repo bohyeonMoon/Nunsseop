@@ -30,20 +30,19 @@ private struct ShellRun {
         try "tok\n".write(to: support.appendingPathComponent("notify-token"), atomically: true, encoding: .utf8)
         try "Authorization: Bearer tok\n".write(to: support.appendingPathComponent("notify-auth"), atomically: true, encoding: .utf8)
         let curl = dir.appendingPathComponent("bin/curl")
-        try """
+        try StubTool.write("""
         #!/bin/sh
         echo x >> "\(dir.path)/calls"
         for arg; do printf '%s\\n' "$arg"; done > "\(dir.path)/args"
         cat > "\(dir.path)/body"
         echo LEAK
         exit \(curlExit)
-        """.write(to: curl, atomically: true, encoding: .utf8)
+        """, to: curl)
         let previous = dir.appendingPathComponent("prev.sh")
-        try """
+        try StubTool.write("""
         #!/bin/sh
         for arg; do printf '%s\\n' "$arg"; done > "\(dir.path)/prev-args"
-        """.write(to: previous, atomically: true, encoding: .utf8)
-        for file in [curl, previous] { try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: file.path) }
+        """, to: previous)
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
