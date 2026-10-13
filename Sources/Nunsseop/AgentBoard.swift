@@ -62,6 +62,8 @@ final class AgentBoard: ObservableObject {
         var idleFrom: Date? = nil
         /// Where the terminal it runs in takes input from outside, when it has an API for that.
         var input: AgentInput? = nil
+        /// The tool's process, which `input` is checked against: only a session whose process is in that terminal is typed into.
+        var pid: Int32? = nil
 
         /// Set by `effective(at:)`: asking for input when last told, so its dialog may be open still, however long ago. Going idle
         /// by the clock doesn't close a dialog; only a later event does.

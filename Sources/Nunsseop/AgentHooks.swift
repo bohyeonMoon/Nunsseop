@@ -162,7 +162,7 @@ final class AgentHooks {
             let (id, value) = entry
             agents[id] = AgentBoard.Agent(state: value.state, expiresAt: value.expiresAt, since: value.since,
                                           finished: value.finished, tool: kind.rawValue, app: value.app, session: id,
-                                          idleFrom: value.idleFrom, input: value.input)
+                                          idleFrom: value.idleFrom, input: value.input, pid: value.pid)
         }, now: now)
         // A session's process can end without a word, so the ones that report theirs are looked at now and then.
         if entries.values.contains(where: { $0.pid != nil }) {

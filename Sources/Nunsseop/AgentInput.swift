@@ -31,7 +31,8 @@ enum AgentStep: Equatable {
     case run(URL, [String])
     /// Runs a tool and passes only when a line of its output starts with `id` and a tab: Muxy's session list.
     case listed(URL, [String], id: String)
-    /// Writes JSON requests, one per line, to a Unix socket; passes when each is answered and none with an error.
+    /// Sends JSON requests to a Unix socket, each on a connection of its own (herdr answers one request per connection, then
+    /// closes it); passes when each is answered and none with an error.
     case socket(path: String, requests: [String])
 }
 
@@ -115,9 +116,9 @@ enum AgentSend {
             return [.run(cli, ["rpc", "surface.send_text", params])]
                 + (submit ? [.run(cli, ["send-key", "--surface", surface, "enter"])] : [])
         case .herdr(let pane, let socket):
-            let requests = [request("text", "pane.send_text", ["pane_id": pane, "text": text])]
-                + (submit ? [request("enter", "pane.send_keys", ["pane_id": pane, "keys": ["enter"]])] : [])
-            return [.socket(path: socket, requests: requests)]
+            // One request does both: herdr's socket closes after answering the first, so a second one would never arrive.
+            let params: [String: Any] = ["pane_id": pane, "text": text]
+            return [.socket(path: socket, requests: [request("in", "pane.send_input", submit ? params.merging(["keys": ["enter"]]) { $1 } : params)])]
         }
     }
 
@@ -130,9 +131,14 @@ enum AgentSend {
         json(["id": id, "method": method, "params": params]) ?? ""
     }
 
+    /// The environment the terminals' tools run in: Nunsseop's own, less `terminalVariables`.
+    static var cleanEnvironment: [String: String] {
+        ProcessInfo.processInfo.environment.filter { !terminalVariables.contains($0.key) }
+    }
+
     /// Runs a step; false when it fails or the tool doesn't answer in time.
     static func execute(_ step: AgentStep) -> Bool {
-        let environment = ProcessInfo.processInfo.environment.filter { !terminalVariables.contains($0.key) }
+        let environment = cleanEnvironment
         switch step {
         case .run(let cli, let arguments):
             return TerminalFocus.run(cli, arguments, environment: environment) != nil
@@ -140,9 +146,9 @@ enum AgentSend {
             return TerminalFocus.run(cli, arguments, environment: environment)?
                 .split(separator: "\n").contains { $0.split(separator: "\t", omittingEmptySubsequences: false).first == Substring(id) } == true
         case .socket(let path, let requests):
-            let replies = TerminalFocus.send(requests, toSocket: path)
-            return replies.count == requests.count && replies.allSatisfy { reply in
-                ((try? JSONSerialization.jsonObject(with: Data(reply.utf8))) as? [String: Any]).map { $0["error"] == nil } ?? false
+            return requests.allSatisfy { request in
+                guard let reply = TerminalFocus.send([request], toSocket: path).first else { return false }
+                return ((try? JSONSerialization.jsonObject(with: Data(reply.utf8))) as? [String: Any]).map { $0["error"] == nil } ?? false
             }
         }
     }

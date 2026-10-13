@@ -409,4 +409,4 @@
 /* Sending to a session */
 "Send a message" = "Envoyer un message";
 "Answer the prompt first" = "Répondez d'abord à la question";
-"Couldn't send. Is the terminal still open?" = "Envoi impossible. Le terminal est-il toujours ouvert ?";
+"Couldn't send to this session" = "Envoi à cette session impossible";

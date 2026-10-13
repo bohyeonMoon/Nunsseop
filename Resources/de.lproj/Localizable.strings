@@ -409,4 +409,4 @@
 /* Sending to a session */
 "Send a message" = "Nachricht senden";
 "Answer the prompt first" = "Zuerst die Rückfrage beantworten";
-"Couldn't send. Is the terminal still open?" = "Senden fehlgeschlagen. Ist das Terminal noch geöffnet?";
+"Couldn't send to this session" = "Senden an diese Sitzung fehlgeschlagen";

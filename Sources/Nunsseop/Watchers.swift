@@ -248,9 +248,11 @@ final class NotifyServer: @unchecked Sendable {
 
     /// Claude Code's hook for the agents count, the same for every event. Claude Code passes the event as JSON on
     /// stdin; only the ids and names below leave it, as headers (no prompt, reply, folder or transcript), trimmed to
-    /// safe characters so a stray newline can't break one. `$PPID` is the `claude` process itself, whose end tells that
-    /// a session is gone. `X-Muxy` and `X-Cmux` carry the ids of the terminal it runs in (empty when it isn't in one), which
-    /// `AgentHook.event` checks again before they say where to type; `X-Mux` says it runs inside tmux, zellij or screen.
+    /// safe characters so a stray newline can't break one. `$PPID` is the `claude` process itself (the same is assumed for
+    /// Codex, whose hook runs under it the same way; not checkable without running Codex), whose end tells that a session is
+    /// gone and whose terminal `AgentTargetCheck` looks up. `X-Muxy` and `X-Cmux` carry the ids of the terminal it runs in
+    /// (empty when it isn't in one), which `AgentHook.event` checks again before they say where to type; `X-Mux` says it runs
+    /// inside tmux, zellij or screen.
     /// Nothing may reach stdout, which `UserPromptSubmit` and `SessionStart` add to Claude's context, and a closed or stuck
     /// Nunsseop costs a session at most a second.
     static var agentHookCommand: String { agentHookCommand(for: .claude) }
@@ -266,7 +268,8 @@ final class NotifyServer: @unchecked Sendable {
             + "-H \"X-Muxy: ${MUXY_SESSION_ID}\" -H \"X-Cmux: ${CMUX_SURFACE_ID}\" "
             + "-H \"X-Mux: ${TMUX:+1}${ZELLIJ:+1}${STY:+1}\" "
             + "-H \"X-Background: ${CLAUDE_JOB_DIR:+1}\" "
-            + (agent == .claude ? "-H \"X-Pid: $PPID\" " : "-H 'X-Agent: \(agent.rawValue)' ")
+            + "-H \"X-Pid: $PPID\" "
+            + (agent == .claude ? "" : "-H 'X-Agent: \(agent.rawValue)' ")
             + ">/dev/null 2>&1 || true"
     }
 

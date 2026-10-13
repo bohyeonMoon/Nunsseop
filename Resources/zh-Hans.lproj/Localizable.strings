@@ -409,4 +409,4 @@
 /* Sending to a session */
 "Send a message" = "发送消息";
 "Answer the prompt first" = "请先回答提示";
-"Couldn't send. Is the terminal still open?" = "无法发送。终端还开着吗？";
+"Couldn't send to this session" = "无法发送到此会话";

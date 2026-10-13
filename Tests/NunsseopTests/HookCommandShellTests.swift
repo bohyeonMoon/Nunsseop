@@ -186,7 +186,8 @@ struct CodexAgentHookShellTests {
             "-s", "-m", "1", "--connect-timeout", "1", "-X", "POST", "http://127.0.0.1:\(NotifyServer.port)/agent", "-d", "",
             "-H", sent.authArgument, "-H", "X-Session: 019e5b2c-7a41-7c10-8d3e-2f6a9c1b4e07",
             "-H", "X-Event: PermissionRequest", "-H", "X-Type: ", "-H", "X-Subagent: ", "-H", "X-App: com.x",
-            "-H", "X-Herdr: ", "-H", "X-Muxy: ", "-H", "X-Cmux: ", "-H", "X-Mux: ", "-H", "X-Background: ", "-H", "X-Agent: codex",
+            "-H", "X-Herdr: ", "-H", "X-Muxy: ", "-H", "X-Cmux: ", "-H", "X-Mux: ", "-H", "X-Background: ", "-H", "X-Pid: \(getpid())",
+            "-H", "X-Agent: codex",
         ])
         #expect(sent.body.isEmpty)
         #expect(!sent.args.joined().contains("secret") && !sent.args.joined().contains("rm -rf") && !sent.args.joined().contains("gpt"))
@@ -203,7 +204,7 @@ struct CodexAgentHookShellTests {
                 headers[header[..<colon].lowercased()] = header[header.index(after: colon)...].trimmingCharacters(in: .whitespaces)
             }
             #expect(AgentHook.event(headers: headers)
-                    == AgentEvent(session: "s-1", action: action, app: "com.x", inHerdr: false, agent: .codex), "\(event)")
+                    == AgentEvent(session: "s-1", action: action, app: "com.x", inHerdr: false, agent: .codex, pid: getpid()), "\(event)")
         }
     }
 

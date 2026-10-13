@@ -434,4 +434,4 @@
 /* Sending to a session */
 "Send a message" = "메시지 보내기";
 "Answer the prompt first" = "먼저 질문에 답하세요";
-"Couldn't send. Is the terminal still open?" = "보내지 못했습니다. 터미널이 아직 열려 있나요?";
+"Couldn't send to this session" = "이 세션으로 보내지 못했습니다";

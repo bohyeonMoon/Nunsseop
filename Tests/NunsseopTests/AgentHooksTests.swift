@@ -134,7 +134,8 @@ struct AgentHookEventTests {
         // Claude Code's command is the one installed so far, and stays as it was.
         #expect(NotifyServer.agentHookCommand == NotifyServer.agentHookCommand(for: .claude))
         #expect(!NotifyServer.agentHookCommand.contains("X-Agent"))
-        #expect(!command.contains("X-Pid") && !command.contains("PPID"))
+        // Its process is reported as Claude Code's is (assumed to be `$PPID` of the hook, as for Claude Code), after the common headers.
+        #expect(command.contains(#"-H "X-Pid: $PPID" -H 'X-Agent: codex'"#))
     }
 
     /// Codex asks to trust a hook again when its command changes, so this text is pinned: a change is a decision.
@@ -146,7 +147,7 @@ struct AgentHookEventTests {
             + #"-H "X-Subagent: $(k agent_id)" -H "X-App: $__CFBundleIdentifier" -H "X-Herdr: ${HERDR_PANE_ID:+1}" "#
             + #"-H "X-Muxy: ${MUXY_SESSION_ID}" -H "X-Cmux: ${CMUX_SURFACE_ID}" "#
             + #"-H "X-Mux: ${TMUX:+1}${ZELLIJ:+1}${STY:+1}" "#
-            + #"-H "X-Background: ${CLAUDE_JOB_DIR:+1}" -H 'X-Agent: codex' >/dev/null 2>&1 || true"#
+            + #"-H "X-Background: ${CLAUDE_JOB_DIR:+1}" -H "X-Pid: $PPID" -H 'X-Agent: codex' >/dev/null 2>&1 || true"#
         #expect(NotifyServer.port == 47750)
         #expect(NotifyServer.agentHookCommand(for: .codex) == pinned)
         #expect(NotifyServer.agentHookCommand(for: .codex, port: 47750) == pinned)

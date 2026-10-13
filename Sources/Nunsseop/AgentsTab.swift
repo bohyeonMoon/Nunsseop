@@ -28,13 +28,17 @@ struct AgentRow: Identifiable, Equatable {
     let mode: AgentMode?
     let name: String?
     let target: Target?
-    /// Where the terminal takes text from outside, if it has an API for that.
+    /// Where the terminal takes text from outside, if it has an API for that, as the hook named it: see `offersInput`.
     let input: AgentInput?
+    /// The tool's process, which `input` is checked against.
+    let pid: Int32?
+    /// Whether `AgentTargetCheck` found the session's process in the terminal `input` names.
+    let inputVerified: Bool
     /// A prompt may be open in the terminal this row types into: the session's own, however long it has waited, or that of
     /// another listed session sharing the terminal (`claude -p` started from it, a Codex session it replaced).
     private(set) var promptOnTerminal: Bool
 
-    init(_ entry: AgentBoard.Entry, transcript: AgentTranscript?) {
+    init(_ entry: AgentBoard.Entry, transcript: AgentTranscript?, inputVerified: Bool = false) {
         let agent = entry.agent
         id = entry.key
         tool = Self.toolName(agent.tool)
@@ -48,14 +52,26 @@ struct AgentRow: Identifiable, Equatable {
         name = transcript?.name
         target = Self.target(for: agent)
         input = agent.input
+        pid = agent.pid
+        self.inputVerified = inputVerified
         promptOnTerminal = agent.promptMayBeOpen
     }
 
+    /// Whether the row offers the message bubble and takes drops: its terminal has an input API and the session is in it. A herdr
+    /// pane comes from herdr's own list; any other target is the hook's word, so it counts once it is verified.
+    var offersInput: Bool {
+        switch input {
+        case nil: false
+        case .herdr: true
+        case .muxy, .cmux: inputVerified
+        }
+    }
+
     /// Whether text can be sent to the session now: its terminal has an input API and no prompt may be waiting there.
-    var acceptsInput: Bool { input != nil && !promptOnTerminal && AgentSend.accepts(state: state, finished: finished) }
+    var acceptsInput: Bool { offersInput && !promptOnTerminal && AgentSend.accepts(state: state, finished: finished) }
 
     /// Its terminal takes input, but a prompt waits for the answer first.
-    var inputBlocked: Bool { input != nil && !acceptsInput }
+    var inputBlocked: Bool { offersInput && !acceptsInput }
 
     /// The rows with `promptOnTerminal` set on every one whose terminal another row's prompt may be open in: text typed there
     /// answers that dialog, whichever session the row it was typed from belongs to.
@@ -196,9 +212,22 @@ final class AgentsTabModel: ObservableObject {
     private let scratch: [String]
     private let sender: AgentSender
     private let clis: () -> TerminalCLIs
+    private let targets: AgentTargetCheck
     private var transcripts = AgentTranscripts()
     private var loading = false
     private var changedWhileLoading = false
+    /// The rows whose terminal target has been verified, by `Entry.key`, for the input and process it was verified for.
+    private var verifiedTargets: [String: VerifiedTarget] = [:]
+    /// Whether targets are being checked (off the main thread); one pass at a time, one more wanted if the board changed meanwhile.
+    private(set) var verifying = false
+    private var verifyWanted = false
+    /// The time of the latest refresh, which the rows built when a check or a transcript load ends are as of.
+    private var asOf = Date.now
+
+    private struct VerifiedTarget: Equatable {
+        let input: AgentInput
+        let pid: Int32?
+    }
     private var scanner = RecentConversations()
     private var scanning = false
     private var scanWanted = false
@@ -213,9 +242,10 @@ final class AgentsTabModel: ObservableObject {
     /// - onResume: what clicking a recent conversation does; by default, opens it in the terminal chosen in Settings.
     /// - sender: what puts text into a terminal; tests give it one that records instead.
     /// - clis: where the terminals' command-line tools are, looked up on every send.
+    /// - targets: how a session's terminal is verified; tests give it a made-up process tree.
     init(board: AgentBoard, home: @escaping () -> URL = { NotifyIntegration.home }, isConnected: (() -> Bool)? = nil,
          scratch: [String] = RecentConversations.scratch, onResume: @escaping (RecentConversation) -> Void = Resume.inChosenTerminal,
-         sender: AgentSender = .live, clis: @escaping () -> TerminalCLIs = { .live }) {
+         sender: AgentSender = .live, clis: @escaping () -> TerminalCLIs = { .live }, targets: AgentTargetCheck = .live) {
         self.board = board
         self.home = home
         self.isConnected = isConnected
@@ -223,6 +253,7 @@ final class AgentsTabModel: ObservableObject {
         self.scratch = scratch
         self.sender = sender
         self.clis = clis
+        self.targets = targets
         connected = checkConnected()
         #if DEBUG
         if CommandLine.arguments.contains("--demo-agents") {
@@ -236,8 +267,10 @@ final class AgentsTabModel: ObservableObject {
     }
 
     func refresh(now: Date = .now) {
+        asOf = now
         let entries = board.entries(now: now)
         rebuild(entries)
+        verifyTargets(entries)
         refreshRecent(entries, now: now)
         let keys = Set(entries.compactMap { fixed[$0.key] == nil ? AgentRow.transcriptKey($0.agent) : nil })
         guard !keys.isEmpty else { return transcripts.refresh([], home: home()) }
@@ -254,11 +287,47 @@ final class AgentsTabModel: ObservableObject {
     private func loaded(_ updated: AgentTranscripts) {
         transcripts = updated
         loading = false
-        rebuild(board.entries())
+        rebuild(board.entries(now: asOf))
         if changedWhileLoading {
             changedWhileLoading = false
             refresh()
         }
+    }
+
+    /// Checks, off the main thread, that each session's process runs in the terminal its hook named (see `AgentTargetCheck`); until
+    /// then, or when it doesn't, the row offers no input. Muxy's session list is read once for all of them.
+    private func verifyTargets(_ entries: [AgentBoard.Entry]) {
+        let candidates = entries.compactMap { entry -> (key: String, target: VerifiedTarget)? in
+            guard let input = entry.agent.input, !isHerdr(input) else { return nil }
+            return (entry.key, VerifiedTarget(input: input, pid: entry.agent.pid))
+        }
+        guard !candidates.isEmpty else {
+            if !verifiedTargets.isEmpty { verifiedTargets = [:] }
+            return
+        }
+        guard !verifying else { verifyWanted = true; return }
+        verifying = true
+        let targets = targets, muxy = clis().muxy, others = Set(entries.compactMap { $0.agent.pid })
+        Task.detached(priority: .utility) { [weak self] in
+            let wantsList = candidates.contains { if case .muxy = $0.target.input { true } else { false } }
+            let sessions = wantsList ? targets.muxySessions(cli: muxy) : nil
+            let verified = candidates.filter { targets.verified($0.target.input, pid: $0.target.pid, muxySessions: sessions, others: others) }
+            await self?.verified(Dictionary(uniqueKeysWithValues: verified.map { ($0.key, $0.target) }))
+        }
+    }
+
+    private func verified(_ targets: [String: VerifiedTarget]) {
+        verifiedTargets = targets
+        verifying = false
+        rebuild(board.entries(now: asOf))
+        if verifyWanted {
+            verifyWanted = false
+            verifyTargets(board.entries(now: asOf))
+        }
+    }
+
+    private func isHerdr(_ input: AgentInput) -> Bool {
+        if case .herdr = input { true } else { false }
     }
 
     /// Looks for conversations that aren't open (any listed session is), off the main thread.
@@ -330,7 +399,8 @@ final class AgentsTabModel: ObservableObject {
         return deliver(text, submit: false, to: row)
     }
 
-    /// Checks the session as it is now, not as the row was drawn, and sends off the main thread.
+    /// Checks the session as it is now, not as the row was drawn, and sends off the main thread, after looking once more at where its
+    /// process runs.
     private func deliver(_ text: String, submit: Bool, to row: AgentRow) -> Bool {
         guard let current = rows.first(where: { $0.id == row.id }), current.acceptsInput, let input = current.input else { return false }
         notes[row.id] = nil
@@ -338,19 +408,23 @@ final class AgentsTabModel: ObservableObject {
             note(Self.failure, for: row.id)
             return true
         }
-        let sender = sender, id = row.id
+        let sender = sender, targets = targets, pid = current.pid, id = row.id
+        let others = Set(board.entries(now: asOf).compactMap { $0.agent.pid })
         Task.detached(priority: .userInitiated) { [weak self] in
-            let sent = sender.run(steps)
+            let sent = targets.hosted(input, pid: pid, others: others) && sender.run(steps)
             await self?.sent(sent, id)
         }
         return true
     }
 
+    /// A send that failed leaves a note, and the target is verified again: the session may be gone, and its bubble with it.
     private func sent(_ sent: Bool, _ id: String) {
-        if !sent { note(Self.failure, for: id) }
+        guard !sent else { return }
+        note(Self.failure, for: id)
+        verifyTargets(board.entries(now: asOf))
     }
 
-    private static var failure: String { String(localized: "Couldn't send. Is the terminal still open?") }
+    private static var failure: String { String(localized: "Couldn't send to this session") }
 
     private func note(_ text: String, for id: String) {
         notes[id] = text
@@ -378,7 +452,8 @@ final class AgentsTabModel: ObservableObject {
 
     private func rebuild(_ entries: [AgentBoard.Entry]) {
         let next = AgentRow.sorted(AgentRow.sharingTerminals(entries.map { entry in
-            AgentRow(entry, transcript: fixed[entry.key] ?? AgentRow.transcriptKey(entry.agent).flatMap(transcripts.transcript))
+            AgentRow(entry, transcript: fixed[entry.key] ?? AgentRow.transcriptKey(entry.agent).flatMap(transcripts.transcript),
+                     inputVerified: entry.agent.input.map { verifiedTargets[entry.key] == VerifiedTarget(input: $0, pid: entry.agent.pid) } ?? false)
         }))
         if next != rows { rows = next }
         // The field closes with its row, or when the session starts waiting on a prompt: typing could answer it.
@@ -470,7 +545,7 @@ private struct AgentRowView: View {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(verbatim: row.title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
                     Spacer(minLength: 4)
-                    if row.input != nil && (hovering || model.composing == row.id) { sendButton }
+                    if row.offersInput && (hovering || model.composing == row.id) { sendButton }
                     if let elapsed = AgentRow.elapsed(since: row.since, now: now) {
                         Text(verbatim: elapsed).font(.system(size: 10).monospacedDigit()).foregroundStyle(.white.opacity(0.4))
                     }

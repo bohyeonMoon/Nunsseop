@@ -122,6 +122,18 @@ struct AgentHooksInputTests {
         #expect(input(board) == .muxy("7"))
     }
 
+    @Test func theProcessReachesTheBoardForBothTools() {
+        for kind in [AgentKind.claude, .codex] {
+            let board = AgentBoard()
+            let hooks = AgentHooks(board: board, agent: kind, isOn: { true }, watchesHerdr: { false }, frontmostApp: { nil }, isAlive: { _ in true })
+            hooks.apply(AgentEvent(session: "a", action: .working, agent: kind, pid: 4321, input: .muxy("42")), now: start)
+            #expect(board.entries(now: start).first?.agent.pid == 4321)
+            // A later event without one keeps it.
+            hooks.apply(AgentEvent(session: "a", action: .finished, agent: kind, input: .muxy("42")), now: start)
+            #expect(board.entries(now: start).first?.agent.pid == 4321)
+        }
+    }
+
     @Test func herdrAgentsGetThePaneOnTheirSocketAndNothingWithoutOne() {
         let panes = ["w1:p1": Herdr.PaneState(status: "working", since: start, agent: "claude")]
         #expect(Herdr.boardAgents(panes, socket: "/tmp/herdr.sock")["w1:p1"]?.input == .herdr(pane: "w1:p1", socket: "/tmp/herdr.sock"))
@@ -242,17 +254,26 @@ struct AgentSendPlanTests {
         #expect(steps[1] == .run(cmux, ["send-key", "--surface", surface, "enter"]))
     }
 
-    @Test func herdrWritesTwoRequestsOnTheSessionsSocket() throws {
+    @Test func herdrGetsOneSendInputRequestWithTheTextAndEnter() throws {
         let steps = try #require(AgentSend.steps(.herdr(pane: "w1:p2", socket: "/Users/me/.config/herdr/herdr.sock"), text: "hi \"there\"",
                                                  submit: true, clis: clis))
         guard steps.count == 1, case .socket(let path, let requests) = steps[0] else { Issue.record("not one socket step"); return }
         #expect(path == "/Users/me/.config/herdr/herdr.sock")
-        let sent = try requests.map { try #require(try JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any]) }
-        #expect(sent.map { $0["method"] as? String } == ["pane.send_text", "pane.send_keys"])
-        #expect((sent[0]["params"] as? [String: String]) == ["pane_id": "w1:p2", "text": "hi \"there\""])
-        let keys = sent[1]["params"] as? [String: Any]
-        #expect(keys?["pane_id"] as? String == "w1:p2" && keys?["keys"] as? [String] == ["enter"])
-        #expect(requests.allSatisfy { !$0.contains("\n") })
+        // The socket closes after answering one request, so text and Return can't be two.
+        #expect(requests.count == 1 && !requests[0].contains("\n"))
+        let sent = try #require(try JSONSerialization.jsonObject(with: Data(requests[0].utf8)) as? [String: Any])
+        #expect(sent["method"] as? String == "pane.send_input")
+        let params = sent["params"] as? [String: Any]
+        #expect(params?.keys.sorted() == ["keys", "pane_id", "text"])
+        #expect(params?["pane_id"] as? String == "w1:p2" && params?["text"] as? String == "hi \"there\"" && params?["keys"] as? [String] == ["enter"])
+    }
+
+    @Test func droppedPathsGoToHerdrWithoutKeys() throws {
+        let steps = try #require(AgentSend.steps(.herdr(pane: "w1:p2", socket: "/tmp/h.sock"), text: "/tmp/a.png ", submit: false, clis: clis))
+        guard steps.count == 1, case .socket(_, let requests) = steps[0], requests.count == 1 else { Issue.record("not one request"); return }
+        let sent = try #require(try JSONSerialization.jsonObject(with: Data(requests[0].utf8)) as? [String: Any])
+        #expect(sent["method"] as? String == "pane.send_input")
+        #expect(sent["params"] as? [String: String] == ["pane_id": "w1:p2", "text": "/tmp/a.png "])
     }
 
     @Test func aTerminalWhoseToolIsMissingHasNoPlan() {
@@ -286,31 +307,100 @@ struct AgentSendPlanTests {
     }
 }
 
+/// Process trees and a Muxy list made up for the tests; the tree and the list can change while a test runs.
+private final class FakeTerminals: @unchecked Sendable {
+    static let muxyServer = "/Applications/Muxy.app/Contents/MacOS/muxy-server"
+    static let cmuxApp = "/Applications/cmux.app/Contents/MacOS/cmux"
+
+    /// A genuine Muxy session (claude 100, zsh 101, muxy-server 102, muxy-app 103) and a genuine cmux one (claude 200, zsh 201, app 202).
+    static let genuine: [Int32: ProcessRecord] = [
+        100: .init(parent: 101, executable: "/Users/me/.local/share/claude/versions/2.1", hasTTY: true),
+        101: .init(parent: 102, executable: "/bin/zsh", hasTTY: true),
+        102: .init(parent: 103, executable: muxyServer, hasTTY: false),
+        103: .init(parent: 1, executable: "/Applications/Muxy.app/Contents/MacOS/muxy-app", hasTTY: false),
+        200: .init(parent: 201, executable: "/Users/me/.local/share/claude/versions/2.1", hasTTY: true),
+        201: .init(parent: 202, executable: "/bin/zsh", hasTTY: true),
+        202: .init(parent: 1, executable: cmuxApp, hasTTY: false),
+    ]
+
+    private let lock = NSLock()
+    private var records: [Int32: ProcessRecord]
+    private var ids: [String]
+    private var lists = 0
+    private var onMain: [Bool] = []
+
+    init(_ records: [Int32: ProcessRecord] = genuine, muxySessions: [String] = ["1", "2", "3", "4", "7", "42"]) {
+        self.records = records
+        ids = muxySessions
+    }
+
+    var processes: [Int32: ProcessRecord] {
+        get { lock.withLock { records } }
+        set { lock.withLock { records = newValue } }
+    }
+    var muxySessions: [String] {
+        get { lock.withLock { ids } }
+        set { lock.withLock { ids = newValue } }
+    }
+    /// How many times `muxy session list` was run.
+    var listCalls: Int { lock.withLock { lists } }
+    /// Whether any lookup or list ran on the main thread.
+    var ranOnMainThread: Bool { lock.withLock { onMain.contains(true) } }
+    var lookups: Int { lock.withLock { onMain.count } }
+
+    var check: AgentTargetCheck {
+        AgentTargetCheck(
+            processes: ProcessTable { [self] pid in lock.withLock { onMain.append(Thread.isMainThread); return records[pid] } },
+            muxyList: { [self] _ in
+                lock.withLock { lists += 1; onMain.append(Thread.isMainThread); return ids.map { "\($0)\tname\tLive\ttrue\t/tmp\n" }.joined() }
+            })
+    }
+}
+
 @MainActor
 struct AgentSendModelTests {
     let start = Date(timeIntervalSinceReferenceDate: 800_000_000)
     let clis = TerminalCLIs(muxy: URL(fileURLWithPath: "/m/muxy"), cmux: URL(fileURLWithPath: "/c/cmux"))
+    fileprivate let terminals = FakeTerminals()
 
-    private func make(_ recorder: Recorder, agents: [String: AgentBoard.Agent], clis: TerminalCLIs? = nil) -> AgentsTabModel {
-        let board = AgentBoard()
-        board.replace(source: "hooks:claude", with: agents, now: start)
-        let model = AgentsTabModel(board: board, home: { URL(fileURLWithPath: "/nonexistent-home") }, isConnected: { true },
-                                   scratch: [], sender: recorder.sender, clis: { clis ?? self.clis })
+    /// A model on `board` whose terminals are the made-up ones; not refreshed yet.
+    private func makeModel(_ board: AgentBoard, sender: AgentSender, clis: TerminalCLIs? = nil) -> AgentsTabModel {
+        let model = AgentsTabModel(board: board, home: { URL(fileURLWithPath: "/nonexistent-home") }, isConnected: { true }, scratch: [],
+                                   sender: sender, clis: { clis ?? self.clis }, targets: terminals.check)
         model.fixedRecent = []
-        model.refresh(now: start)
         return model
     }
 
-    private func agent(_ state: AgentBoard.State, finished: Bool = false, input: AgentInput? = .muxy("42")) -> AgentBoard.Agent {
-        AgentBoard.Agent(state: state, since: start, finished: finished, tool: "claude", input: input)
+    /// Waits for the check of the sessions' terminals that a refresh starts.
+    private func settle(_ model: AgentsTabModel) async {
+        await eventually { !model.verifying }
+    }
+
+    private func make(_ recorder: Recorder, agents: [String: AgentBoard.Agent], clis: TerminalCLIs? = nil) async -> AgentsTabModel {
+        let board = AgentBoard()
+        board.replace(source: "hooks:claude", with: agents, now: start)
+        let model = makeModel(board, sender: recorder.sender, clis: clis)
+        model.refresh(now: start)
+        await settle(model)
+        return model
+    }
+
+    /// The pid is that of a genuine session in the made-up tree for the input's terminal.
+    private func agent(_ state: AgentBoard.State, finished: Bool = false, input: AgentInput? = .muxy("42"), pid: Int32? = nil) -> AgentBoard.Agent {
+        let genuine: Int32? = switch input {
+        case .muxy: 100
+        case .cmux: 200
+        case .herdr, nil: nil
+        }
+        return AgentBoard.Agent(state: state, since: start, finished: finished, tool: "claude", input: input, pid: pid ?? genuine)
     }
 
     private func row(_ model: AgentsTabModel, _ id: String = "a") throws -> AgentRow {
         try #require(model.rows.first { $0.id == "hooks:claude|\(id)" })
     }
 
-    @Test func aRowTakesInputWhenItsTerminalHasAnAPIAndNoPromptWaits() throws {
-        let model = make(Recorder(), agents: ["a": agent(.working, input: .muxy("1")), "b": agent(.idle, input: .muxy("2")),
+    @Test func aRowTakesInputWhenItsTerminalHasAnAPIAndNoPromptWaits() async throws {
+        let model = await make(Recorder(), agents: ["a": agent(.working, input: .muxy("1")), "b": agent(.idle, input: .muxy("2")),
                                               "c": agent(.waiting, finished: true, input: .muxy("3")),
                                               "d": agent(.waiting, input: .muxy("4")), "e": agent(.working, input: nil)])
         #expect(try row(model, "a").acceptsInput && row(model, "b").acceptsInput && row(model, "c").acceptsInput)
@@ -322,7 +412,7 @@ struct AgentSendModelTests {
 
     @Test func aMessageIsSentOffTheMainThreadAsTextThenEnter() async throws {
         let recorder = Recorder()
-        let model = make(recorder, agents: ["a": agent(.working)])
+        let model = await make(recorder, agents: ["a": agent(.working)])
         #expect(model.send(message: "  run the tests\n", to: try row(model)))
         await eventually { !recorder.recorded.isEmpty }
         #expect(recorder.recorded == [[
@@ -336,7 +426,7 @@ struct AgentSendModelTests {
 
     @Test func droppedFilesAreTypedWithoutEnter() async throws {
         let recorder = Recorder()
-        let model = make(recorder, agents: ["a": agent(.idle, input: .cmux("6F1B2C3D-0000"))])
+        let model = await make(recorder, agents: ["a": agent(.idle, input: .cmux("6F1B2C3D-0000"))])
         #expect(model.send(files: [URL(fileURLWithPath: "/tmp/a b.png"), URL(fileURLWithPath: "/tmp/c.txt")], to: try row(model)))
         await eventually { !recorder.recorded.isEmpty }
         let plan = try #require(recorder.recorded.first)
@@ -348,7 +438,7 @@ struct AgentSendModelTests {
 
     @Test func nothingIsSentToASessionWaitingOnAPrompt() async throws {
         let recorder = Recorder()
-        let model = make(recorder, agents: ["a": agent(.waiting)])
+        let model = await make(recorder, agents: ["a": agent(.waiting)])
         let blocked = try row(model)
         #expect(!model.send(message: "yes", to: blocked))
         #expect(!model.send(files: [URL(fileURLWithPath: "/tmp/a.png")], to: blocked))
@@ -360,16 +450,15 @@ struct AgentSendModelTests {
 
     @Test func theSessionIsCheckedAgainAtSendTimeNotAsTheRowWasDrawn() async throws {
         let recorder = Recorder()
-        let model = make(recorder, agents: ["a": agent(.working)])
+        let model = await make(recorder, agents: ["a": agent(.working)])
         let drawn = try row(model)
         // The session starts asking for permission after the row was drawn.
         model.refresh(now: start)
         let board = AgentBoard()
         board.replace(source: "hooks:claude", with: ["a": agent(.waiting)], now: start)
-        let later = AgentsTabModel(board: board, home: { URL(fileURLWithPath: "/nonexistent-home") }, isConnected: { true }, scratch: [],
-                                   sender: recorder.sender, clis: { clis })
-        later.fixedRecent = []
+        let later = makeModel(board, sender: recorder.sender)
         later.refresh(now: start)
+        await settle(later)
         #expect(!later.send(message: "hello", to: drawn))
         try await Task.sleep(for: .milliseconds(100))
         #expect(recorder.recorded.isEmpty)
@@ -377,7 +466,7 @@ struct AgentSendModelTests {
 
     @Test func anEmptyMessageOrOneWithoutATargetSendsNothing() async throws {
         let recorder = Recorder()
-        let model = make(recorder, agents: ["a": agent(.working), "b": agent(.working, input: nil)])
+        let model = await make(recorder, agents: ["a": agent(.working), "b": agent(.working, input: nil)])
         #expect(!model.send(message: " \n\t ", to: try row(model)))
         #expect(!model.send(message: "hello", to: try row(model, "b")))
         try await Task.sleep(for: .milliseconds(100))
@@ -387,11 +476,11 @@ struct AgentSendModelTests {
     @Test func aFailureLeavesANoteOnTheRowThatGoesAway() async throws {
         let recorder = Recorder()
         recorder.passes = false
-        let model = make(recorder, agents: ["a": agent(.working)])
+        let model = await make(recorder, agents: ["a": agent(.working)])
         let target = try row(model)
         #expect(model.send(message: "hello", to: target))
         await eventually { model.notes[target.id] != nil }
-        #expect(model.notes[target.id] == String(localized: "Couldn't send. Is the terminal still open?"))
+        #expect(model.notes[target.id] == String(localized: "Couldn't send to this session"))
         // A new send clears it.
         recorder.passes = true
         #expect(model.send(message: "again", to: target))
@@ -400,7 +489,7 @@ struct AgentSendModelTests {
 
     @Test func aTerminalWhoseToolIsGoneLeavesANoteAndRunsNothing() async throws {
         let recorder = Recorder()
-        let model = make(recorder, agents: ["a": agent(.working)], clis: TerminalCLIs(muxy: nil, cmux: nil))
+        let model = await make(recorder, agents: ["a": agent(.working, input: .cmux("6F1B2C3D-0000"))], clis: TerminalCLIs(muxy: clis.muxy, cmux: nil))
         let target = try row(model)
         #expect(model.send(message: "hello", to: target))
         #expect(model.notes[target.id] != nil)
@@ -408,8 +497,8 @@ struct AgentSendModelTests {
         #expect(recorder.recorded.isEmpty)
     }
 
-    @Test func oneMessageFieldIsOpenAtATime() throws {
-        let model = make(Recorder(), agents: ["a": agent(.working), "b": agent(.idle)])
+    @Test func oneMessageFieldIsOpenAtATime() async throws {
+        let model = await make(Recorder(), agents: ["a": agent(.working), "b": agent(.idle)])
         model.compose(try row(model, "a"))
         #expect(model.composing == "hooks:claude|a")
         model.compose(try row(model, "b"))
@@ -418,13 +507,12 @@ struct AgentSendModelTests {
         #expect(model.composing == nil)
     }
 
-    @Test func theFieldClosesWhenItsSessionStartsWaitingOnAPromptOrGoesAway() throws {
+    @Test func theFieldClosesWhenItsSessionStartsWaitingOnAPromptOrGoesAway() async throws {
         let board = AgentBoard()
         board.replace(source: "hooks:claude", with: ["a": agent(.working)], now: start)
-        let model = AgentsTabModel(board: board, home: { URL(fileURLWithPath: "/nonexistent-home") }, isConnected: { true }, scratch: [],
-                                   sender: Recorder().sender, clis: { clis })
-        model.fixedRecent = []
+        let model = makeModel(board, sender: Recorder().sender)
         model.refresh(now: start)
+        await settle(model)
         model.compose(try row(model))
         #expect(model.composing != nil)
         board.replace(source: "hooks:claude", with: ["a": agent(.waiting)], now: start)
@@ -438,8 +526,8 @@ struct AgentSendModelTests {
         #expect(model.composing == nil)
     }
 
-    @Test func leavingTheTabClosesTheField() throws {
-        let model = make(Recorder(), agents: ["a": agent(.working)])
+    @Test func leavingTheTabClosesTheField() async throws {
+        let model = await make(Recorder(), agents: ["a": agent(.working)])
         model.isShowing = true
         model.compose(try row(model))
         #expect(model.composing != nil)
@@ -450,12 +538,11 @@ struct AgentSendModelTests {
     @Test func aPromptLeftOpenPastTheActiveWindowStillTakesNoInput() async throws {
         let recorder = Recorder()
         let board = AgentBoard()
-        let hooks = AgentHooks(board: board, isOn: { true }, watchesHerdr: { false }, frontmostApp: { nil })
-        let model = AgentsTabModel(board: board, home: { URL(fileURLWithPath: "/nonexistent-home") }, isConnected: { true }, scratch: [],
-                                   sender: recorder.sender, clis: { clis })
-        model.fixedRecent = []
-        hooks.apply(AgentEvent(session: "a", action: .needsInput, input: .muxy("42")), now: start)
+        let hooks = AgentHooks(board: board, isOn: { true }, watchesHerdr: { false }, frontmostApp: { nil }, isAlive: { _ in true })
+        let model = makeModel(board, sender: recorder.sender)
+        hooks.apply(AgentEvent(session: "a", action: .needsInput, pid: 100, input: .muxy("42")), now: start)
         model.refresh(now: start)
+        await settle(model)
         let id = "hooks:claude|a"
         #expect(try #require(model.rows.first { $0.id == id }).state == .waiting)
         #expect(try !#require(model.rows.first { $0.id == id }).acceptsInput)
@@ -463,6 +550,7 @@ struct AgentSendModelTests {
         // The clock turns the row idle, but nothing closed the dialog.
         let later = start.addingTimeInterval(AgentHooks.activeWindow + 60)
         model.refresh(now: later)
+        await settle(model)
         let row = try #require(model.rows.first { $0.id == id })
         #expect(row.state == .idle && !row.acceptsInput && row.inputBlocked)
         #expect(!model.send(message: "no, stop", to: row))
@@ -473,23 +561,24 @@ struct AgentSendModelTests {
         #expect(recorder.recorded.isEmpty)
 
         // A hook event that says the dialog is gone does.
-        hooks.apply(AgentEvent(session: "a", action: .idle, input: .muxy("42")), now: later)
+        hooks.apply(AgentEvent(session: "a", action: .idle, pid: 100, input: .muxy("42")), now: later)
         model.refresh(now: later)
+        await settle(model)
         #expect(try #require(model.rows.first { $0.id == id }).acceptsInput)
-        hooks.apply(AgentEvent(session: "a", action: .needsInput, input: .muxy("42")), now: later)
-        hooks.apply(AgentEvent(session: "a", action: .working, input: .muxy("42")), now: later)
+        hooks.apply(AgentEvent(session: "a", action: .needsInput, pid: 100, input: .muxy("42")), now: later)
+        hooks.apply(AgentEvent(session: "a", action: .working, pid: 100, input: .muxy("42")), now: later)
         model.refresh(now: later)
+        await settle(model)
         #expect(try #require(model.rows.first { $0.id == id }).acceptsInput)
     }
 
-    @Test func aFinishedTurnPastItsWindowStillTakesInput() throws {
+    @Test func aFinishedTurnPastItsWindowStillTakesInput() async throws {
         let board = AgentBoard()
         board.replace(source: "hooks:claude", with: ["a": AgentBoard.Agent(state: .waiting, since: start, finished: true, tool: "claude",
-                                                                      idleFrom: start.addingTimeInterval(600), input: .muxy("42"))], now: start)
-        let model = AgentsTabModel(board: board, home: { URL(fileURLWithPath: "/nonexistent-home") }, isConnected: { true }, scratch: [],
-                                   sender: Recorder().sender, clis: { clis })
-        model.fixedRecent = []
+                                                                      idleFrom: start.addingTimeInterval(600), input: .muxy("42"), pid: 100)], now: start)
+        let model = makeModel(board, sender: Recorder().sender)
         model.refresh(now: start.addingTimeInterval(700))
+        await settle(model)
         #expect(try row(model).state == .idle && row(model).acceptsInput)
     }
 
@@ -498,10 +587,9 @@ struct AgentSendModelTests {
         let board = AgentBoard()
         board.replace(source: "hooks:claude", with: ["parent": agent(.waiting), "child": agent(.working), "other": agent(.working, input: .muxy("7"))],
                       now: start)
-        let model = AgentsTabModel(board: board, home: { URL(fileURLWithPath: "/nonexistent-home") }, isConnected: { true }, scratch: [],
-                                   sender: recorder.sender, clis: { clis })
-        model.fixedRecent = []
+        let model = makeModel(board, sender: recorder.sender)
         model.refresh(now: start)
+        await settle(model)
         let child = try row(model, "child")
         #expect(!child.acceptsInput && child.inputBlocked)
         #expect(!model.send(message: "yes", to: child))
@@ -516,13 +604,12 @@ struct AgentSendModelTests {
         #expect(recorder.recorded.first?.contains(.run(URL(fileURLWithPath: "/m/muxy"), ["session", "send", "7", "hello"])) == true)
     }
 
-    @Test func aPromptOpenInASharedTerminalPastTheWindowClosesTheSiblingsField() throws {
+    @Test func aPromptOpenInASharedTerminalPastTheWindowClosesTheSiblingsField() async throws {
         let board = AgentBoard()
         board.replace(source: "hooks:claude", with: ["parent": agent(.working), "child": agent(.working)], now: start)
-        let model = AgentsTabModel(board: board, home: { URL(fileURLWithPath: "/nonexistent-home") }, isConnected: { true }, scratch: [],
-                                   sender: Recorder().sender, clis: { clis })
-        model.fixedRecent = []
+        let model = makeModel(board, sender: Recorder().sender)
         model.refresh(now: start)
+        await settle(model)
         model.compose(try row(model, "child"))
         #expect(model.composing != nil)
         board.replace(source: "hooks:claude", with: ["parent": agent(.waiting), "child": agent(.working)], now: start)
@@ -530,14 +617,168 @@ struct AgentSendModelTests {
         #expect(model.composing == nil)
     }
 
-    @Test func aFieldIsClosedByItsOwnRowOnlyWhenItsViewGoesAway() throws {
-        let model = make(Recorder(), agents: ["a": agent(.working), "b": agent(.working)])
+    @Test func aFieldIsClosedByItsOwnRowOnlyWhenItsViewGoesAway() async throws {
+        let model = await make(Recorder(), agents: ["a": agent(.working), "b": agent(.working)])
         model.compose(try row(model, "a"))
         // Another row's field going away (the one just replaced) leaves this one open.
         model.cancelCompose(row: "hooks:claude|b")
         #expect(model.composing == "hooks:claude|a")
         model.cancelCompose(row: "hooks:claude|a")
         #expect(model.composing == nil)
+    }
+
+    // MARK: Verifying the target
+
+    @Test func aRowOffersInputOnlyOnceItsTargetIsVerifiedExceptHerdrs() throws {
+        let herdr = AgentBoard.Agent(state: .working, since: start, tool: "claude", input: .herdr(pane: "p", socket: "/tmp/h.sock"))
+        let entry = AgentBoard.Entry(source: "hooks:claude", id: "a", agent: agent(.working))
+        let unverified = AgentRow(entry, transcript: nil)
+        #expect(!unverified.offersInput && !unverified.acceptsInput && !unverified.inputBlocked)
+        let verified = AgentRow(entry, transcript: nil, inputVerified: true)
+        #expect(verified.offersInput && verified.acceptsInput)
+        let pane = AgentRow(AgentBoard.Entry(source: "herdr", id: "p", agent: herdr), transcript: nil)
+        #expect(pane.offersInput && pane.acceptsInput)
+    }
+
+    @Test func aSessionThatIsAChildOfAnotherOnTheBoardOffersNoInputAndSendsNothing() async throws {
+        let recorder = Recorder()
+        // claude 100 (a session) -> node 110 (MCP server, keeps the tty) and claude -p 120 under it, with 100's variables.
+        var tree = FakeTerminals.genuine
+        tree[110] = .init(parent: 100, executable: "/usr/bin/node", hasTTY: true)
+        tree[120] = .init(parent: 110, executable: "/Users/me/.local/share/claude/versions/2.1", hasTTY: true)
+        let board = AgentBoard()
+        board.replace(source: "hooks:claude", with: ["a": agent(.working, pid: 100), "child": agent(.working, pid: 120)], now: start)
+        let model = AgentsTabModel(board: board, home: { URL(fileURLWithPath: "/nonexistent-home") }, isConnected: { true }, scratch: [],
+                                   sender: recorder.sender, clis: { clis }, targets: FakeTerminals(tree).check)
+        model.fixedRecent = []
+        model.refresh(now: start)
+        await settle(model)
+        #expect(try row(model, "a").offersInput)
+        let child = try row(model, "child")
+        #expect(!child.offersInput && !child.acceptsInput)
+        #expect(!model.send(message: "hello", to: child))
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(recorder.recorded.isEmpty)
+    }
+
+    @Test func aRowWhoseTargetIsNotVerifiedHasNoBubbleTakesNoDropAndSendsNothing() async throws {
+        let recorder = Recorder()
+        // b: id of a session that is gone; c: no pid; d: no controlling terminal; e: in herdr's tree under the Muxy one; f: process gone.
+        var tree = FakeTerminals.genuine
+        tree[300] = .init(parent: 301, executable: "/usr/bin/node", hasTTY: false)
+        tree[301] = .init(parent: 101, executable: "/bin/zsh", hasTTY: true)
+        tree[400] = .init(parent: 401, executable: "/Users/me/.local/share/claude/versions/2.1", hasTTY: true)
+        tree[401] = .init(parent: 402, executable: "/bin/zsh", hasTTY: true)
+        tree[402] = .init(parent: 102, executable: "/Users/me/.local/bin/herdr", hasTTY: false)
+        let terminals = FakeTerminals(tree)
+        let board = AgentBoard()
+        board.replace(source: "hooks:claude", with: [
+            "a": agent(.working),
+            "b": agent(.working, input: .muxy("9999")),
+            "c": AgentBoard.Agent(state: .working, since: start, tool: "claude", input: .muxy("42")),
+            "d": agent(.working, pid: 300),
+            "e": agent(.working, pid: 400),
+            "f": agent(.working, pid: 555),
+        ], now: start)
+        let model = AgentsTabModel(board: board, home: { URL(fileURLWithPath: "/nonexistent-home") }, isConnected: { true }, scratch: [],
+                                   sender: recorder.sender, clis: { clis }, targets: terminals.check)
+        model.fixedRecent = []
+        model.refresh(now: start)
+        await settle(model)
+        #expect(try row(model, "a").offersInput)
+        for id in ["b", "c", "d", "e", "f"] {
+            let unverified = try row(model, id)
+            #expect(!unverified.offersInput && !unverified.acceptsInput && !unverified.inputBlocked, Comment(rawValue: id))
+            #expect(!model.send(message: "hello", to: unverified), Comment(rawValue: id))
+            #expect(!model.send(files: [URL(fileURLWithPath: "/tmp/a.png")], to: unverified), Comment(rawValue: id))
+            model.compose(unverified)
+            #expect(model.composing == nil && model.notes[unverified.id] == nil, Comment(rawValue: id))
+        }
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(recorder.recorded.isEmpty)
+    }
+
+    @Test func theTargetsAreCheckedOffTheMainThreadAndMuxysListIsReadOncePerRefresh() async throws {
+        let model = await make(Recorder(), agents: ["a": agent(.working, input: .muxy("1")), "b": agent(.working, input: .muxy("2")),
+                                                    "c": agent(.idle, input: .muxy("3")), "d": agent(.idle, input: .cmux("6F1B2C3D-0000"))])
+        #expect(terminals.listCalls == 1)
+        #expect(terminals.lookups > 0 && !terminals.ranOnMainThread)
+        for id in ["a", "b", "c", "d"] { #expect(try row(model, id).offersInput, Comment(rawValue: id)) }
+        // No Muxy session listed, no list to read.
+        let board = AgentBoard()
+        board.replace(source: "hooks:claude", with: ["a": agent(.idle, input: .cmux("6F1B2C3D-0000"))], now: start)
+        let cmuxOnly = FakeTerminals()
+        let other = AgentsTabModel(board: board, home: { URL(fileURLWithPath: "/nonexistent-home") }, isConnected: { true }, scratch: [],
+                                   sender: Recorder().sender, clis: { clis }, targets: cmuxOnly.check)
+        other.fixedRecent = []
+        other.refresh(now: start)
+        await settle(other)
+        #expect(cmuxOnly.listCalls == 0 && other.rows.first?.offersInput == true)
+    }
+
+    @Test func aMuxyToolThatIsMissingOrFailingVerifiesNoMuxySession() async throws {
+        let none = await make(Recorder(), agents: ["a": agent(.working)], clis: TerminalCLIs(muxy: nil, cmux: nil))
+        #expect(try !row(none).offersInput)
+        terminals.muxySessions = []
+        let empty = await make(Recorder(), agents: ["a": agent(.working)])
+        #expect(try !row(empty).offersInput)
+    }
+
+    @Test func theProcessIsLookedAtAgainRightBeforeSendingAndAGoneOneLeavesANoteAndNoBubble() async throws {
+        let recorder = Recorder()
+        let model = await make(recorder, agents: ["a": agent(.working)])
+        let drawn = try row(model)
+        #expect(drawn.offersInput)
+        // The session ends after the row was drawn and before the click on Send.
+        terminals.processes = [:]
+        #expect(model.send(message: "hello", to: drawn))
+        await eventually { model.notes[drawn.id] != nil }
+        #expect(model.notes[drawn.id] == String(localized: "Couldn't send to this session"))
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(recorder.recorded.isEmpty)
+        // The row is checked again, so its bubble goes.
+        await settle(model)
+        await eventually { (try? row(model))?.offersInput == false }
+        #expect(try !row(model).offersInput)
+    }
+
+    @Test func aFailedSendChecksTheTargetAgainAndTheBubbleGoesWhenTheSessionIsGone() async throws {
+        let recorder = Recorder()
+        recorder.passes = false
+        let model = await make(recorder, agents: ["a": agent(.working)])
+        let target = try row(model)
+        // Muxy closed the session; the process is still there.
+        terminals.muxySessions = []
+        #expect(model.send(message: "hello", to: target))
+        await eventually { model.notes[target.id] != nil }
+        #expect(model.notes[target.id] == String(localized: "Couldn't send to this session"))
+        await eventually { (try? row(model))?.offersInput == false }
+        let after = try row(model)
+        #expect(!after.offersInput && !after.acceptsInput)
+        model.compose(after)
+        #expect(model.composing == nil)
+    }
+
+    @Test func aFailedSendToAStillVerifiedSessionKeepsTheBubble() async throws {
+        let recorder = Recorder()
+        recorder.passes = false
+        let model = await make(recorder, agents: ["a": agent(.working)])
+        let target = try row(model)
+        #expect(model.send(message: "hello", to: target))
+        await eventually { model.notes[target.id] != nil }
+        await settle(model)
+        #expect(try row(model).offersInput)
+    }
+
+    @Test func theFailureNoteIsTranslatedIntoEveryLanguageAndTheOldOneIsGone() throws {
+        let resources = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Resources")
+        for language in ["de", "es", "fr", "ja", "ko", "zh-Hans"] {
+            let table = try #require(NSDictionary(contentsOfFile: resources.appendingPathComponent("\(language).lproj/Localizable.strings").path), Comment(rawValue: language))
+            let text = table["Couldn't send to this session"] as? String ?? ""
+            #expect(!text.isEmpty && text != "Couldn't send to this session", Comment(rawValue: language))
+            #expect(table["Couldn't send. Is the terminal still open?"] == nil, Comment(rawValue: language))
+        }
     }
 
     @Test func holdingAFileOverATabOpensItAfterTheDelayUnlessItLeaves() {
@@ -566,6 +807,152 @@ struct AgentSendModelTests {
         #expect(NotchDropDelegate.agentsTabTakesDrops(expanded: true, tab: .agents))
         #expect(!NotchDropDelegate.agentsTabTakesDrops(expanded: true, tab: .shelf))
         #expect(!NotchDropDelegate.agentsTabTakesDrops(expanded: false, tab: .agents))
+    }
+}
+
+/// Which terminal a session's process runs in, from made-up process trees.
+struct AgentTargetCheckTests {
+    typealias Tree = [Int32: ProcessRecord]
+    let muxyServer = FakeTerminals.muxyServer
+    let cmuxApp = FakeTerminals.cmuxApp
+    let sessions: Set<String> = ["42", "7"]
+
+    private func check(_ tree: Tree = FakeTerminals.genuine) -> AgentTargetCheck {
+        AgentTargetCheck(processes: ProcessTable { tree[$0] }, muxyList: { _ in nil })
+    }
+
+    private func claude(parent: Int32, tty: Bool = true) -> ProcessRecord {
+        .init(parent: parent, executable: "/Users/me/.local/share/claude/versions/2.1", hasTTY: tty)
+    }
+
+    private func shell(parent: Int32) -> ProcessRecord { .init(parent: parent, executable: "/bin/zsh", hasTTY: true) }
+
+    private func between(_ path: String, host: String, hostIsMuxy: Bool = true) -> Tree {
+        // claude 1 -> zsh 2 -> [path] 3 -> zsh 4 -> host 5
+        [1: claude(parent: 2), 2: shell(parent: 3), 3: .init(parent: 4, executable: path, hasTTY: true), 4: shell(parent: 5),
+         5: .init(parent: 1, executable: host, hasTTY: false)]
+    }
+
+    @Test func aGenuineMuxySessionIsVerifiedWhenItsIdIsListed() {
+        #expect(check().verified(.muxy("42"), pid: 100, muxySessions: sessions))
+        // The id must be in the list: a stale id from a terminal that is gone is not.
+        #expect(!check().verified(.muxy("9999"), pid: 100, muxySessions: sessions))
+        #expect(!check().verified(.muxy("42"), pid: 100, muxySessions: []))
+        #expect(!check().verified(.muxy("42"), pid: 100, muxySessions: nil))
+    }
+
+    @Test func aGenuineCmuxSessionIsVerifiedByItsAncestors() {
+        #expect(check().verified(.cmux("6F1B2C3D-0000"), pid: 200, muxySessions: nil))
+        // Each terminal's process is the one that counts: the Muxy chain is not cmux's, nor the other way round.
+        #expect(!check().verified(.cmux("6F1B2C3D-0000"), pid: 100, muxySessions: nil))
+        #expect(!check().verified(.muxy("42"), pid: 200, muxySessions: sessions))
+    }
+
+    @Test func noPidADeadPidOrNoControllingTerminalMeansNoTarget() {
+        #expect(!check().verified(.muxy("42"), pid: nil, muxySessions: sessions))
+        #expect(!check().verified(.muxy("42"), pid: 31337, muxySessions: sessions))
+        // claude's background children (an observer started by a session) have no terminal, with the parent's variables.
+        var tree = FakeTerminals.genuine
+        tree[110] = claude(parent: 100, tty: false)
+        #expect(!check(tree).verified(.muxy("42"), pid: 110, muxySessions: sessions))
+        tree[110] = claude(parent: 100, tty: true)
+        #expect(check(tree).verified(.muxy("42"), pid: 110, muxySessions: sessions))
+        // A link of the chain that is gone breaks it.
+        tree[101] = nil
+        #expect(!check(tree).verified(.muxy("42"), pid: 100, muxySessions: sessions))
+    }
+
+    @Test func aChildOfAnotherBoardSessionIsNotATargetEvenWithATerminal() {
+        // claude 10 (a session) -> node 11 (an MCP server, inherits the tty) and claude -p 12 under it: both carry 10's variables.
+        var tree = FakeTerminals.genuine
+        tree[10] = claude(parent: 100)
+        tree[11] = .init(parent: 10, executable: "/usr/bin/node", hasTTY: true)
+        tree[12] = claude(parent: 11)
+        #expect(check(tree).verified(.muxy("42"), pid: 10, muxySessions: sessions, others: [10, 12]))
+        #expect(!check(tree).verified(.muxy("42"), pid: 12, muxySessions: sessions, others: [10, 12]))
+        #expect(!check(tree).hosted(.muxy("42"), pid: 12, others: [10, 12]))
+        // Without the parent on the board nothing says so, and the chain is as before.
+        #expect(check(tree).verified(.muxy("42"), pid: 12, muxySessions: sessions, others: [12]))
+    }
+
+    @Test func aSessionWhoseOwnExecutableIsInAnAppBundleIsStillVerified() {
+        // Only what a session runs under says which terminal it is in, not the bundle its own binary lives in.
+        var tree = FakeTerminals.genuine
+        tree[100] = .init(parent: 101, executable: "/Users/me/Library/Application Support/Claude/claude-code/2.1/claude.app/Contents/MacOS/claude", hasTTY: true)
+        #expect(check(tree).verified(.muxy("42"), pid: 100, muxySessions: sessions, others: [100]))
+        // But one launched by an app bundle is in that app.
+        tree[101] = .init(parent: 102, executable: "/Applications/Claude.app/Contents/Helpers/helper", hasTTY: true)
+        #expect(!check(tree).verified(.muxy("42"), pid: 100, muxySessions: sessions, others: [100]))
+    }
+
+    @Test func anotherTerminalOrMultiplexerOnTheWayMeansTheSessionIsNotInTheNamedTerminal() {
+        let others = ["/Users/me/.local/bin/herdr", "/opt/homebrew/bin/tmux", "/opt/homebrew/bin/zellij", "/usr/bin/screen",
+                      "/Applications/Ghostty.app/Contents/MacOS/ghostty", "/System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal",
+                      "/Applications/iTerm.app/Contents/MacOS/iTerm2", "/Applications/cmux.app/Contents/MacOS/cmux",
+                      "/Applications/WezTerm.app/Contents/MacOS/wezterm-gui", "/Applications/Muxy.app/Contents/MacOS/muxy-app"]
+        for path in others {
+            #expect(!check(between(path, host: muxyServer)).verified(.muxy("42"), pid: 1, muxySessions: sessions), Comment(rawValue: path))
+        }
+        for path in others where !path.contains("cmux") {
+            #expect(!check(between(path, host: cmuxApp)).verified(.cmux("6F1B2C3D-0000"), pid: 1, muxySessions: nil), Comment(rawValue: path))
+        }
+        // The same without the other terminal in the middle is verified.
+        let plain = between("/usr/bin/caffeinate", host: muxyServer)
+        #expect(check(plain).verified(.muxy("42"), pid: 1, muxySessions: sessions))
+        #expect(check(between("/usr/bin/caffeinate", host: cmuxApp)).verified(.cmux("6F1B2C3D-0000"), pid: 1, muxySessions: nil))
+    }
+
+    @Test func aSessionInAHerdrPaneStartedFromAnOldMuxyTerminalIsNotVerified() {
+        // claude -> zsh -> herdr server (a daemon: its parent is launchd), with MUXY_SESSION_ID left over from the terminal that started herdr.
+        let tree: Tree = [1: claude(parent: 2), 2: shell(parent: 3), 3: .init(parent: 1, executable: "/Users/me/.local/bin/herdr", hasTTY: false)]
+        #expect(!check(tree).verified(.muxy("42"), pid: 1, muxySessions: sessions))
+        #expect(!check(tree).verified(.cmux("6F1B2C3D-0000"), pid: 1, muxySessions: nil))
+    }
+
+    @Test func aLoopOrAVeryLongChainEndsInNoTarget() {
+        let loop: Tree = [1: claude(parent: 2), 2: shell(parent: 1)]
+        #expect(!check(loop).verified(.muxy("42"), pid: 1, muxySessions: sessions))
+        var deep: Tree = [:]
+        for pid in Int32(1)..<200 { deep[pid] = pid == 1 ? claude(parent: pid + 1) : shell(parent: pid + 1) }
+        deep[200] = .init(parent: 1_000, executable: muxyServer, hasTTY: false)
+        #expect(!check(deep).verified(.muxy("42"), pid: 1, muxySessions: sessions))
+    }
+
+    @Test func herdrPanesNeedNoCheckAsHerdrsOwnListIsTheProof() {
+        #expect(check([:]).verified(.herdr(pane: "p", socket: "/tmp/h.sock"), pid: nil, muxySessions: nil))
+    }
+
+    @Test func theHostsAreRecognizedByTheirExecutables() {
+        #expect(AgentTargetCheck.isMuxyServer("/Applications/Muxy.app/Contents/MacOS/muxy-server"))
+        #expect(AgentTargetCheck.isMuxyServer("/Users/me/Applications/Muxy.app/Contents/MacOS/muxy-server"))
+        #expect(!AgentTargetCheck.isMuxyServer("/Applications/Muxy.app/Contents/MacOS/muxy-app"))
+        #expect(!AgentTargetCheck.isMuxyServer("/tmp/muxy-server"))
+        #expect(AgentTargetCheck.isCmuxApp("/Applications/cmux.app/Contents/MacOS/cmux"))
+        #expect(AgentTargetCheck.isCmuxApp("/Applications/cmux DEV.app/Contents/MacOS/cmux DEV"))
+        #expect(!AgentTargetCheck.isCmuxApp("/Applications/cmux.app/Contents/Resources/bin/cmux"))
+        #expect(!AgentTargetCheck.isCmuxApp("/usr/local/bin/cmux"))
+        #expect(!AgentTargetCheck.isCmuxApp("/Applications/Ghostty.app/Contents/MacOS/ghostty"))
+    }
+
+    @Test func muxysListGivesTheFirstColumnOfEachLine() {
+        let listing = "1978299613479001934\tmain\tLive\ttrue\t/Users/me\n42\tbb\tLive\ttrue\t/tmp 7\n"
+        let check = AgentTargetCheck(processes: ProcessTable { _ in nil }, muxyList: { _ in listing })
+        #expect(check.muxySessions(cli: URL(fileURLWithPath: "/m/muxy")) == ["1978299613479001934", "42"])
+        #expect(check.muxySessions(cli: nil) == nil)
+        #expect(AgentTargetCheck(processes: ProcessTable { _ in nil }, muxyList: { _ in nil }).muxySessions(cli: URL(fileURLWithPath: "/m/muxy")) == nil)
+    }
+
+    @Test func theLiveTableReadsRealProcesses() throws {
+        let me = try #require(ProcessTable.live.lookup(getpid()))
+        #expect(me.parent == getppid() && me.executable?.isEmpty == false)
+        #expect(ProcessTable.live.lookup(Int32.max - 7) == nil)
+        // A process of a session of its own has no controlling terminal (it may be in one already, from how it was started).
+        let output = Pipe()
+        let child = try StandIn.python("try:\n    os.setsid()\nexcept OSError:\n    pass\nprint('ready', flush=True)\ntime.sleep(60)", output: output)
+        defer { child.terminate() }
+        _ = output.fileHandleForReading.availableData
+        let detached = try #require(ProcessTable.live.lookup(child.processIdentifier))
+        #expect(!detached.hasTTY && detached.parent == getpid())
     }
 }
 
@@ -725,43 +1112,80 @@ struct AgentSendExecutionTests {
         #expect(!AgentSend.execute(.listed(try stub("exit 1", in: dir), ["session", "list"], id: "42")))
     }
 
+    /// herdr's socket: answers one request per connection, then closes it. Every request is logged with the number of its connection.
     private func serve(replying reply: String, at path: String) throws -> Process {
         let server = try StandIn.python("""
         import json, socket, sys
-        s = socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(2)
+        s = socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(8)
+        n = 0
         while True:
-            c, _ = s.accept(); f = c.makefile("rwb")
-            for line in f:
-                request = json.loads(line)
-                if sys.argv[2] == "error":
-                    out = {"id": request["id"], "error": {"code": "pane_not_found", "message": "gone"}}
-                else:
-                    out = {"id": request["id"], "result": {"type": "ok"}}
-                open(sys.argv[1] + ".log", "a").write(json.dumps(request, sort_keys=True) + "\\n")
-                f.write((json.dumps(out) + "\\n").encode()); f.flush()
+            c, _ = s.accept(); n += 1; f = c.makefile("rwb")
+            line = f.readline()
+            if not line:
+                c.close(); continue
+            request = json.loads(line)
+            if sys.argv[2] == "error":
+                out = {"id": "", "error": {"code": "pane_not_found", "message": "gone"}}
+            else:
+                out = {"id": request["id"], "result": {"type": "ok"}}
+            open(sys.argv[1] + ".log", "a").write(json.dumps({"connection": n, "request": request}, sort_keys=True) + "\\n")
+            f.write((json.dumps(out) + "\\n").encode()); f.flush()
+            c.close()
         """, arguments: [path, reply])
         let deadline = Date.now.addingTimeInterval(eventDeadline)
         while !FileManager.default.fileExists(atPath: path) && Date.now < deadline { usleep(20_000) }
         return server
     }
 
-    @Test func herdrsRequestsAreWrittenToItsSocketAndAnErrorReplyFailsTheStep() throws {
+    private func logged(_ path: String) throws -> [(connection: Int, request: [String: Any])] {
+        try String(contentsOfFile: path + ".log", encoding: .utf8).split(separator: "\n").map { line in
+            let entry = try #require(try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
+            return (entry["connection"] as? Int ?? 0, entry["request"] as? [String: Any] ?? [:])
+        }
+    }
+
+    @Test func herdrGetsOneSendInputRequestOnOneConnectionAndTheSendPasses() throws {
         let path = "/tmp/nunsseop-send-\(UUID().uuidString.prefix(6)).sock"
         let server = try serve(replying: "ok", at: path)
         defer { server.terminate(); try? FileManager.default.removeItem(atPath: path); try? FileManager.default.removeItem(atPath: path + ".log") }
         let steps = try #require(AgentSend.steps(.herdr(pane: "w1:p1", socket: path), text: "go on", submit: true, clis: TerminalCLIs()))
         #expect(AgentSender.live.run(steps))
-        let logged = try String(contentsOfFile: path + ".log", encoding: .utf8).split(separator: "\n")
-            .map { try #require(try JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any]) }
-        #expect(logged.map { $0["method"] as? String } == ["pane.send_text", "pane.send_keys"])
-        #expect((logged[0]["params"] as? [String: String]) == ["pane_id": "w1:p1", "text": "go on"])
+        let requests = try logged(path)
+        #expect(requests.count == 1 && requests[0].connection == 1)
+        #expect(requests[0].request["method"] as? String == "pane.send_input")
+        let params = requests[0].request["params"] as? [String: Any]
+        #expect(params?["pane_id"] as? String == "w1:p1" && params?["text"] as? String == "go on" && params?["keys"] as? [String] == ["enter"])
 
+        // A dropped path goes without keys.
+        let drop = try #require(AgentSend.steps(.herdr(pane: "w1:p1", socket: path), text: "/tmp/a.png ", submit: false, clis: TerminalCLIs()))
+        #expect(AgentSender.live.run(drop))
+        let all = try logged(path)
+        #expect(all.count == 2 && all[1].connection == 2)
+        #expect((all[1].request["params"] as? [String: String]) == ["pane_id": "w1:p1", "text": "/tmp/a.png "])
+    }
+
+    @Test func eachRequestOfASocketStepGetsAConnectionOfItsOwn() throws {
+        let path = "/tmp/nunsseop-send-\(UUID().uuidString.prefix(6)).sock"
+        let server = try serve(replying: "ok", at: path)
+        defer { server.terminate(); try? FileManager.default.removeItem(atPath: path); try? FileManager.default.removeItem(atPath: path + ".log") }
+        // The stand-in closes after one reply, as herdr does: on one connection the second request would find it closed.
+        let requests = ["{\"id\":\"one\",\"method\":\"a\"}", "{\"id\":\"two\",\"method\":\"b\"}", "{\"id\":\"three\",\"method\":\"c\"}"]
+        #expect(AgentSend.execute(.socket(path: path, requests: requests)))
+        let seen = try logged(path)
+        #expect(seen.map(\.connection) == [1, 2, 3])
+        #expect(seen.map { $0.request["id"] as? String } == ["one", "two", "three"])
+    }
+
+    @Test func anErrorReplyOrAMissingSocketFailsTheStep() throws {
         let failing = "/tmp/nunsseop-send-\(UUID().uuidString.prefix(6)).sock"
         let broken = try serve(replying: "error", at: failing)
         defer { broken.terminate(); try? FileManager.default.removeItem(atPath: failing); try? FileManager.default.removeItem(atPath: failing + ".log") }
-        #expect(!AgentSend.execute(.socket(path: failing, requests: [steps.compactMap { step -> String? in
-            if case .socket(_, let requests) = step { return requests[0] } else { return nil }
-        }[0]])))
+        let steps = try #require(AgentSend.steps(.herdr(pane: "gone", socket: failing), text: "x", submit: true, clis: TerminalCLIs()))
+        #expect(!AgentSender.live.run(steps))
+        #expect(try logged(failing).count == 1)
+        // An error stops the step: the requests after it aren't sent.
+        #expect(!AgentSend.execute(.socket(path: failing, requests: ["{\"id\":\"a\"}", "{\"id\":\"b\"}"])))
+        #expect(try logged(failing).count == 2)
         // No socket, no session.
         #expect(!AgentSend.execute(.socket(path: "/tmp/nunsseop-send-missing.sock", requests: ["{}"])))
     }
