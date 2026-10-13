@@ -21,6 +21,9 @@ enum AgentInput: Equatable {
     /// A Ghostty terminal, found by the session's folder among the tabs with a Claude title and, among several in it, by its name in
     /// that title: Ghostty gives a shell no id of its own. Which terminal it is comes from `Ghostty.resolve`, so the id is not part of this.
     case ghostty(cwd: String, name: String?)
+    /// An agent of Paseo, and the id of its server for the link that opens it. It has no terminal: its text goes in through
+    /// Paseo's command line, which always sends it as a message.
+    case paseo(agent: String, server: String?)
 
     /// A Muxy session id from the hook: 1 to 20 ASCII digits (a 64-bit id).
     static func muxySession(_ value: String?) -> String? {
@@ -75,9 +78,13 @@ enum AgentInput: Equatable {
         return (1...6).contains(digits.utf8.count) && digits.utf8.allSatisfy({ (UInt8(ascii: "0")...UInt8(ascii: "9")).contains($0) }) ? value : nil
     }
 
-    /// Whether dropped file paths can be typed there. Terminal.app can't: it runs what it is given.
+    /// Whether dropped file paths can be typed there. Terminal.app can't: it runs what it is given. Nor can Paseo: its command line
+    /// sends a message, never half of one.
     var takesFiles: Bool {
-        if case .terminalApp = self { false } else { true }
+        switch self {
+        case .terminalApp, .paseo: false
+        default: true
+        }
     }
 }
 
@@ -107,8 +114,9 @@ struct TerminalCLIs {
     var cmux: URL?
     var wezterm: URL?
     var kitty: URL?
+    var paseo: URL?
 
-    static var live: TerminalCLIs { TerminalCLIs(muxy: MuxyNotice.cli, cmux: Cmux.cli, wezterm: WezTerm.cli, kitty: Kitty.cli) }
+    static var live: TerminalCLIs { TerminalCLIs(muxy: MuxyNotice.cli, cmux: Cmux.cli, wezterm: WezTerm.cli, kitty: Kitty.cli, paseo: Paseo.cli()) }
 }
 
 extension MuxyNotice {
@@ -206,6 +214,12 @@ enum AgentSend {
             let remote = ["@", "--to", socket]
             return [.runInput(cli, remote + ["send-text", "--match", "id:\(window)", "--stdin"], stdin: text)]
                 + (submit ? [.run(cli, remote + ["send-key", "--match", "id:\(window)", "enter"])] : [])
+        case .paseo(let agent, _):
+            // `--no-wait` returns at once instead of after the turn; the text goes in as the option's own value (`--prompt=`), so a message
+            // starting with a dash is not taken for an option. The command line interrupts an agent that is working, so a row only offers
+            // this to one that is not (see `AgentRow.acceptsInput`), and drops no text of a half message.
+            guard submit, Paseo.isSafeID(agent), let cli = clis.paseo else { return nil }
+            return [Paseo.run(cli, ["send", agent, "--no-wait", "--prompt=" + text])]
         case .ghostty(let cwd, let name):
             // `input text` pastes, so a drop needs no Return and a message gets its own key. The script finds the terminal again by id
             // and types only if it still holds the folder and a Claude title (and the name, when that told it from the others). The

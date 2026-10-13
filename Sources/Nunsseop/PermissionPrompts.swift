@@ -844,7 +844,9 @@ struct PermissionPrompt: Identifiable, Equatable {
     /// PreToolUse (see `parseQuestion`), and as a PermissionRequest it stays in the terminal too.
     private static let terminalOnly: Set<String> = ["AskUserQuestion", "ExitPlanMode"]
 
-    static func parse(_ body: Data) -> Parsed? {
+    /// - tag: the program the call comes through, named on the card as Codex and OpenCode are; such a card has "Answer in terminal" or its
+    ///   like in place of "Always allow".
+    static func parse(_ body: Data, tag: String? = nil) -> Parsed? {
         guard let json = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else { return nil }
         if json["hook_event_name"] as? String == "PreToolUse" { return parseQuestion(json) }
         guard json["hook_event_name"] as? String == "PermissionRequest",
@@ -872,7 +874,7 @@ struct PermissionPrompt: Identifiable, Equatable {
         let suggestion = codex || openCode ? nil : addRulesSuggestion(in: json["permission_suggestions"])
         let grant = suggestion.flatMap(grant(from:))
         let prompt = PermissionPrompt(id: UUID(), title: shownTitle, symbol: described.symbol, detail: detail, flags: flags,
-                                      secondary: secondary, folder: folder, grant: grant, codex: codex, tag: openCode ? "OpenCode" : nil)
+                                      secondary: secondary, folder: folder, grant: grant, codex: codex, tag: tag ?? (openCode ? "OpenCode" : nil))
         return Parsed(prompt: prompt, suggestion: grant == nil ? nil : suggestion, openCode: openCode)
     }
 

@@ -66,6 +66,12 @@ final class AgentBoard: ObservableObject {
         var pid: Int32? = nil
         /// Whether the hook said it runs in tmux, zellij or screen: the terminal around it isn't where its text would go.
         var inMultiplexer = false
+        /// The agent's own name for the session, when its source keeps one (Paseo's title); it comes before the transcript's.
+        var title: String? = nil
+        /// The model the source says it runs; the transcript's, when it has one, is more exact.
+        var model: String? = nil
+        /// The program that runs it for the tool, named on its row (Paseo).
+        var host: String? = nil
 
         /// Set by `effective(at:)`: asking for input when last told, so its dialog may be open still, however long ago. Going idle
         /// by the clock doesn't close a dialog; only a later event does.
@@ -107,8 +113,27 @@ final class AgentBoard: ObservableObject {
 
     /// Everything listed that hasn't expired, as it is at `now`.
     func entries(now: Date = .now) -> [Entry] {
-        bySource.flatMap { source, agents in agents.map { Entry(source: source, id: $0.key, agent: $0.value.effective(at: now)) } }
+        listed(at: now).map { Entry(source: $0.source, id: $0.id, agent: $0.agent.effective(at: now)) }
+    }
+
+    /// The agents that haven't expired. A session Paseo runs may report through the tools' hooks as well (a Claude Code SDK session
+    /// loads the user's settings), and the hooks' row is dropped for Paseo's own, the one that can be sent to and answered. Except that
+    /// a hook row that works while Paseo's row doesn't is kept: the same session resumed in a terminal (`claude --resume` keeps the
+    /// id) is working there, and Paseo's idle row must not hide it.
+    private func listed(at now: Date) -> [(source: String, id: String, agent: Agent)] {
+        let all = bySource.flatMap { source, agents in agents.map { (source: source, id: $0.key, agent: $0.value) } }
             .filter { $0.agent.expiresAt.map { $0 > now } ?? true }
+        var claimed: [String: Bool] = [:]
+        for row in all where row.source == Paseo.source {
+            guard let session = row.agent.session?.lowercased() else { continue }
+            let agent = row.agent.effective(at: now)
+            claimed[session] = claimed[session] == true || agent.state == .working || (agent.state == .waiting && !agent.finished)
+        }
+        guard !claimed.isEmpty else { return all }
+        return all.filter { row in
+            guard row.source != Paseo.source, let session = row.agent.session?.lowercased(), let paseoActive = claimed[session] else { return true }
+            return !paseoActive && row.agent.effective(at: now).state == .working
+        }
     }
 
     /// Everything one source knows now; agents it no longer lists are gone.
@@ -125,7 +150,7 @@ final class AgentBoard: ObservableObject {
 
     /// Counts the agents that haven't expired, and wakes up when the next one expires or turns idle.
     func recount(now: Date = .now) {
-        let live = bySource.values.flatMap(\.values).filter { $0.expiresAt.map { $0 > now } ?? true }
+        let live = listed(at: now).map(\.agent)
         let new = Counts(live.map { $0.effective(at: now).state })
         if new != counts { counts = new }
         revision &+= 1

@@ -332,6 +332,7 @@ private struct AlertsPane: View {
     @State private var connected: Set<NotifyIntegration> = []
     @State private var failed: URL?
     @State private var terminals = ResumeTerminal.installed
+    @State private var paseo = PaseoStatus.current()
 
     var body: some View {
         Form {
@@ -398,9 +399,13 @@ private struct AlertsPane: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 let asking = NotifyIntegration.askingForPermission(present: Set(NotifyIntegration.allCases.filter(\.isPresent)))
-                if !asking.isEmpty {
+                if !asking.isEmpty || paseo.present {
                     Toggle("Answer permission prompts and questions in the notch", isOn: $settings.permissionPrompts)
-                        .disabled(!settings.localNotifications)
+                        .disabled(!settings.localNotifications && !asking.isEmpty)
+                    if paseo.present {
+                        Text("Paseo's tool approvals show in the notch too, where you can allow or deny them. “Answer in Paseo” leaves one for Paseo's own screens, and the notch lets go of one you answer there.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                     if asking.contains(.claudeCode) {
                         Text("Claude Code's permission prompts and questions also show in the notch, where you can allow or deny a prompt and pick the answer to a question. Answer a prompt in the terminal and the notch lets go of it; a question is asked in the terminal once you press “Answer in terminal” in the notch. If Nunsseop isn't running, the terminal asks as before. Works with Claude Code connected above. What a prompt asks is kept in memory only.")
                             .font(.caption).foregroundStyle(.secondary)
@@ -463,6 +468,18 @@ private struct AlertsPane: View {
                     Text("Read from herdr's socket while its server runs, so nothing needs setting up.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
+                if paseo.present {
+                    Toggle("Show when agents in Paseo finish or fail", isOn: $settings.paseoNotifications)
+                    Text(verbatim: [paseo.daemonRunning ? String(localized: "Paseo daemon running") : String(localized: "Paseo daemon not running"),
+                                    paseo.cliFound ? String(localized: "command line found") : String(localized: "command line not found")].joined(separator: " · "))
+                        .font(.caption).foregroundStyle(.secondary)
+                    if paseo.daemonRunning && !paseo.approvalsAvailable {
+                        Text("Paseo's daemon asks for a password or listens on a socket, so its approvals and notices can't show here.")
+                            .font(.caption).foregroundStyle(.orange)
+                    }
+                    Text("Its agents are read from Paseo's own files, and its approvals and notices from its daemon on this Mac, which Nunsseop never starts. Messages go through its command line.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
             .onAppear(perform: refreshConnections)
         }
@@ -470,6 +487,7 @@ private struct AlertsPane: View {
     }
 
     private func refreshConnections() {
+        paseo = PaseoStatus.current()
         connected = Set(NotifyIntegration.allCases.filter(\.isInstalled))
         terminals = ResumeTerminal.installed
     }

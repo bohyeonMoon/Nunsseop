@@ -9,10 +9,12 @@ struct RecentConversation: Identifiable, Equatable {
     var name: String? = nil
     /// The last thing the user asked, cleaned for one line.
     var prompt: String? = nil
+    /// Set for an agent of Paseo, which is brought back through Paseo and not in a terminal.
+    var paseo: PaseoResume? = nil
 
-    var id: String { "\(kind.rawValue)|\(session)" }
+    var id: String { paseo.map { "\(Paseo.source)|\($0.agent)" } ?? "\(kind.rawValue)|\(session)" }
     var folder: String { (cwd as NSString).lastPathComponent }
-    var tool: String { AgentRow.toolName(kind.rawValue) }
+    var tool: String { AgentRow.toolName(paseo.map { Paseo.tool(provider: $0.provider) } ?? kind.rawValue) }
 
     /// The session's name, else the last prompt, else the folder.
     var title: String { name ?? prompt ?? folder }
@@ -22,6 +24,7 @@ struct RecentConversation: Identifiable, Equatable {
         var parts: [String] = []
         if folder.caseInsensitiveCompare(title) != .orderedSame { parts.append(folder) }
         parts.append(tool)
+        if paseo != nil { parts.append(Paseo.name) }
         if let elapsed = AgentRow.elapsed(since: modified, now: now) { parts.append(String(localized: "\(elapsed) ago")) }
         return parts
     }

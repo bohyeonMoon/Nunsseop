@@ -21,6 +21,8 @@ struct AgentRow: Identifiable, Equatable {
     let tokens: Int?
     let mode: AgentMode?
     let name: String?
+    /// The program that runs it for the tool, as the source says (Paseo).
+    let host: String?
     let target: Target?
     /// Where the terminal takes text from outside, if it has an API for that, as the hook named it: see `offersInput`.
     let input: AgentInput?
@@ -52,6 +54,10 @@ struct AgentRow: Identifiable, Equatable {
         case notAllowed(String)
         /// The check of its terminal hasn't covered the row yet; the reason may turn out to be none.
         case checking
+        /// A Paseo agent that is working: its command line interrupts the turn to send, so it is sent to between turns.
+        case paseoBusy
+        /// A Paseo agent, and no `paseo` command line to send it through.
+        case paseoNoCLI
 
         var message: String {
             switch self {
@@ -63,6 +69,8 @@ struct AgentRow: Identifiable, Equatable {
             case .ambiguousTab: String(localized: "There are several Ghostty tabs in this folder, so Nunsseop can't tell which one")
             case .notAllowed(let app): TerminalScripts.notAllowedNote(app)
             case .checking: String(localized: "Checking…")
+            case .paseoBusy: String(localized: "Paseo would interrupt its turn: message it once it is done")
+            case .paseoNoCLI: String(localized: "Paseo's command line wasn't found, so Nunsseop can't send to this agent")
             }
         }
     }
@@ -95,10 +103,11 @@ struct AgentRow: Identifiable, Equatable {
         finished = agent.finished
         since = agent.since
         path = [agent.cwd, transcript?.cwd].lazy.compactMap { $0 }.first { !$0.isEmpty }
-        model = transcript?.model
+        model = transcript?.model ?? agent.model
         tokens = transcript?.tokens
         mode = transcript?.mode
-        name = transcript?.name
+        name = agent.title ?? transcript?.name
+        host = agent.host
         target = Self.target(for: agent) ?? Self.bundleID(hostApp).map(Target.app)
         input = agent.input
         pid = agent.pid
@@ -107,7 +116,10 @@ struct AgentRow: Identifiable, Equatable {
         // Only a hook session can be restarted, and only its hook names an app or a multiplexer; any other source (gjc, a herdr
         // pane without its socket) can only be unconfirmed.
         let hook = entry.source.hasPrefix("hooks:")
-        if agent.inMultiplexer || multiplexed {
+        if entry.source == Paseo.source {
+            // Its agents have no terminal; what keeps one from taking a message is only the command line.
+            notOffered = .paseoNoCLI
+        } else if agent.inMultiplexer || multiplexed {
             notOffered = .multiplexer
         } else if !checked && agent.pid != nil {
             // The process environment may still say tmux, and the process tree may still name another app.
@@ -126,23 +138,29 @@ struct AgentRow: Identifiable, Equatable {
     var offersInput: Bool {
         switch input {
         case nil: false
-        case .herdr: true
+        case .herdr, .paseo: true
         case .muxy, .cmux, .terminalApp, .iterm, .wezterm, .kitty, .ghostty: inputVerified
         }
     }
+
+    /// Whether the row is an agent of Paseo that can be sent to.
+    var isPaseo: Bool { if case .paseo? = input { true } else { false } }
 
     /// Whether going to the session does anything: there is an app or pane to go to, or a verified terminal to select the session's tab in.
     var focusable: Bool { target != nil || offersInput }
 
     /// Whether text can be sent to the session now: its terminal has an input API and no prompt may be waiting there.
-    var acceptsInput: Bool { offersInput && !promptOnTerminal && AgentSend.accepts(state: state, finished: finished) }
+    var acceptsInput: Bool { offersInput && !promptOnTerminal && AgentSend.accepts(state: state, finished: finished) && !(isPaseo && state == .working) }
+
+    /// Whether files can be dropped on the row: it takes input, and in a form that can be typed without being sent.
+    var takesDrops: Bool { acceptsInput && !isPaseo }
 
     /// Its terminal takes input, but a prompt waits for the answer first.
     var inputBlocked: Bool { offersInput && !acceptsInput }
 
     /// Why the Message button is disabled for this row, nil when it works. A prompt only counts for a row that could be typed into:
     /// answering it would not make any other row sendable.
-    var inputBlock: InputBlock? { offersInput ? (acceptsInput ? nil : .prompt) : notOffered }
+    var inputBlock: InputBlock? { offersInput ? (acceptsInput ? nil : isPaseo && state == .working ? .paseoBusy : .prompt) : notOffered }
 
     /// The sentence that says it, shown in the row's strip.
     var blockReason: String? { inputBlock?.message }
@@ -178,6 +196,7 @@ struct AgentRow: Identifiable, Equatable {
         }
         if let name, let folder, folder.caseInsensitiveCompare(name) != .orderedSame { parts.append((folder, false)) }
         if name != nil || folder != nil { parts.append((tool, false)) }
+        if let host { parts.append((host, false)) }
         if let mode, let label = mode.label { parts.append((label, mode.warns)) }
         if let model { parts.append((AgentTranscript.modelLabel(model), false)) }
         if let tokens { parts.append((AgentTranscript.tokensLabel(tokens), false)) }
@@ -326,6 +345,7 @@ final class AgentsTabModel: ObservableObject {
     /// The entries a verification pass has covered: `Entry.key` and process, see `checkedKey`. A row outside it is still being checked.
     private var checked: Set<String> = []
     private var scanner = RecentConversations()
+    private var paseoScanner = PaseoScanner()
     private var scanning = false
     private var scanWanted = false
     private var observer: AnyCancellable?
@@ -379,7 +399,10 @@ final class AgentsTabModel: ObservableObject {
 
     /// Says where to allow the terminal, for as long as a note stays.
     func resumeNotAllowed(_ app: String) {
-        let text = TerminalScripts.notAllowedNote(app)
+        showResumeNote(TerminalScripts.notAllowedNote(app))
+    }
+
+    private func showResumeNote(_ text: String) {
         resumeNote = text
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.noteDuration) { [weak self] in
             MainActor.assumeIsolated { if self?.resumeNote == text { self?.resumeNote = nil } }
@@ -421,7 +444,7 @@ final class AgentsTabModel: ObservableObject {
     /// none (it started before the hook sent the terminal's variables) is looked at through its process's own environment.
     private func verifyTargets(_ entries: [AgentBoard.Entry]) {
         let named = entries.compactMap { entry -> (key: String, target: VerifiedTarget)? in
-            guard let input = entry.agent.input, !isHerdr(input) else { return nil }
+            guard let input = entry.agent.input, !isListed(input) else { return nil }
             return (entry.key, VerifiedTarget(input: input, pid: entry.agent.pid))
         }
         let unnamed = entries.compactMap { entry -> (key: String, pid: Int32, app: String?)? in
@@ -505,8 +528,12 @@ final class AgentsTabModel: ObservableObject {
         }
     }
 
-    private func isHerdr(_ input: AgentInput) -> Bool {
-        if case .herdr = input { true } else { false }
+    /// Whether the input comes from its source's own list (a herdr pane, a Paseo agent), which needs no check of a process.
+    private func isListed(_ input: AgentInput) -> Bool {
+        switch input {
+        case .herdr, .paseo: true
+        default: false
+        }
     }
 
     /// Looks for conversations that aren't open (any listed session is), off the main thread.
@@ -519,16 +546,24 @@ final class AgentsTabModel: ObservableObject {
         guard !scanning else { scanWanted = true; return }
         scanning = true
         let open = Set(entries.compactMap { $0.agent.session?.lowercased() })
-        var snapshot = scanner
+        let openAgents = Set(entries.filter { $0.source == Paseo.source }.map(\.id))
+        var snapshot = scanner, paseo = paseoScanner
         let home = home(), scratch = scratch
         Task.detached(priority: .utility) { [weak self] in
             let found = snapshot.list(home: home, excluding: open, now: now, scratch: scratch)
-            await self?.scanned(snapshot, found)
+            // Paseo's agents are looked for only where Paseo has been used.
+            let daemon = PaseoDaemon.read(home: home)
+            let recents = Paseo.isPresent(home: home, appInstalled: { false })
+                ? PaseoRecents.list(paseo.scan(home: home, now: now), excluding: open.union(openAgents),
+                                    server: daemon?.serverID ?? Paseo.storedServerID(home: home), daemonUp: daemon != nil && daemon?.starting != true,
+                                    now: now, scratch: scratch) : []
+            await self?.scanned(snapshot, paseo, PaseoRecents.merged(found, recents))
         }
     }
 
-    private func scanned(_ updated: RecentConversations, _ found: [RecentConversation]) {
+    private func scanned(_ updated: RecentConversations, _ paseo: PaseoScanner, _ found: [RecentConversation]) {
         scanner = updated
+        paseoScanner = paseo
         scanning = false
         recentLoaded = true
         if found != recent { recent = found }
@@ -544,7 +579,32 @@ final class AgentsTabModel: ObservableObject {
         opening = opening.filter { now.timeIntervalSince($0.value) < Self.openingWindow }
         guard opening[conversation.id] == nil else { return }
         opening[conversation.id] = now
+        if let paseo = conversation.paseo { return resumeInPaseo(paseo, id: conversation.id) }
         onResume(conversation)
+    }
+
+    /// Brings an agent of Paseo back through Paseo's own command line and shows it in the app, off the main thread. A failure leaves a
+    /// note and lets the conversation be clicked again.
+    private func resumeInPaseo(_ paseo: PaseoResume, id: String) {
+        guard let steps = paseo.steps(cli: clis().paseo) else { return resumeFailed(id) }
+        let sender = sender, needsDaemon = paseo.needsDaemon
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let outcome = sender.run(steps)
+            await self?.resumeEnded(outcome, id, needsDaemon: needsDaemon)
+        }
+    }
+
+    /// An archived agent with the daemon down only had the app started: the click is for again once the daemon is up.
+    private func resumeEnded(_ outcome: SendOutcome, _ id: String, needsDaemon: Bool = false) {
+        if outcome != .sent { return resumeFailed(id) }
+        guard needsDaemon else { return }
+        opening[id] = nil
+        showResumeNote(String(localized: "Paseo is starting: click this conversation again in a moment"))
+    }
+
+    private func resumeFailed(_ id: String) {
+        opening[id] = nil
+        showResumeNote(String(localized: "Couldn't open this conversation in Paseo"))
     }
 
     /// A click on a row unfolds its action strip and folds the one before it; a click on the unfolded row folds it. Folding ends typing.
@@ -677,6 +737,7 @@ final class AgentsTabModel: ObservableObject {
         return NotifyIntegration.$homeOverride.withValue(home()) {
             NotifyIntegration.reportingSessions.contains(where: \.isInstalled)
                 || FileManager.default.fileExists(atPath: home().appendingPathComponent(".gjc").path)
+                || Paseo.isPresent(home: home(), appInstalled: { false })
         }
     }
 
@@ -840,7 +901,7 @@ private struct AgentRowView: View {
         }
         .onDisappear { if hovering { hovering = false; NSCursor.pop() } }
         // Only a session that takes input accepts files; otherwise the drop isn't taken at all.
-        .onDrop(of: row.acceptsInput ? [.fileURL] : [], isTargeted: $dropTargeted) { providers in
+        .onDrop(of: row.takesDrops ? [.fileURL] : [], isTargeted: $dropTargeted) { providers in
             ShelfSharing.loadURLs(from: providers) { model.send(files: $0, to: row) }
             return true
         }
@@ -890,7 +951,7 @@ private struct AgentActionStrip: View {
                 AgentMessageField(row: row, model: model)
             } else {
                 HStack(spacing: 6) {
-                    StripButton(symbol: "arrow.up.forward.app", title: "Go to terminal", enabled: row.focusable) { model.focus(row) }
+                    StripButton(symbol: "arrow.up.forward.app", title: row.host == Paseo.name ? "Open in Paseo" : "Go to terminal", enabled: row.focusable) { model.focus(row) }
                     StripButton(symbol: "paperplane.fill", title: "Message", enabled: row.acceptsInput) { model.compose(row) }
                     Spacer(minLength: 0)
                 }

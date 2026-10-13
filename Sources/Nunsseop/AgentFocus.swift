@@ -34,6 +34,7 @@ enum AgentFocus {
         case .wezterm: WezTerm.bundleID
         case .kitty: Kitty.bundleID
         case .ghostty: TerminalScripts.ghosttyID
+        case .paseo: Paseo.bundleID
         }
     }
 
@@ -50,6 +51,9 @@ enum AgentFocus {
             return [.run(cli, ["focus-panel", "--panel", surface])]
         case .herdr:
             return nil
+        case .paseo(let agent, let server):
+            // The app on the agent; without the server's id, the app alone, which `plan` then falls back to.
+            return Paseo.deepLink(server: server, agent: agent) == nil ? nil : [Paseo.openStep(server: server, agent: agent)]
         case .terminalApp(let tty):
             return [.script(TerminalScripts.terminalFocus(tty: tty))]
         case .iterm(let tty):
