@@ -164,10 +164,12 @@ struct HookProcessTests {
     @Test func theOutputOfACommandThatHasEndedIsWholeAndAProgramLeftBehindDoesNotHoldItUp() async throws {
         let home = try ScratchHome()
         let gate = home.url.appendingPathComponent("gate").path
-        let hook = try HookProcess(command: "echo first; (while [ ! -e '\(gate)' ]; do sleep 0.05; done; echo late) & echo second",
+        // The program left behind ends when the gate is opened, when the folder holding it is gone (the test removes it as it ends, and may do so
+        // before the program has looked), or when this process is: a run left one of them looping for each test, until the machine was restarted.
+        let hook = try HookProcess(command: "echo first; (while [ -d '\(home.url.path)' ] && [ ! -e '\(gate)' ] && kill -0 \(getpid()) 2>/dev/null; do sleep 0.05; done; echo late) & echo second",
                                    home: home.url, stdin: Data())
+        defer { FileManager.default.createFile(atPath: gate, contents: Data()) }
         let result = try #require(await hook.finish())
-        FileManager.default.createFile(atPath: gate, contents: Data())
         #expect(result.stdout == "first\nsecond\n" && result.status == 0)
     }
 
