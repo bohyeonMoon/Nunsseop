@@ -154,3 +154,25 @@ struct StandInTests {
         #expect(users.isEmpty, "start Python with StandIn.python: \(users)")
     }
 }
+
+struct HookProcessTests {
+    /// What a command printed is whole once it has ended, whatever a program it started and left behind does with the output afterwards. (It
+    /// used to be read by a thread to the end of a pipe, which that program held open: `finish` gave up on it after five seconds and
+    /// answered with no output at all.)
+    @Test func theOutputOfACommandThatHasEndedIsWholeAndAProgramLeftBehindDoesNotHoldItUp() async throws {
+        let home = try ScratchHome()
+        let gate = home.url.appendingPathComponent("gate").path
+        let hook = try HookProcess(command: "echo first; (while [ ! -e '\(gate)' ]; do sleep 0.05; done; echo late) & echo second",
+                                   home: home.url, stdin: Data())
+        let result = try #require(await hook.finish())
+        FileManager.default.createFile(atPath: gate, contents: Data())
+        #expect(result.stdout == "first\nsecond\n" && result.status == 0)
+    }
+
+    @Test func moreOutputThanAPipeHoldsIsKept() async throws {
+        let home = try ScratchHome()
+        let hook = try HookProcess(command: "head -c 300000 /dev/zero | tr '\\0' x", home: home.url, stdin: Data())
+        let result = try #require(await hook.finish())
+        #expect(result.stdout.utf8.count == 300_000 && result.status == 0)
+    }
+}
