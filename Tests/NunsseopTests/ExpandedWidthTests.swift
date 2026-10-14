@@ -5,17 +5,18 @@ import Testing
 @MainActor
 struct ExpandedWidthTests {
     @Test func twelveTabsAroundANotchNeedTwoWideSidesAndTheCamera() {
-        // Each side 320, the camera's 200 + 8, the 12 between the halves, and 32 of inset on each end.
-        #expect(NotchViewModel.fittingWidth(tabCount: 12, status: 180, hasNotch: true, notchWidth: 200) == 924)
+        // 7 tabs on the left: 7 × 28 − 2, 2 of frame and 96 for the current tab's title is 292; the other 5, the same and the status 64 is 300.
+        // Each side 300, the camera's 200 + 8, the 12 between the halves, and 32 of inset on each end.
+        #expect(NotchViewModel.fittingWidth(tabCount: 12, status: 64, label: 96, hasNotch: true, notchWidth: 200) == 884)
     }
 
     @Test func twelveTabsWithoutANotchNeedOneRowAndTheStatusIcons() {
-        // 12 × 36 - 6, the 12 gap, the 180 of status and 64 of inset.
-        #expect(NotchViewModel.fittingWidth(tabCount: 12, status: 180, hasNotch: false, notchWidth: 44) == 682)
+        // 12 × 28 − 2, the 96 for the title, the 12 gap, the 64 of status and 64 of inset.
+        #expect(NotchViewModel.fittingWidth(tabCount: 12, status: 64, label: 96, hasNotch: false, notchWidth: 44) == 570)
     }
 
     @Test func homeAloneIsNarrow() {
-        #expect(NotchViewModel.fittingWidth(tabCount: 1, status: 64, hasNotch: false, notchWidth: 44) == 170)
+        #expect(NotchViewModel.fittingWidth(tabCount: 1, status: 64, hasNotch: false, notchWidth: 44) == 166)
     }
 
     @Test func theNotchedWidthDoesNotDependOnTheCameraBeyondItsOwnWidth() {
@@ -38,65 +39,72 @@ struct ExpandedWidthTests {
         #expect(NotchViewModel.widened(620, fitting: 924, limit: 500) == 620)
     }
 
-    @Test func theHeaderReservesRoomForEachStatusIcon() {
-        // Settings and Quit are 26 wide with a 6 gap each; the battery adds 66 and the weather 55.
-        #expect(NotchViewModel.headerStatusWidth(battery: false, weather: false) == 64)
-        #expect(NotchViewModel.headerStatusWidth(battery: true, weather: false) == 130)
-        #expect(NotchViewModel.headerStatusWidth(battery: false, weather: true) == 119)
-        #expect(NotchViewModel.headerStatusWidth(battery: true, weather: true) == 185)
+    @Test func theHeaderReservesRoomForSettingsAndQuit() {
+        // Both are 26 wide with a 6 gap each.
+        #expect(NotchViewModel.headerStatusWidth == 64)
     }
 
-    private let statuses: [CGFloat] = [64, 130, 119, 185]
+    private let statuses: [CGFloat] = [64, 130]
+    private let labels: [CGFloat] = [0, 96]
 
     @Test func aNotchedHeaderAtTheFittingWidthSplitsAroundTheCamera() {
         for notch in [44, 200, 384] as [CGFloat] {
-            for count in 1...13 {
+            for count in 1...14 {
                 for status in statuses {
-                    let width = NotchViewModel.fittingWidth(tabCount: count, status: status, hasNotch: true, notchWidth: notch)
-                    let layout = HeaderBar.layout(width: width, status: status, tabCount: count, hasNotch: true, notchWidth: notch)
-                    let split = NotchViewModel.tabSplit(count: count, status: status)
-                    #expect(layout.left == split.left, "count \(count), status \(status), notch \(notch)")
-                    #expect(layout.camera == notch + 8)
-                    #expect(abs(layout.side - split.side) < 0.001)
+                    for label in labels {
+                        let width = NotchViewModel.fittingWidth(tabCount: count, status: status, label: label, hasNotch: true, notchWidth: notch)
+                        let layout = HeaderBar.layout(width: width, status: status, label: label, tabCount: count, hasNotch: true, notchWidth: notch)
+                        let split = NotchViewModel.tabSplit(count: count, status: status, label: label)
+                        #expect(layout.left == split.left, "count \(count), status \(status), label \(label), notch \(notch)")
+                        #expect(layout.camera == notch + 8)
+                        #expect(abs(layout.side - split.side) < 0.001)
+                    }
                 }
             }
         }
     }
 
     @Test func aNotchedHeaderTwoPointsTooNarrowFallsBackToOneScrollingRow() {
-        let width = NotchViewModel.fittingWidth(tabCount: 12, status: 180, hasNotch: true, notchWidth: 200)
+        let width = NotchViewModel.fittingWidth(tabCount: 12, status: 180, label: 96, hasNotch: true, notchWidth: 200)
         // Half a point of slack is allowed on each side, so one point narrower still splits.
-        #expect(HeaderBar.layout(width: width - 1, status: 180, tabCount: 12, hasNotch: true, notchWidth: 200).left != nil)
-        #expect(HeaderBar.layout(width: width - 2, status: 180, tabCount: 12, hasNotch: true, notchWidth: 200).left == nil)
+        #expect(HeaderBar.layout(width: width - 1, status: 180, label: 96, tabCount: 12, hasNotch: true, notchWidth: 200).left != nil)
+        #expect(HeaderBar.layout(width: width - 2, status: 180, label: 96, tabCount: 12, hasNotch: true, notchWidth: 200).left == nil)
     }
 
     @Test func aHeaderWithoutANotchHasRoomForEveryTabAtTheFittingWidth() {
-        for count in 1...13 {
+        for count in 1...14 {
             for status in statuses {
-                let width = NotchViewModel.fittingWidth(tabCount: count, status: status, hasNotch: false, notchWidth: 44)
-                let layout = HeaderBar.layout(width: width, status: status, tabCount: count, hasNotch: false, notchWidth: 44)
-                #expect(layout.strip == NotchViewModel.stripWidth(count), "count \(count), status \(status)")
-                #expect(layout.left == nil)
-                #expect(layout.camera == 0)
+                for label in labels {
+                    let width = NotchViewModel.fittingWidth(tabCount: count, status: status, label: label, hasNotch: false, notchWidth: 44)
+                    let layout = HeaderBar.layout(width: width, status: status, label: label, tabCount: count, hasNotch: false, notchWidth: 44)
+                    #expect(layout.strip == NotchViewModel.stripWidth(count) + label, "count \(count), status \(status), label \(label)")
+                    #expect(layout.left == nil)
+                    #expect(layout.camera == 0)
+                }
             }
         }
     }
 
+    @Test func aCurrentTabsTitleIsNeverReservedMoreThanTheCap() {
+        let label = NotchViewModel.tabLabelWidth(NotchTab.allCases)
+        #expect(label <= NotchViewModel.tabTitleCap + 22)
+        #expect(NotchViewModel.tabLabelWidth([]) == 22)
+    }
+
     @Test func theFittingWidthStaysInsideThePanelForEveryTabCountOnTheCommonDisplays() {
-        // A 14" MacBook Pro's notch, with every tab and every status icon.
+        // A 14" MacBook Pro's notch, with every tab.
         var g = NotchGeometry()
         g.screenFrame = NSRect(x: 0, y: 0, width: 1512, height: 982)
         g.hasNotch = true
         g.collapsedSize = CGSize(width: 384, height: 32)
         // The unclamped fitting width itself has to fit; clamping it to the limit would hide an overflow.
+        let label = NotchViewModel.tabLabelWidth(NotchTab.allCases)
         for count in 1...NotchTab.allCases.count {
-            for status in statuses {
-                let fitting = NotchViewModel.fittingWidth(tabCount: count, status: status, hasNotch: true, notchWidth: 384)
-                #expect(fitting <= g.maxExpandedWidth, "count \(count), status \(status)")
-                #expect(fitting <= g.panelFrame.width - 40, "count \(count), status \(status)")
-                // Because it fits, widening a narrower saved width reaches it exactly.
-                #expect(NotchViewModel.widened(0, fitting: fitting, limit: g.maxExpandedWidth) == fitting, "count \(count), status \(status)")
-            }
+            let fitting = NotchViewModel.fittingWidth(tabCount: count, status: NotchViewModel.headerStatusWidth, label: label, hasNotch: true, notchWidth: 384)
+            #expect(fitting <= g.maxExpandedWidth, "count \(count)")
+            #expect(fitting <= g.panelFrame.width - 40, "count \(count)")
+            // Because it fits, widening a narrower saved width reaches it exactly.
+            #expect(NotchViewModel.widened(0, fitting: fitting, limit: g.maxExpandedWidth) == fitting, "count \(count)")
         }
     }
 }

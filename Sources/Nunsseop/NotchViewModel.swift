@@ -377,37 +377,39 @@ final class NotchViewModel: ObservableObject {
         max(width, min(fitting, limit))
     }
 
-    nonisolated static let tabSlot: CGFloat = 36
+    /// A tab button is 26 wide with 2 between buttons.
+    nonisolated static let tabSlot: CGFloat = 28
+    nonisolated static let tabGap: CGFloat = 2
     /// Horizontal inset of the expanded content from the shape's edge.
     nonisolated static let headerInset: CGFloat = 18 + 14
+    /// The longest a tab's title gets beside its icon; a longer one is cut short.
+    nonisolated static let tabTitleCap: CGFloat = 90
 
-    /// Battery, weather, Settings and Quit at the right end of the header.
-    var headerStatusWidth: CGFloat {
-        Self.headerStatusWidth(battery: settings.batteryInHeader && hud.power != nil,
-                               weather: settings.headerWeather && weather.current != nil)
-    }
-
-    nonisolated static func headerStatusWidth(battery: Bool, weather: Bool) -> CGFloat {
-        var width: CGFloat = 2 * (26 + 6)
-        if battery { width += 66 }
-        if weather { width += 55 }
-        return width
-    }
+    /// Settings and Quit at the right end of the header, with the gaps the row puts around them.
+    nonisolated static let headerStatusWidth: CGFloat = 2 * (26 + 6)
 
     /// The width of a row of `count` tab buttons.
     nonisolated static func stripWidth(_ count: Int) -> CGFloat {
-        count > 0 ? CGFloat(count) * tabSlot - 6 : 0
+        count > 0 ? CGFloat(count) * tabSlot - tabGap : 0
+    }
+
+    /// What the current tab's capsule takes beyond a bare icon button: its title, at most `tabTitleCap`, the icon's extra width
+    /// the capsule's padding and room for a badge. The widest title among `tabs`, so the row keeps its size whichever tab is current.
+    nonisolated static func tabLabelWidth(_ tabs: [NotchTab]) -> CGFloat {
+        let font = NSFont.systemFont(ofSize: 12, weight: .semibold)
+        let widest = tabs.map { ceil(($0.title as NSString).size(withAttributes: [.font: font]).width) }.max() ?? 0
+        return min(widest, tabTitleCap) + 22
     }
 
     /// On notched displays the tabs sit on both sides of the camera: the first `left` on the left, the rest on the right
     /// ahead of the status icons. Picks the split that keeps the wider side narrowest; `side` is that side's width.
-    /// A tab strip's frame is 2 points wider than its buttons.
-    nonisolated static func tabSplit(count: Int, status: CGFloat) -> (left: Int, side: CGFloat) {
+    /// A tab strip's frame is 2 points wider than its buttons, and a side that holds tabs has room for the current tab's `label`.
+    nonisolated static func tabSplit(count: Int, status: CGFloat, label: CGFloat = 0) -> (left: Int, side: CGFloat) {
         var best = (left: count, side: CGFloat.infinity)
         // From the left so a tie keeps more tabs on the left.
         for left in stride(from: count, through: 0, by: -1) {
             let right = count - left
-            let side = max(stripWidth(left) + 2, right > 0 ? stripWidth(right) + 2 + status : status)
+            let side = max(left > 0 ? stripWidth(left) + 2 + label : 0, right > 0 ? stripWidth(right) + 2 + label + status : status)
             if side < best.side { best = (left, side) }
         }
         return best
@@ -415,17 +417,18 @@ final class NotchViewModel: ObservableObject {
 
     /// The width that shows every tab without scrolling: split around the camera on notched displays, otherwise in one row.
     private var widthFittingTabs: CGFloat {
-        Self.fittingWidth(tabCount: settings.visibleTabs.count, status: headerStatusWidth,
-                          hasNotch: geometry.hasNotch, notchWidth: geometry.collapsedSize.width)
+        let tabs = settings.visibleTabs
+        return Self.fittingWidth(tabCount: tabs.count, status: Self.headerStatusWidth, label: Self.tabLabelWidth(tabs),
+                                 hasNotch: geometry.hasNotch, notchWidth: geometry.collapsedSize.width)
     }
 
-    nonisolated static func fittingWidth(tabCount count: Int, status: CGFloat, hasNotch: Bool, notchWidth: CGFloat) -> CGFloat {
+    nonisolated static func fittingWidth(tabCount count: Int, status: CGFloat, label: CGFloat = 0, hasNotch: Bool, notchWidth: CGFloat) -> CGFloat {
         let content: CGFloat
         if hasNotch {
-            let side = tabSplit(count: count, status: status).side
+            let side = tabSplit(count: count, status: status, label: label).side
             content = 2 * side + notchWidth + 8 + 12
         } else {
-            content = stripWidth(count) + 12 + status
+            content = stripWidth(count) + label + 12 + status
         }
         return content + 2 * headerInset
     }

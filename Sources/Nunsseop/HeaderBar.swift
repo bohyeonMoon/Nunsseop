@@ -1,30 +1,22 @@
 import SwiftUI
 
+/// The tab bar: every tab in one row, the current one a capsule with its title beside the icon, then Settings and Quit.
 struct HeaderBar: View {
     @ObservedObject var model: NotchViewModel
     @ObservedObject var shelf: ShelfStore
-    @ObservedObject var weather: WeatherModel
-    @ObservedObject private var updates = UpdateChecker.shared
     let height: CGFloat
 
     init(model: NotchViewModel, height: CGFloat) {
         self.model = model
         self.shelf = model.shelf
-        self.weather = model.weather
         self.height = height
     }
 
-    private static let slot: CGFloat = 36
-
     /// Room for the tab strip: left of the camera on notched displays, otherwise up to the status icons.
     /// `left` is how many tabs sit left of the camera when the tabs are split around it; nil keeps them in one row.
-    private var layout: (strip: CGFloat, camera: CGFloat, side: CGFloat, left: Int?) {
-        Self.layout(width: model.expandedSize.width, status: model.headerStatusWidth,
-                    tabCount: model.settings.visibleTabs.count, hasNotch: model.geometry.hasNotch,
-                    notchWidth: model.geometry.collapsedSize.width)
-    }
-
-    nonisolated static func layout(width: CGFloat, status: CGFloat, tabCount: Int, hasNotch: Bool, notchWidth: CGFloat)
+    /// `label` is the room the current tab's title takes beyond an icon (see `NotchViewModel.tabLabelWidth`), kept for every tab so
+    /// that choosing another does not move anything.
+    nonisolated static func layout(width: CGFloat, status: CGFloat, label: CGFloat, tabCount: Int, hasNotch: Bool, notchWidth: CGFloat)
         -> (strip: CGFloat, camera: CGFloat, side: CGFloat, left: Int?) {
         let content = width - 2 * NotchViewModel.headerInset
         // Without a notch: the gaps after the strip and between the two spacers.
@@ -32,27 +24,49 @@ struct HeaderBar: View {
         let camera = notchWidth + 8
         let side = (content - camera - 12) / 2
         // Split only when both halves fit; otherwise every tab scrolls in one row on the left.
-        let split = NotchViewModel.tabSplit(count: tabCount, status: status)
+        let split = NotchViewModel.tabSplit(count: tabCount, status: status, label: label)
         return (side, camera, side, split.side <= side + 0.5 ? split.left : nil)
     }
 
     var body: some View {
-        let layout = layout
-        let tabs = model.settings.visibleTabs
-        let needed = NotchViewModel.stripWidth(tabs.count)
+        HeaderRow(tabs: model.settings.visibleTabs, selected: model.tab,
+                  badges: [.shelf: shelf.items.count, .notices: model.notices.unseen],
+                  width: model.expandedSize.width, hasNotch: model.geometry.hasNotch, notchWidth: model.geometry.collapsedSize.width,
+                  showsDate: model.settings.headerDate, height: height) { model.tab = $0 }
+    }
+}
+
+/// What HeaderBar draws, from plain values so that it can be laid out without a notch model.
+struct HeaderRow: View {
+    let tabs: [NotchTab]
+    let selected: NotchTab
+    let badges: [NotchTab: Int]
+    let width: CGFloat
+    let hasNotch: Bool
+    let notchWidth: CGFloat
+    let showsDate: Bool
+    let height: CGFloat
+    let select: (NotchTab) -> Void
+    @ObservedObject private var updates = UpdateChecker.shared
+
+    var body: some View {
+        let label = NotchViewModel.tabLabelWidth(tabs)
+        let layout = HeaderBar.layout(width: width, status: NotchViewModel.headerStatusWidth, label: label, tabCount: tabs.count,
+                                      hasNotch: hasNotch, notchWidth: notchWidth)
+        let needed = NotchViewModel.stripWidth(tabs.count) + label
         HStack(spacing: 6) {
-            if model.geometry.hasNotch {
+            if hasNotch {
                 let left = layout.left.map { Array(tabs.prefix($0)) } ?? tabs
                 let right = layout.left.map { Array(tabs.dropFirst($0)) } ?? []
-                tabStrip(left, width: layout.strip, overflowing: layout.left == nil && needed > layout.strip)
+                tabStrip(left, width: layout.strip, label: label, overflowing: layout.left == nil && needed > layout.strip)
                     .frame(width: layout.strip, alignment: .leading)
                 Color.clear.frame(width: layout.camera)
                 HStack(spacing: 6) {
                     if right.isEmpty {
                         Spacer(minLength: 0)
                     } else {
-                        let width = NotchViewModel.stripWidth(right.count) + 2
-                        tabStrip(right, width: width, overflowing: false)
+                        let width = NotchViewModel.stripWidth(right.count) + label + 2
+                        tabStrip(right, width: width, label: label, overflowing: false)
                             .frame(width: width)
                             .frame(minWidth: width, maxWidth: .infinity, alignment: .leading)
                     }
@@ -60,10 +74,10 @@ struct HeaderBar: View {
                 }
                 .frame(width: layout.side)
             } else {
-                tabStrip(tabs, width: layout.strip, overflowing: needed > layout.strip)
+                tabStrip(tabs, width: layout.strip, label: label, overflowing: needed > layout.strip)
                     .frame(width: min(needed, layout.strip), alignment: .leading)
                 Spacer(minLength: 0)
-                if model.settings.headerDate && needed + 110 < layout.strip {
+                if showsDate && needed + 110 < layout.strip {
                     // Re-reads the clock each minute so the date turns over at midnight; only this text redraws.
                     TimelineView(.everyMinute) { context in
                         Text(context.date, format: .dateTime.month().day().weekday(.abbreviated))
@@ -80,23 +94,17 @@ struct HeaderBar: View {
         .frame(height: max(height, 24))
     }
 
-    private func tabStrip(_ tabs: [NotchTab], width: CGFloat, overflowing: Bool) -> some View {
-        TabStrip(model: model, shelf: shelf, tabs: tabs, overflowing: overflowing,
-                 visibleCount: max(1, Int((width + 6) / Self.slot)))
+    private func tabStrip(_ tabs: [NotchTab], width: CGFloat, label: CGFloat, overflowing: Bool) -> some View {
+        TabStrip(tabs: tabs, selected: selected, badges: badges, overflowing: overflowing,
+                 visibleCount: max(1, Int((width + NotchViewModel.tabGap - label) / NotchViewModel.tabSlot)), select: select)
     }
 
     @ViewBuilder private var status: some View {
-        if model.settings.headerWeather, let weather = model.weather.current {
-            WeatherChip(weather: weather)
-        }
-        if model.settings.batteryInHeader, let power = model.hud.power {
-            BatteryBadge(state: power)
-        }
         Button { SettingsWindowController.shared.show() } label: {
             Image(systemName: "gearshape.fill")
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.45))
-                .frame(width: 26, height: 22)
+                .foregroundStyle(.white.opacity(0.6))
+                .frame(width: 26, height: 24)
                 .overlay(alignment: .topTrailing) {
                     if updates.available != nil {
                         Circle().fill(Color.blue).frame(width: 6, height: 6).offset(x: -4, y: 3)
@@ -106,25 +114,28 @@ struct HeaderBar: View {
         }
         .buttonStyle(.plain)
         .help("Settings")
+        .accessibilityLabel("Settings")
         Button { NSApp.terminate(nil) } label: {
             Image(systemName: "power")
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.45))
-                .frame(width: 26, height: 22)
+                .foregroundStyle(.white.opacity(0.6))
+                .frame(width: 26, height: 24)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .help("Quit Nunsseop")
+        .accessibilityLabel("Quit Nunsseop")
     }
 }
 
 /// Tabs that don't fit scroll sideways, with arrows at the ends; the selected one is kept in view.
 private struct TabStrip: View {
-    @ObservedObject var model: NotchViewModel
-    @ObservedObject var shelf: ShelfStore
     let tabs: [NotchTab]
+    let selected: NotchTab
+    let badges: [NotchTab: Int]
     let overflowing: Bool
     let visibleCount: Int
+    let select: (NotchTab) -> Void
     @State private var leading: NotchTab?
     @State private var dragHover = TabDragHover()
 
@@ -134,13 +145,12 @@ private struct TabStrip: View {
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
+            HStack(spacing: NotchViewModel.tabGap) {
                 ForEach(tabs) { tab in
-                    TabButton(symbol: tab.symbol, selected: model.tab == tab,
-                              badge: tab == .shelf ? shelf.items.count : tab == .notices ? model.notices.unseen : 0) { model.tab = tab }
+                    TabButton(tab: tab, selected: selected == tab, badge: badges[tab] ?? 0) { select(tab) }
                         .help(tab.title)
                         .id(tab)
-                        .onDrop(of: tab == .agents ? [.fileURL] : [], delegate: TabDragHoverDelegate(hover: dragHover) { model.tab = tab })
+                        .onDrop(of: tab == .agents ? [.fileURL] : [], delegate: TabDragHoverDelegate(hover: dragHover) { select(tab) })
                 }
             }
             .scrollTargetLayout()
@@ -156,8 +166,8 @@ private struct TabStrip: View {
         }
         .overlay(alignment: .leading) { if canGoBack { arrow("chevron.left", fade: .leading) { page(-1) } } }
         .overlay(alignment: .trailing) { if canGoForward { arrow("chevron.right", fade: .trailing) { page(1) } } }
-        .onAppear { reveal(model.tab, animated: false) }
-        .onChange(of: model.tab) { _, tab in reveal(tab, animated: true) }
+        .onAppear { reveal(selected, animated: false) }
+        .onChange(of: selected) { _, tab in reveal(tab, animated: true) }
     }
 
     /// Scrolls just enough to bring the tab into view.
@@ -198,48 +208,44 @@ private struct TabStrip: View {
     }
 }
 
-struct WeatherChip: View {
-    let weather: WeatherModel.Current
-
-    var body: some View {
-        HStack(spacing: 4) {
-            Image(systemName: WeatherModel.symbol(for: weather.code)).symbolRenderingMode(.multicolor)
-            Text("\(Int(weather.temperature.rounded()))°").monospacedDigit()
-        }
-        .font(.system(size: 11, weight: .medium))
-        .foregroundStyle(.white.opacity(0.7))
-        .help("\(weather.place) · \(Int(weather.low.rounded()))° / \(Int(weather.high.rounded()))°")
-    }
-}
-
-private struct TabButton: View {
-    let symbol: String
+/// An icon with, when it is the current tab, its title beside it in a capsule. 24 pt tall, 26 wide at least.
+struct TabButton: View {
+    let tab: NotchTab
     let selected: Bool
     var badge: Int = 0
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(selected ? .white : .white.opacity(0.45))
-                .frame(width: 30, height: 22)
-                .background(Capsule().fill(.white.opacity(selected ? 0.16 : 0)))
-                .overlay(alignment: .topTrailing) {
-                    if badge > 0 {
-                        Text(badge > 9 ? "9+" : "\(badge)")
-                            .font(.system(size: 8, weight: .bold).monospacedDigit())
-                            .foregroundStyle(.black)
-                            .padding(.horizontal, 3)
-                            .background(Capsule().fill(.white))
-                            // Inside the button on every side: the tab row scrolls and clips anything past it,
-                            // so a badge on the tab at the end of the row, or a wider one, lost its edge.
-                            .padding(.top, 1)
-                            .padding(.trailing, 1)
-                    }
+            HStack(spacing: 5) {
+                Image(systemName: tab.symbol).font(.system(size: 11, weight: .semibold)).accessibilityHidden(true)
+                if selected {
+                    Text(verbatim: tab.title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                        .frame(maxWidth: NotchViewModel.tabTitleCap)
                 }
-                .contentShape(Rectangle())
+            }
+            .foregroundStyle(selected ? .white : .white.opacity(0.55))
+            .padding(.leading, selected ? 9 : 0)
+            .padding(.trailing, selected ? (badge > 0 ? 15 : 9) : 0)
+            .frame(minWidth: 26, minHeight: 24)
+            .background(Capsule().fill(.white.opacity(selected ? 0.16 : 0)))
+            .overlay(alignment: .topTrailing) {
+                if badge > 0 {
+                    Text(badge > 9 ? "9+" : "\(badge)")
+                        .font(.system(size: 8, weight: .bold).monospacedDigit())
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 3)
+                        .background(Capsule().fill(.white))
+                        // Inside the button on every side: the tab row scrolls and clips anything past it,
+                        // so a badge on the tab at the end of the row, or a wider one, lost its edge.
+                        .padding(.top, 1)
+                        .padding(.trailing, 1)
+                }
+            }
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(tab.title)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
