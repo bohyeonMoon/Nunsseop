@@ -148,6 +148,17 @@ func eventually(within seconds: TimeInterval = eventDeadline, isolation: isolate
     }
 }
 
+/// The same for a condition that has to await, one that asks a process or another actor (the main actor stays free while it does).
+func eventually(within seconds: TimeInterval = eventDeadline, isolation: isolated (any Actor)? = #isolation, _ condition: () async -> Bool) async {
+    var deadline = Date.now.addingTimeInterval(seconds)
+    while await !condition() && Date.now < deadline {
+        let asleep = Date.now
+        try? await Task.sleep(for: .milliseconds(20))
+        let late = Date.now.timeIntervalSince(asleep) - 1
+        if late > 0 { deadline.addTimeInterval(late) }
+    }
+}
+
 /// A scratch home folder holding a notify token and a permission key, removed when this goes away.
 final class ScratchHome {
     let url: URL
@@ -208,10 +219,9 @@ final class PermissionTestServer {
         server.permissions.onGone = { events.remove($0) }
         server.start()
         var bound = server.listeningPort
-        let deadline = Date.now.addingTimeInterval(eventDeadline)
-        while bound == nil && Date.now < deadline {
-            try await Task.sleep(for: .milliseconds(20))
+        await eventually {
             bound = server.listeningPort
+            return bound != nil
         }
         guard let bound else {
             server.stop()
@@ -400,8 +410,7 @@ final class HookProcess: @unchecked Sendable {
 
     /// Waits for the command to end; nil if it is still running after the cap. The output is what it had written when it ended.
     func finish() async -> (stdout: String, status: Int32)? {
-        let deadline = Date.now.addingTimeInterval(eventDeadline)
-        while process.isRunning && Date.now < deadline { try? await Task.sleep(for: .milliseconds(20)) }
+        await eventually { !process.isRunning }
         guard !process.isRunning else { return nil }
         return (String(decoding: (try? Data(contentsOf: outputFile)) ?? Data(), as: UTF8.self), process.terminationStatus)
     }

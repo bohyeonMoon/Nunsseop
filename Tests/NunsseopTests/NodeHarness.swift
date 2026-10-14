@@ -46,14 +46,15 @@ final class NodeScript {
         FileManager.default.createFile(atPath: folder.appendingPathComponent(name).path, contents: Data())
     }
 
-    /// Helpers every script starts with: `out(value)` prints a JSON line, `sleep(ms)`, `until(predicate)` and `gate(name)`, which wait for
-    /// an event as long as the test does (`eventDeadline`) and only a hang makes them give up: the main actor can keep the test from
-    /// answering for most of a minute on a busy machine, and a script that stopped waiting before that went on without the answer.
+    /// Helpers every script starts with: `out(value)` prints a JSON line, `sleep(ms)`, `until(predicate)` and `gate(name)`, which wait for an
+    /// event as long as the test does: the main actor can keep the test from answering for two minutes on a busy machine, and a script that
+    /// stopped waiting before that went on without the answer. A script that is waiting has no cap of its own, since the test's process is what
+    /// it waits on: it stops when that process is gone (its parent, which a script started by a test that crashed has no longer).
     static let prelude = """
         import { existsSync } from "node:fs"
         const out = (value) => console.log(JSON.stringify(value))
         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
-        const until = async (predicate, ms = \(Int(eventDeadline * 1000))) => { const end = Date.now() + ms; while (!predicate() && Date.now() < end) await sleep(20) }
+        const until = async (predicate) => { const parent = process.ppid; while (!predicate() && process.ppid === parent) await sleep(20) }
         const gate = (name) => until(() => existsSync(name))
 
         """

@@ -79,7 +79,7 @@ struct ProcessEnvironmentParseTests {
 
     /// Reads the environment of a child that this test starts, by its pid, with the real `sysctl`; nothing else's. macOS gives no
     /// environment for a system binary such as /bin/sleep itself, so the child is a copy of it, signed ad hoc.
-    @Test func theLiveReaderReadsAChildsOwnEnvironmentAndOnlyTheListedVariables() throws {
+    @Test func theLiveReaderReadsAChildsOwnEnvironmentAndOnlyTheListedVariables() async throws {
         let sleep = try StubTool.signedCopy(of: "/bin/sleep", named: "sleep")
 
         let child = Process()
@@ -95,12 +95,10 @@ struct ProcessEnvironmentParseTests {
         let expected = ["MUXY_SESSION_ID": "123", "KITTY_LISTEN_ON": "unix:/tmp/kitty-1", "TMUX": ""]
         // The child may not have exec'd yet, when it has no environment of its own to read.
         var raw: [String: String]?
-        let deadline = Date.now.addingTimeInterval(eventDeadline)
-        repeat {
+        await eventually {
             raw = ProcessEnvironment.live.read(pid)
-            if raw == expected { break }
-            Thread.sleep(forTimeInterval: 0.02)
-        } while Date.now < deadline
+            return raw == expected
+        }
         #expect(raw == expected)
         #expect(ProcessEnvironment.live.variables(of: pid) == expected)
     }

@@ -69,8 +69,7 @@ struct AgentBoardTests {
         board.replace(source: "s", with: ["a": agent])
         #expect(board.counts == AgentBoard.Counts(waiting: 1))
         let revision = board.revision
-        let deadline = Date().addingTimeInterval(eventDeadline)
-        while board.counts.waiting == 1, Date() < deadline { try await Task.sleep(nanoseconds: 20_000_000) }
+        await eventually { board.counts.waiting != 1 }
         #expect(board.counts.isEmpty)
         #expect(board.revision > revision)
     }

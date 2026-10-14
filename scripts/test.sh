@@ -2,13 +2,17 @@
 # Runs the tests. With only the Command Line Tools selected, SwiftPM can't find Testing.framework
 # on its own, so point the compiler and the test runner at it. With Xcode selected (CI), it finds it.
 #
-#   scripts/test.sh              two passes that never overlap: everything else, then the exhaustive tests
+#   scripts/test.sh              three passes that never overlap: everything else, the tests that draw views, then the exhaustive tests
 #   scripts/test.sh --filter X   one run, with the arguments passed to `swift test`
 #
 # The exhaustive tests sweep all of Unicode or draw thousands of glyphs: seconds of CPU on every core, which on a
 # three core CI runner starves the tests that wait for a real event with a deadline. They have `exhaustive` at the
 # start of their name (and the `.exhaustive` tag; see PermissionTestSupport.swift), and `swift test` can't select by tag.
-# CI runs this script, so it runs the same two passes.
+# The tests that draw views run on the main actor, one after the other, and each holds it for most of a second (text recognition of what was drawn
+# among them): all together about thirteen seconds that every other test of the main actor waits behind, which on a machine ten times as slow is two
+# minutes in which a test that waits for a real event on that actor gets no turn. They are the suites named in `DRAWING` (`DrawingPassTests` keeps
+# the list whole), and wait for nothing, so they are no worse for running alone.
+# CI runs this script, so it runs the same three passes.
 #
 # A pass that hangs fails instead: after TEST_PASS_TIMEOUT seconds (600), or at once when the test process has crashed and
 # `swift test` waits for a process the tests left behind (see `give_up`). It ends only processes of the pass (see `pass_victims`): never
@@ -17,6 +21,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 EXHAUSTIVE='/exhaustive'
+DRAWING='NunsseopTests\.(PermissionLayoutTests|PermissionQuestionLayoutTests|CodexPermissionLayoutTests|PermissionAllowlistTests|AgentFooterRenderTests|LiveEarRenderTests|HeaderStatusWidthTests|OnboardingRenderTests)/'
 
 swift_test() {
     local CLT=/Library/Developer/CommandLineTools/Library/Developer
@@ -166,11 +171,12 @@ run_pass() {
     fi
 }
 
-run_pass "everything-else" --skip "$EXHAUSTIVE"
+run_pass "everything-else" --skip "$EXHAUSTIVE" --skip "$DRAWING"
+run_pass "drawing" --filter "$DRAWING" --skip "$EXHAUSTIVE"
 run_pass "exhaustive" --filter "$EXHAUSTIVE"
 
 echo "▸ Summaries" >&2
-for name in everything-else exhaustive; do
+for name in everything-else drawing exhaustive; do
     echo "$name: $(grep -E 'Test run with' "$LOG/$name.txt" | tail -1)" >&2
 done
 exit "$status"

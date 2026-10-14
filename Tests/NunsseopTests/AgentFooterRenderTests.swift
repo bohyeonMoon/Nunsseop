@@ -17,12 +17,8 @@ struct AgentFooterRenderTests {
     }
 
     private func settled(_ condition: () -> Bool) async -> Bool {
-        let deadline = Date().addingTimeInterval(eventDeadline)
-        while !condition() {
-            guard Date() < deadline else { return false }
-            try? await Task.sleep(nanoseconds: 20_000_000)
-        }
-        return true
+        await eventually(condition)
+        return condition()
     }
 
     private func render(_ model: AgentsTabModel, width: CGFloat, height: CGFloat) throws -> NSBitmapImageRep {
