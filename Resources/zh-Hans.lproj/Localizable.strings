@@ -175,6 +175,9 @@
 "Header" = "顶部栏";
 "Date" = "日期";
 "Weather" = "天气";
+"Show weather on Home" = "在主页显示天气";
+"Show the battery panel in System" = "在系统中显示电池面板";
+"System tab" = "系统标签";
 "Collapsed notch" = "收起时的刘海";
 "Nothing" = "无";
 "Claude Code left" = "Claude Code 剩余";

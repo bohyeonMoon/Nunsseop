@@ -200,6 +200,9 @@
 "Header" = "헤더";
 "Date" = "날짜";
 "Weather" = "날씨";
+"Show weather on Home" = "홈에 날씨 표시";
+"Show the battery panel in System" = "시스템에서 배터리 패널 표시";
+"System tab" = "시스템 탭";
 "Collapsed notch" = "접힌 노치";
 "Nothing" = "없음";
 "Claude Code left" = "Claude Code 남은 양";

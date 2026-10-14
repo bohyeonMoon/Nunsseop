@@ -175,6 +175,9 @@
 "Header" = "Cabecera";
 "Date" = "Fecha";
 "Weather" = "Tiempo";
+"Show weather on Home" = "Mostrar el tiempo en Inicio";
+"Show the battery panel in System" = "Mostrar el panel de batería en Sistema";
+"System tab" = "Pestaña Sistema";
 "Collapsed notch" = "Notch plegado";
 "Nothing" = "Nada";
 "Claude Code left" = "Claude Code restante";

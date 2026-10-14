@@ -175,6 +175,9 @@
 "Header" = "En-tête";
 "Date" = "Date";
 "Weather" = "Météo";
+"Show weather on Home" = "Afficher la météo dans Accueil";
+"Show the battery panel in System" = "Afficher le panneau batterie dans Système";
+"System tab" = "Onglet Système";
 "Collapsed notch" = "Encoche repliée";
 "Nothing" = "Rien";
 "Claude Code left" = "Claude Code restant";

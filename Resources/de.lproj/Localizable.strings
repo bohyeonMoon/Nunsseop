@@ -175,6 +175,9 @@
 "Header" = "Kopfzeile";
 "Date" = "Datum";
 "Weather" = "Wetter";
+"Show weather on Home" = "Wetter im Start-Tab zeigen";
+"Show the battery panel in System" = "Akku-Feld im System-Tab zeigen";
+"System tab" = "System-Tab";
 "Collapsed notch" = "Eingeklappte Notch";
 "Nothing" = "Nichts";
 "Claude Code left" = "Claude Code übrig";
