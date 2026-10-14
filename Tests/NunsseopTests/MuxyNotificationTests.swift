@@ -361,7 +361,8 @@ struct MuxyWatcherTests {
         #expect(muxy.count("projects") == 3)
     }
 
-    @Test func muxyIsNeverToldAnythingEventsAreNotAcknowledgedAndNoInputIsSent() throws {
+    /// It reads the sources and nothing of the main actor, which every other test of the suite waits for while it does.
+    @Test nonisolated func muxyIsNeverToldAnythingEventsAreNotAcknowledgedAndNoInputIsSent() throws {
         // The backend can only read, and the tool is never run with `ack`, `send` or `create`.
         let source = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Sources/Nunsseop/MuxyNotifications.swift")

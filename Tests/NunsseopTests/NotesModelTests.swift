@@ -14,8 +14,7 @@ struct NotesModelTests {
 
     /// Waits for a background write without a fixed sleep.
     private func waitFor(_ condition: () -> Bool) async {
-        let deadline = Date.now.addingTimeInterval(eventDeadline)
-        while !condition() && Date.now < deadline { try? await Task.sleep(for: .milliseconds(10)) }
+        await eventually(condition)
     }
 
     @Test func flushWritesTheLatestTextAtOnce() {

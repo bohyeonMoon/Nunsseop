@@ -310,12 +310,8 @@ struct RecentConversationRowTests {
 @MainActor
 struct RecentConversationModelTests {
     private func eventually(_ condition: () -> Bool) async -> Bool {
-        let deadline = Date().addingTimeInterval(eventDeadline)
-        while !condition() {
-            guard Date() < deadline else { return false }
-            try? await Task.sleep(nanoseconds: 20_000_000)
-        }
-        return true
+        await NunsseopTests.eventually(condition)
+        return condition()
     }
 
     @Test func recentConversationsAreListedWhileTheTabShowsAndLeaveOutWhatIsOnTheBoard() async throws {

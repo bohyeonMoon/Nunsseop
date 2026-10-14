@@ -368,25 +368,21 @@ struct NotifyServerListenTests {
         // A port let go of is anyone's: another process of the machine can start a connection from it in the time between the holder
         // closing it and the server's next try (a long one on a busy machine), and then the server never gets it. The test takes another
         // port when the server has not got this one in a while (its tries are 1 to 4 seconds apart), and only a hang makes it give up.
-        let deadline = Date.now.addingTimeInterval(eventDeadline)
         var answer: String?
-        repeat {
+        for _ in 0..<6 where answer == nil {
             let holder = try PortHolder()
             let server = try withTempHome { _ in NotifyServer(port: holder.port) }
             server.start()
             // Long enough for the listener to have failed against the held port, and short of its first retry.
             try await Task.sleep(for: .milliseconds(300))
             holder.release()
-            // The deadline is looked at after an ask, never before it: on a busy machine the wake-up from the sleep that follows can come
-            // after the deadline, and the one ask that counts would never be made.
-            let giveUp = Date.now.addingTimeInterval(20)
-            answer = ask(holder.port)
-            while answer == nil && Date.now < giveUp {
-                try await Task.sleep(for: .milliseconds(100))
+            // An ask is made before the wait looks at its cap, so the one that counts is made however late the wait is resumed.
+            await eventually(within: 20) {
                 answer = ask(holder.port)
+                return answer != nil
             }
             server.stop()
-        } while answer == nil && Date.now < deadline
+        }
         #expect(answer == "HTTP/1.1 404 Not Found")
     }
 
@@ -396,10 +392,7 @@ struct NotifyServerListenTests {
         first.start()
         second.start()
         defer { first.stop(); second.stop() }
-        let deadline = Date.now.addingTimeInterval(eventDeadline)
-        while (first.listeningPort == nil || second.listeningPort == nil) && Date.now < deadline {
-            try await Task.sleep(for: .milliseconds(20))
-        }
+        await eventually { first.listeningPort != nil && second.listeningPort != nil }
         let a = try #require(first.listeningPort), b = try #require(second.listeningPort)
         #expect(a != 0 && b != 0 && a != b && a != NotifyServer.port && b != NotifyServer.port)
         // The port it names is the one that is open: no gap in which another process could take it.
@@ -415,9 +408,10 @@ struct NotifyServerListenTests {
         try await Task.sleep(for: .milliseconds(300))
         server.stop()
         holder.release()
-        // A retry that survived stop() would fire after the first second; no condition marks its absence.
+        // A retry that survived stop() would fire after the first second; no condition marks its absence. What it would do is listen on the
+        // port that is free now, which the server says of itself: asking the port instead finds whatever another test's server was given
+        // there in the meantime (the system gives a port that was let go of to the next one that asks for any), and that is not this one.
         try await Task.sleep(for: .seconds(2))
-        withExtendedLifetime(server) {}
-        #expect(ask(holder.port) == nil)
+        #expect(server.listeningPort == nil)
     }
 }

@@ -174,6 +174,16 @@ final class PaseoSockets: @unchecked Sendable {
 
 let quickTiming = PaseoClient.Timing(idle: 0.05, refused: 5, retry: [0.05], ping: 5, silence: 100, relist: 100)
 
+/// A clock the test moves by hand, so how long the daemon has been silent does not depend on how fast the machine is. A client that reads the
+/// real one takes a daemon for dead when the main actor has kept it from looking at the connection for longer than its limit.
+final class HandClock: @unchecked Sendable {
+    private let lock = NSLock()
+    static let start = Date(timeIntervalSinceReferenceDate: 800_000_000)
+    private var moment = HandClock.start
+    var now: Date { lock.withLock { moment } }
+    func advance(_ seconds: TimeInterval) { lock.withLock { moment = moment.addingTimeInterval(seconds) } }
+}
+
 @MainActor
 struct PaseoClientTests {
     private let url = URL(string: "ws://127.0.0.1:6767/ws")!
@@ -185,8 +195,10 @@ struct PaseoClientTests {
         var states: [PaseoClient.State] = []
     }
 
+    /// The clock is one that stands still unless a test gives its own: the client reads it for how long the daemon has been silent, and a main
+    /// actor kept from running for longer than the limit would make it close a connection that nobody has let it look at.
     private func make(_ sockets: PaseoSockets, timing: PaseoClient.Timing = quickTiming, endpoint: URL? = URL(string: "ws://127.0.0.1:6767/ws"),
-                      clock: @escaping () -> Date = { .now }) -> (PaseoClient, Seen) {
+                      clock: @escaping () -> Date = { HandClock.start }) -> (PaseoClient, Seen) {
         let client = PaseoClient(endpoint: { endpoint }, clientID: "nunsseop_test", timing: timing, clock: clock, socket: { sockets.make($0) })
         let seen = Seen()
         client.onAdded = { seen.added.append(($0, $1.id)) }
@@ -337,14 +349,6 @@ struct PaseoClientTests {
         await eventually { socket.sent("ping").count >= 3 }
         #expect(socket.sent("ping").count >= 3 && socket.sent.contains(PaseoWire.ping))
         client.stop()
-    }
-
-    /// A clock the test moves by hand, so how long the daemon has been silent does not depend on how fast the machine is.
-    private final class HandClock: @unchecked Sendable {
-        private let lock = NSLock()
-        private var moment = Date(timeIntervalSinceReferenceDate: 800_000_000)
-        var now: Date { lock.withLock { moment } }
-        func advance(_ seconds: TimeInterval) { lock.withLock { moment = moment.addingTimeInterval(seconds) } }
     }
 
     @Test func aConnectionThatNeverAnswersIsTakenForDeadAndMadeAgain() async throws {
@@ -1020,7 +1024,8 @@ struct PaseoLoopbackTests {
         defer { daemon.stop() }
         var added: [String] = []
         var removed: [String] = []
-        let client = PaseoClient(endpoint: { URL(string: "ws://127.0.0.1:\(port)/ws") }, clientID: "nunsseop_loop")
+        let clock = HandClock()
+        let client = PaseoClient(endpoint: { URL(string: "ws://127.0.0.1:\(port)/ws") }, clientID: "nunsseop_loop", clock: { clock.now })
         client.onAdded = { added.append($1.id) }
         client.onRemoved = { removed.append($1) }
         client.start()

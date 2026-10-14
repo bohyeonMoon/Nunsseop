@@ -346,14 +346,10 @@ struct AgentsBoardFeedTests {
 
 @MainActor
 struct AgentsTabModelTests {
-    /// Waits, for at most 30 seconds, until the condition holds.
+    /// Waits until the condition holds (see the free `eventually`), and says whether it does.
     private func eventually(_ condition: () -> Bool) async -> Bool {
-        let deadline = Date().addingTimeInterval(eventDeadline)
-        while !condition() {
-            guard Date() < deadline else { return false }
-            try? await Task.sleep(nanoseconds: 20_000_000)
-        }
-        return true
+        await NunsseopTests.eventually(condition)
+        return condition()
     }
 
     @Test func demoRowsAreTwoWorkingOneWaitingOneIdleAndOneCodex() {
