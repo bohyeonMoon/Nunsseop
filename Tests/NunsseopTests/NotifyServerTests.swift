@@ -408,9 +408,10 @@ struct NotifyServerListenTests {
         try await Task.sleep(for: .milliseconds(300))
         server.stop()
         holder.release()
-        // A retry that survived stop() would fire after the first second; no condition marks its absence.
+        // A retry that survived stop() would fire after the first second; no condition marks its absence. What it would do is listen on the
+        // port that is free now, which the server says of itself: asking the port instead finds whatever another test's server was given
+        // there in the meantime (the system gives a port that was let go of to the next one that asks for any), and that is not this one.
         try await Task.sleep(for: .seconds(2))
-        withExtendedLifetime(server) {}
-        #expect(ask(holder.port) == nil)
+        #expect(server.listeningPort == nil)
     }
 }
