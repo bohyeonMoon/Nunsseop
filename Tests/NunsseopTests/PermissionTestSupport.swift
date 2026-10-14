@@ -294,19 +294,24 @@ final class RawClient: @unchecked Sendable {
         }
     }
 
-    /// Everything the server sends until it closes the connection or `seconds` pass without a byte. The wait is off the
-    /// main actor, so other tests keep running.
+    /// Everything the server sends until it closes the connection or `seconds` pass without a byte. The wait for the first byte is as
+    /// long as a test waits for any event (`eventDeadline`): the main actor can keep the server from answering for most of a minute on
+    /// a busy machine, and a fixed 2 or 5 seconds gave up before the answer. The wait is off the main actor, so other tests keep running.
     func read(timeout seconds: Int = 2) async -> Data {
         let fd = fd
         return await withCheckedContinuation { continuation in
             DispatchQueue.global().async {
-                var timeout = timeval(tv_sec: seconds, tv_usec: 0)
+                var timeout = timeval(tv_sec: Int(eventDeadline), tv_usec: 0)
                 setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
                 var result = Data()
                 var buffer = [UInt8](repeating: 0, count: 4096)
                 while true {
                     let count = recv(fd, &buffer, buffer.count, 0)
                     if count <= 0 { break }
+                    if result.isEmpty {
+                        var rest = timeval(tv_sec: seconds, tv_usec: 0)
+                        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &rest, socklen_t(MemoryLayout<timeval>.size))
+                    }
                     result.append(contentsOf: buffer[..<count])
                 }
                 continuation.resume(returning: result)
