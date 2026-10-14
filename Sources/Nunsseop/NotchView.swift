@@ -63,15 +63,10 @@ struct NotchView: View {
                                         if let call = model.calls.call, let controls = model.callControls.state {
                                             CallRow(call: call, state: controls) { model.callControls.toggle($0) }
                                         }
-                                        HStack(spacing: 16) {
-                                            HomeTab(nowPlaying: nowPlaying, lyrics: model.settings.lyricsEnabled ? model.lyrics : nil)
-                                            if model.settings.calendarEnabled {
-                                                // A wide notch gives the calendar room for the whole week in large digits.
-                                                let wide = model.expandedSize.width >= 700
-                                                CalendarPanel(calendar: model.calendar, showsReminders: model.settings.remindersEnabled, wide: wide)
-                                                    .frame(width: wide ? 220 : 168)
-                                            }
-                                        }
+                                        HomePanels(nowPlaying: nowPlaying, lyrics: model.settings.lyricsEnabled ? model.lyrics : nil,
+                                                   calendar: model.settings.calendarEnabled ? model.calendar : nil,
+                                                   showsReminders: model.settings.remindersEnabled,
+                                                   weather: model.settings.headerWeather ? model.weather : nil)
                                     }
                                 case .shelf:
                                     ShelfView(shelf: model.shelf, isDropTargeted: isDropTargeted && !isAirDropTargeted,

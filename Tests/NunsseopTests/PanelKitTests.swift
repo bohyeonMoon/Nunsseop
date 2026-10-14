@@ -73,3 +73,12 @@ struct PanelKeysTests {
         watching.cancel()
     }
 }
+
+struct HomeColumnTests {
+    @Test func theRightColumnShowsAWholeWeekWhereItHasRoom() {
+        #expect(HomePanels.column(for: 556).days == 7)
+        #expect(HomePanels.column(for: 556).width == 280)
+        #expect(HomePanels.column(for: 476).days == 5)
+        #expect(HomePanels.column(for: 476).width == 214)
+    }
+}
