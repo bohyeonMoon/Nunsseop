@@ -64,33 +64,37 @@ struct InlinePeekClampTests {
 
 @MainActor
 struct AirDropTargetTests {
-    @Test func theTileSitsAtTheBottomRightBelowTheHeader() {
+    @Test func theRightSideStartsWhereTheListEndsAndReachesTheShapesInset() {
         let rect = NotchView.airDropRect(in: CGSize(width: 620, height: 196), collapsedHeight: 32)
-        #expect(rect == CGRect(x: 620 - 32 - 76, y: 40, width: 76, height: 196 - 40 - 16))
+        // 620 wide with 32 either side leaves 556; the list takes 40 % of that.
+        #expect(abs(rect.minX - (32 + 556 * 0.4)) < 0.001)
+        #expect(abs(rect.width - 556 * 0.6) < 0.001)
+        #expect(rect.minY == 40)
+        #expect(rect.height == 140)
     }
 
-    @Test func withoutANotchTheHeaderIsShorterSoTheTileStartsHigher() {
+    @Test func withoutANotchTheHeaderIsShorterSoTheRightSideStartsHigher() {
         let rect = NotchView.airDropRect(in: CGSize(width: 620, height: 196), collapsedHeight: 18)
         #expect(rect.minY == 32)
         #expect(rect.height == 148)
     }
 
-    @Test func theTileStartsBelowTheHeaderBarForEveryHeight() {
+    @Test func theRightSideStartsBelowTheHeaderBarForEveryHeight() {
         // HeaderBar is max(collapsed height, 24) tall, with 8 below it.
         for height in [16, 18, 24, 31, 32, 38] as [CGFloat] {
             #expect(NotchView.airDropRect(in: CGSize(width: 620, height: 196), collapsedHeight: height).minY == max(height, 24) + 8)
         }
     }
 
-    @Test func theTileKeepsTheShapesInsetFromItsRightEdge() {
+    @Test func theRightSideKeepsTheShapesInsetFromItsRightEdgeAndTheListsShareOfTheWidth() {
         for width in [540, 620, 780] as [CGFloat] {
             let rect = NotchView.airDropRect(in: CGSize(width: width, height: 196), collapsedHeight: 32)
             #expect(rect.maxX == width - 32)
-            #expect(rect.width == ShelfView.airDropWidth)
+            #expect(abs(rect.minX - (32 + (width - 64) * ShelfView.listFraction)) < 0.001)
         }
     }
 
-    @Test func aDropIsAirDroppedOnlyOverTheTileOnTheOpenShelf() {
+    @Test func aDropIsAirDroppedOnlyOverTheRightSideOfTheOpenShelf() {
         let rect = CGRect(x: 512, y: 40, width: 76, height: 140)
         let inside = CGPoint(x: 550, y: 100)
         #expect(NotchDropDelegate.targetsAirDrop(at: inside, in: rect, expanded: true, tab: .shelf))
@@ -98,7 +102,7 @@ struct AirDropTargetTests {
         #expect(!NotchDropDelegate.targetsAirDrop(at: inside, in: rect, expanded: true, tab: .home))
     }
 
-    @Test func aDropJustOutsideTheTileGoesToTheShelf() {
+    @Test func aDropJustOutsideTheRightSideGoesToTheShelf() {
         let rect = CGRect(x: 512, y: 40, width: 76, height: 140)
         #expect(!NotchDropDelegate.targetsAirDrop(at: CGPoint(x: 511, y: 100), in: rect, expanded: true, tab: .shelf))
         #expect(!NotchDropDelegate.targetsAirDrop(at: CGPoint(x: 550, y: 39), in: rect, expanded: true, tab: .shelf))

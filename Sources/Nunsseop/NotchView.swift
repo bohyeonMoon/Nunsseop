@@ -289,7 +289,7 @@ private struct NotchMotion {
 }
 
 extension NotchView {
-    /// Where ShelfView's AirDrop tile sits inside the expanded shape.
+    /// Where ShelfView's right side, the one a drop sends to AirDrop, sits inside the expanded shape.
     func airDropRect(in size: CGSize) -> CGRect {
         Self.airDropRect(in: size, collapsedHeight: model.geometry.collapsedSize.height)
     }
@@ -297,8 +297,8 @@ extension NotchView {
     static func airDropRect(in size: CGSize, collapsedHeight: CGFloat) -> CGRect {
         let inset: CGFloat = 18 + 14
         let top = max(collapsedHeight, 24) + 8
-        return CGRect(x: size.width - inset - ShelfView.airDropWidth, y: top,
-                      width: ShelfView.airDropWidth, height: size.height - top - 16)
+        let split = inset + (size.width - 2 * inset) * ShelfView.listFraction
+        return CGRect(x: split, y: top, width: size.width - inset - split, height: size.height - top - 16)
     }
 }
 
