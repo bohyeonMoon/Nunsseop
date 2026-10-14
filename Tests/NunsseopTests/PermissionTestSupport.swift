@@ -134,10 +134,17 @@ let eventDeadline: TimeInterval = 120
 
 /// Waits for `condition`, stopping as soon as it holds; the cap only matters on a slow or busy machine.
 /// It runs on the caller's actor, so a condition may read what that actor owns.
-func eventually(isolation: isolated (any Actor)? = #isolation, _ condition: () -> Bool) async {
-    let deadline = Date.now.addingTimeInterval(eventDeadline)
+///
+/// A wake-up that is late is charged against the cap for a second at most. The main actor is busy with other tests for a minute and a half at
+/// a time on a loaded machine, and what a test waits for often needs that actor too (a timer of the code under test resumes on it): when the
+/// wait resumes after the cap with the event still to come, the event has had no turn yet, which says nothing of whether it comes.
+func eventually(within seconds: TimeInterval = eventDeadline, isolation: isolated (any Actor)? = #isolation, _ condition: () -> Bool) async {
+    var deadline = Date.now.addingTimeInterval(seconds)
     while !condition() && Date.now < deadline {
+        let asleep = Date.now
         try? await Task.sleep(for: .milliseconds(20))
+        let late = Date.now.timeIntervalSince(asleep) - 1
+        if late > 0 { deadline.addTimeInterval(late) }
     }
 }
 
@@ -320,7 +327,9 @@ final class RawClient: @unchecked Sendable {
     }
 
     /// Whether the server closes the connection within `seconds`, as opposed to leaving it open and silent. Anything it says
-    /// before that is discarded.
+    /// before that is discarded. A reset counts as a close: the system resets a connection that the server has closed and whose
+    /// end of the stream nobody has read for 60 seconds (`net.inet.tcp.fin_timeout`), and a read then fails with `ECONNRESET`
+    /// where it would have returned 0. A test whose task is resumed a minute late on a busy machine reads that late.
     func closes(within seconds: Int) async -> Bool {
         let fd = fd
         return await withCheckedContinuation { continuation in
@@ -330,7 +339,7 @@ final class RawClient: @unchecked Sendable {
                 var buffer = [UInt8](repeating: 0, count: 4096)
                 var count = recv(fd, &buffer, buffer.count, 0)
                 while count > 0 { count = recv(fd, &buffer, buffer.count, 0) }
-                continuation.resume(returning: count == 0)
+                continuation.resume(returning: count == 0 || errno == ECONNRESET)
             }
         }
     }
