@@ -320,7 +320,9 @@ final class RawClient: @unchecked Sendable {
     }
 
     /// Whether the server closes the connection within `seconds`, as opposed to leaving it open and silent. Anything it says
-    /// before that is discarded.
+    /// before that is discarded. A reset counts as a close: the system resets a connection that the server has closed and whose
+    /// end of the stream nobody has read for 60 seconds (`net.inet.tcp.fin_timeout`), and a read then fails with `ECONNRESET`
+    /// where it would have returned 0. A test whose task is resumed a minute late on a busy machine reads that late.
     func closes(within seconds: Int) async -> Bool {
         let fd = fd
         return await withCheckedContinuation { continuation in
@@ -330,7 +332,7 @@ final class RawClient: @unchecked Sendable {
                 var buffer = [UInt8](repeating: 0, count: 4096)
                 var count = recv(fd, &buffer, buffer.count, 0)
                 while count > 0 { count = recv(fd, &buffer, buffer.count, 0) }
-                continuation.resume(returning: count == 0)
+                continuation.resume(returning: count == 0 || errno == ECONNRESET)
             }
         }
     }
