@@ -385,6 +385,7 @@ private struct LengthChip: View {
         .allowsHitTesting(enabled)
         .onHover { hovering = $0 }
         .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityRespondsToUserInteraction(enabled)
     }
 }
 
