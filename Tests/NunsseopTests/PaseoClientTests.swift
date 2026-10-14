@@ -329,7 +329,10 @@ struct PaseoClientTests {
         var timing = quickTiming
         timing.ping = 0.05
         let sockets = PaseoSockets()
-        let (client, _) = make(sockets, timing: timing)
+        // A clock that stands still, because the client reads the real one for how long the daemon has been silent: the main actor can be kept
+        // from running it for the 100 seconds of `quickTiming`, and it then closes the connection as a dead one before it has pinged.
+        let clock = HandClock()
+        let (client, _) = make(sockets, timing: timing, clock: { clock.now })
         let socket = try #require(await connect(client, sockets))
         await eventually { socket.sent("ping").count >= 3 }
         #expect(socket.sent("ping").count >= 3 && socket.sent.contains(PaseoWire.ping))
