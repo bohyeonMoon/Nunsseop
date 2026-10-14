@@ -40,7 +40,7 @@ function background({ storage = {}, openFails = false } = {}) {
   const every = (ms) => intervals.find((interval) => interval.ms === ms).callback;
   return {
     store, opened, handlers, logged,
-    poll: () => every(500)(),
+    poll: () => every(100)(),
     beat: () => every(5000)(),
     intervals: () => intervals.map((interval) => interval.ms),
     advance: (ms) => { clock += ms; },
@@ -58,10 +58,10 @@ test('the manifest asks for exactly what the bridge uses', () => {
   assert.match(read('helper.html'), /<script src="helper\.js"><\/script>/);
 });
 
-test('it writes a heartbeat at once and then every five seconds, and looks for a request every half second', () => {
+test('it writes a heartbeat at once and then every five seconds, and looks for a request every tenth of a second', () => {
   const b = background();
   assert.equal(b.store.get('alive'), NOW);
-  assert.deepEqual(b.intervals().sort((x, y) => x - y), [500, 5000]);
+  assert.deepEqual(b.intervals().sort((x, y) => x - y), [100, 5000]);
   b.advance(5000);
   b.beat();
   assert.equal(b.store.get('alive'), NOW + 5000);

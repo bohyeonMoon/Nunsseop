@@ -197,7 +197,7 @@ enum MuxyBridge {
                 guard updateStorage(locations, { $0["req"] = object }) else { return .unavailable }
             }
             if clock.now() >= deadline { return .timedOut }
-            clock.sleep(0.2)
+            clock.sleep(0.05)
         }
     }
 
@@ -393,8 +393,11 @@ enum MuxyFocus {
         var openFolder: (String) -> Bool
 
         static var live: Actions {
+            // Muxy comes forward right away, so the click shows at once; the bridge selects the tab while it does.
             Actions(focusPane: { pane in
-                MuxyBridge.Request.focus(pane: pane).map { MuxyBridge.send($0, timeout: 3) == .done } ?? false
+                guard let request = MuxyBridge.Request.focus(pane: pane) else { return false }
+                MuxyBridge.activateMuxy()
+                return MuxyBridge.send(request, timeout: 3) == .done
             }, openFolder: { folder in
                 guard Resume.isSafeFolder(folder), let app = Muxy.app else { return false }
                 return TerminalFocus.run(Resume.openTool, ["-a", app.path, folder], environment: AgentSend.cleanEnvironment) != nil

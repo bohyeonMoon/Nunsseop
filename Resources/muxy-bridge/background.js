@@ -8,7 +8,7 @@
 //   alive  written here every few seconds: epoch ms, so Nunsseop knows this script runs.
 // This script is the only writer of `ack` and `alive`, and a request is acted on once per id.
 (() => {
-  const POLL_MS = 500;
+  const POLL_MS = 100;
   const BEAT_MS = 5000;
   // A request older than this is not acted on: it was left from before this script started.
   const FRESH_MS = 30000;
