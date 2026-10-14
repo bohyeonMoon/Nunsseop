@@ -175,6 +175,9 @@
 "Header" = "ヘッダ";
 "Date" = "日付";
 "Weather" = "天気";
+"Show weather on Home" = "ホームに天気を表示";
+"Show the battery panel in System" = "システムにバッテリーパネルを表示";
+"System tab" = "システムタブ";
 "Collapsed notch" = "折りたたみ時のノッチ";
 "Nothing" = "なし";
 "Claude Code left" = "Claude Code の残り";
