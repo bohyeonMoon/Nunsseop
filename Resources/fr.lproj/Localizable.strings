@@ -508,7 +508,7 @@
 "You're all set" = "Tout est prêt";
 "Now hover over the notch." = "Survolez maintenant l’encoche.";
 "Now move the pointer to the top of the screen." = "Placez maintenant le pointeur en haut de l’écran.";
-"Permissions are asked only on first use" = "Autorisations demandées à la 1re utilisation";
+"Most permissions are asked on first use" = "La plupart des autorisations, à la 1re utilisation";
 "Calendar, screen recording and camera: when used" = "Calendrier, écran, caméra : à l’usage";
 "Open at login" = "Ouvrir à la connexion";
 "On · change in Settings › General" = "Activé · Réglages › Général";

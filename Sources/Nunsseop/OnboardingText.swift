@@ -76,7 +76,7 @@ enum OnboardingText {
     static func ready(hasNotch: Bool) -> String {
         hasNotch ? String(localized: "Now hover over the notch.") : String(localized: "Now move the pointer to the top of the screen.")
     }
-    static var permissionsTitle: String { String(localized: "Permissions are asked only on first use") }
+    static var permissionsTitle: String { String(localized: "Most permissions are asked on first use") }
     static var permissionsText: String { String(localized: "Calendar, screen recording and camera: when used") }
     static var login: String { String(localized: "Open at login") }
     static var loginOn: String { String(localized: "On · change in Settings › General") }

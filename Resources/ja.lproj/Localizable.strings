@@ -508,7 +508,7 @@
 "You're all set" = "準備ができました";
 "Now hover over the notch." = "ノッチにポインタを合わせてみましょう。";
 "Now move the pointer to the top of the screen." = "ポインタを画面の上端に動かしてみましょう。";
-"Permissions are asked only on first use" = "権限は初めて使うときだけ確認します";
+"Most permissions are asked on first use" = "権限の多くは初めて使うときに確認します";
 "Calendar, screen recording and camera: when used" = "カレンダー、画面収録、カメラは使うときに求めます";
 "Open at login" = "ログイン時に開く";
 "On · change in Settings › General" = "オン · 設定 › 一般で変更できます";

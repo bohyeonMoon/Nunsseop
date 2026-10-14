@@ -533,7 +533,7 @@
 "You're all set" = "준비됐어요";
 "Now hover over the notch." = "이제 노치에 포인터를 올려 보세요.";
 "Now move the pointer to the top of the screen." = "이제 포인터를 화면 맨 위로 옮겨 보세요.";
-"Permissions are asked only on first use" = "권한은 처음 쓸 때만 물어요";
+"Most permissions are asked on first use" = "권한은 대부분 처음 쓸 때 물어요";
 "Calendar, screen recording and camera: when used" = "캘린더, 화면 기록, 카메라는 쓸 때 요청해요";
 "Open at login" = "로그인할 때 열기";
 "On · change in Settings › General" = "켜져 있어요 · 설정 › 일반에서 바꿔요";

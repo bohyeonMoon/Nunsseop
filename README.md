@@ -42,7 +42,7 @@ Needs macOS 14 Sonoma or later. Runs on Apple silicon Macs (not Intel), includin
 
 There's no Dock icon. Nunsseop lives in the notch.
 
-On a fresh install the notch also opens by itself after a second and walks you through four short steps: how it opens and closes, the tabs, files and Search, and connecting the agent tools found on this Mac. Skip, Esc or Done ends it, and Settings › General › Show the welcome tour again plays it once more.
+On a fresh install the notch also opens by itself after a second and walks you through four short steps: how it opens and closes, the tabs, files and Search, and connecting the agent tools found on this Mac (or "You're all set" when there are none). Skip, Esc or Done ends it, and Settings › General › Show the welcome tour again plays it once more.
 
 ## A look inside
 
@@ -78,7 +78,7 @@ On a fresh install the notch also opens by itself after a second and walks you t
 - **Weather, downloads, mirror and Dock apps**, one hover away.
 
 **📞 Even when it's closed**
-- **Calls.** During a call in Zoom, FaceTime, Teams, Slack, Discord, WhatsApp or Google Meet, the closed notch shows the app and how long you've been talking. It goes by which app uses the microphone, so showing it needs no extra permissions. For Zoom, FaceTime and Meet you can mute the mic or turn the camera off from the notch, without switching to the call; Zoom and FaceTime need Accessibility for that, and Meet needs *Allow JavaScript from Apple Events* in a Chromium browser.
+- **Calls.** During a call in Zoom, FaceTime, Teams, Slack, Discord, WhatsApp or Google Meet, the closed notch shows the app and how long you've been talking. It goes by which app uses the microphone, so showing the call of a desktop app needs no permission (in a browser, Meet or Zoom and Teams on the web need Automation for that browser). For Zoom, FaceTime and Meet you can mute the mic from the notch (and turn the camera off in Zoom and Meet), without switching to the call; Zoom and FaceTime need Accessibility for that, and Meet needs *Allow JavaScript from Apple Events* in a Chromium browser.
 - **Your pick on each side.** When nothing is playing, show Claude Code or Codex usage left, agents at work, battery, weather or the date.
 - **Music and timers.** Tiny artwork and a visualizer while music plays, and the time left while a timer runs. Timers, calls and downloads fit each side to its own content, so a lone icon leaves no gap.
 - **Downloads.** How far along a Safari or Chrome download is, in percent, from the same progress the Finder shows on the file. Nothing polls for it.
@@ -91,8 +91,8 @@ On a fresh install the notch also opens by itself after a second and walks you t
 - **Permission prompts and questions.** Allow, deny or always allow what Claude Code asks to run or edit right from the notch; Always allow appears only when Claude Code suggests a rule of plain keyboard characters (printable ASCII) that fits on the card. The card shows the tool, the folder and every field, and an orange "Unusual characters" chip warns when the text has characters that can pass for English letters or symbols. Codex's approvals for commands, file edits (`apply_patch` lists the files) and MCP tools work the same, with "Answer in terminal" in place of Always allow. OpenCode's permission prompts work the same way, and so do Paseo's tool approvals, with "Answer in Paseo" in place of "Answer in terminal". Claude Code's questions can be answered too: pick one or several answers, step through several questions, or choose "Answer in terminal" to hand it back; a question whose answers can't be shown faithfully stays in the terminal. Answer in the terminal first and the card goes away. What it asks stays in memory (turn it off in Settings › Alerts).
 - **Notifications tab.** The last 30 notices from agents, terminals and your calendar, with a badge for unseen ones; click one to go back where it came from. Off by default (Settings › Notch), and kept in memory only.
 - **Agents at work.** A closed-notch item that shows how many coding agents wait for you (a yellow hand), or, when none wait, how many are working (a green bolt). It follows Claude Code, Codex, OpenCode, omp, omo and pi through their hooks or extensions (connect them in Settings › Alerts; Codex asks you to trust the hooks the next time it starts), and gjc, herdr, Muxy 2 and Paseo on their own, background sessions started with `claude --bg` included. When Claude Code ends a turn while subagents or background shell commands still run, the session keeps counting as working for up to two hours, with a "Background · N tasks" chip in the Agents tab.
-- **Agents tab.** One line for each coding agent session at work or waiting for you: Claude Code, Codex, OpenCode, omp, omo, pi, gjc, Paseo, and whatever runs in herdr or Muxy 2. The state differs in shape as well as color: a filled orange dot when it waits for you, a turning green arc while it works, an empty ring when idle. Then come the title (Claude Code's `/rename` name or its own title, Codex's thread name), the folder, tool and model, a chip when the permission mode isn't the default, a small context meter with the token count, and how long ago the state began. Every row has **Go to terminal** and **Message** buttons; a dashed one can't act now, and its tooltip says why. A session waiting for you unfolds with "Answer in terminal". The bottom line sums up the states ("1 waiting · 3 working · 1 idle"). Keys: ↑↓ select, ↵ goes to the terminal, ⌘M opens the message field; double-clicking a row goes to its terminal too. Open sessions you used in the last 3 hours show dimmed as Idle (the closed notch doesn't count them). When no session is open, **Recent** lists up to 5 conversations from the last week: click one (or press ↵) to resume it in the terminal chosen in Settings › Alerts (`claude --resume`, `codex resume`, or the tool's own option). It reads the folder, model, token count, permission mode, session name and last prompt from the tools' own session files on your Mac.
-- **Message a session, drop files on it.** Press a row's Message button (or ⌘M): the bottom line becomes a "To <session>" field, Return types the text into the session and presses Return there, and Esc cancels. Drop files from the Shelf or Finder on a row and their paths are typed in without Return; when dragging from the Shelf, hold the pointer over the Agents tab button to switch to it. This works for sessions in Ghostty, Terminal, iTerm2, WezTerm, kitty, cmux, herdr, Muxy 2 and Orca (Terminal takes messages but not files), and for idle Paseo agents, messages only (table below, "What works where"). Nothing is sent while a permission prompt or question may be open, to a session inside tmux, zellij or screen, or when Nunsseop can't confirm which terminal the session is in.
+- **Agents tab.** One line for each coding agent session at work or waiting for you: Claude Code, Codex, OpenCode, omp, omo, pi, gjc, Paseo, and whatever runs in herdr or Muxy 2. The state differs in shape as well as color: a filled orange dot when it waits for you, a turning green arc while it works, an empty ring when idle. Then come the title (Claude Code's `/rename` name or its own title, Codex's thread name), the folder, tool and model, a chip when the permission mode isn't the default, a small context meter with the token count, and how long ago the state began. Every row has **Go to terminal** (**Open in Paseo** on a Paseo row) and **Message** buttons; a dashed one can't act now, and its tooltip says why. A session waiting for you unfolds with "Answer in terminal". The bottom line sums up the states ("1 waiting · 3 working · 1 idle"). Keys: ↑↓ select, ↵ goes to the terminal, ⌘M opens the message field; double-clicking a row goes to its terminal too. Open sessions you used in the last 3 hours show dimmed as Idle (the closed notch doesn't count them). When no session is open, **Recent** lists up to 5 conversations from the last week: click one (or press ↵) to resume it in the terminal chosen in Settings › Alerts (`claude --resume`, `codex resume`, or the tool's own option). It reads the folder, model, token count, permission mode, session name and last prompt from the tools' own session files on your Mac.
+- **Message a session, drop files on it.** Press a row's Message button (or ⌘M): the bottom line becomes a "To <session>" field, Return types the text into the session and presses Return there, and Esc cancels. Drop files from the Shelf or Finder on a row and their paths are typed in without Return; when dragging from the Shelf, hold the pointer over the Agents tab button to switch to it. This works for sessions in Ghostty, Terminal, iTerm2, WezTerm, kitty, cmux, herdr, Muxy 2 and Orca (Terminal takes messages but not files), and for Paseo agents that aren't working, messages only (table below, "What works where"). Nothing is sent while a permission prompt or question may be open, to a session inside tmux, zellij or screen, or when Nunsseop can't confirm which terminal the session is in.
 
 **🧩 Make it yours**
 - Pick your tabs and drag them into order, what the header and collapsed notch show, and which pop-ups you get. **Anything you turn off stops running.**
@@ -166,15 +166,14 @@ To set up Claude Code by hand, press **Copy Claude Code hook command** and add i
 
 Terminals and agent apps need no hook:
 
-- **Muxy 2:** the agents Muxy itself detects, read with `muxy activity list` while Muxy runs. They show as notices (not while Muxy is in front), and the sessions only Muxy knows show in the Agents tab. Muxy 1, which kept a notifications file and a socket, isn't supported.
+- **Muxy 2:** the agents Muxy itself detects, read with `muxy activity list` while Muxy runs. They show as notices (not while Muxy is in front), and the sessions only Muxy knows show in the Agents tab while they work or wait. Muxy 1, which kept a notifications file and a socket, isn't supported.
 - **cmux:** its own notifications, read through the cmux command inside the app and not shown while it's in front.
 - **herdr:** agents that finish or wait for input, in every session, read from herdr's socket.
-- **Paseo:** agents that finish or fail, read from Paseo's own files and its daemon on this Mac, which Nunsseop never starts. Its approvals and notices need a daemon that runs without a password.
-- **Orca:** nothing to set up. Its Claude Code and Codex sessions come through the hooks connected above.
+- **Paseo:** agents that finish or fail, read from Paseo's own record files, so they show even without its daemon. Approval cards and its events need the daemon on this Mac, which must run without a password and which Nunsseop never starts.
 - **tmux:** bells from any window. Nunsseop adds a hook to the running tmux server only; `tmux.conf` isn't changed.
 - **WezTerm:** bells, through lines you copy from Settings › Alerts and paste into `~/.wezterm.lua`.
 
-Each has a toggle under Settings › Alerts (WezTerm has a button that copies its config lines instead; Orca has none), shown only when the tool is installed. Tools already connected through their own hook aren't shown twice.
+Each has a toggle under Settings › Alerts (WezTerm has a button that copies its config lines instead), shown only when the tool is installed. Tools already connected through their own hook aren't shown twice. Orca has no notification source of its own: its sessions show up only through the hooks and extensions connected above (Claude Code, Codex, OpenCode, pi and the like), which send its pane id.
 
 Any script can send one too:
 
@@ -187,11 +186,11 @@ curl -X POST http://127.0.0.1:47750/notify \
 
 ### What works where
 
-A row's Go to terminal and Message buttons, and file drops, work where Nunsseop can be sure which terminal the session is in: it checks that the session's process really runs there. Text goes in through the terminal's own input API, never as simulated keystrokes. Where something can't work, the button is dashed and its tooltip says why (tmux, zellij or screen in between; a prompt waiting for an answer; several Ghostty tabs in the same folder; and so on).
+A row's Go to terminal and Message buttons, and file drops, work where Nunsseop can be sure which terminal the session is in: it checks that the session's process really runs there. Text goes in through the terminal's own input API, never as simulated keystrokes. Where a message or a drop can't work, the button is dashed and its tooltip says why (tmux, zellij or screen in between; a prompt waiting for an answer; several Ghostty tabs in the same folder; and so on); Go to terminal still brings the terminal app forward then.
 
 | Terminal | Go to its tab or pane | Message | Drop files | Resume from Recent |
 | --- | :---: | :---: | :---: | :---: |
-| Ghostty | ✓ | ✓ | ✓ | ✓ |
+| Ghostty | ✓¹ | ✓¹ | ✓¹ | ✓ |
 | Terminal | ✓ | ✓ | — | ✓ |
 | iTerm2 | ✓ | ✓ | ✓ | ✓ |
 | WezTerm | ✓ | ✓ | ✓ | ✓ |
@@ -202,16 +201,18 @@ A row's Go to terminal and Message buttons, and file drops, work where Nunsseop 
 | Orca | ✓ | ✓ | ✓ | ✓ |
 | Paseo | ✓ | ✓ | — | ✓ |
 
-- **Ghostty, Terminal and iTerm2** are driven with AppleScript, so macOS asks once for each whether Nunsseop may control it (System Settings › Privacy & Security › Automation). Ghostty tells no shell which tab it is, so Nunsseop picks a tab only when it's certain which one is the session's (by its folder and the title Claude Code gives the tab); otherwise it sends nothing. Terminal can only take text that it runs, so it takes messages but refuses dropped files.
+¹ Claude Code sessions only.
+
+- **Ghostty, Terminal and iTerm2** are driven with AppleScript, so macOS asks once for each whether Nunsseop may control it (System Settings › Privacy & Security › Automation). Ghostty tells no shell which tab it is, so Nunsseop picks the tab by the session's folder and the title Claude Code gives it. Going to the tab, messages and drops therefore work for Claude Code sessions only, and when it isn't certain which tab is the session's, it sends nothing. Terminal can only take text that it runs, so it takes messages but refuses dropped files.
 - **WezTerm and kitty** are driven through their command-line tools (`wezterm cli`, `kitty @`). kitty needs remote control turned on, with a socket it listens on.
 - **Muxy 2:** to go to a session's exact pane and to resume in a new tab, load Nunsseop's small bridge extension once. In Muxy, open Settings › Extensions › Load Unpacked…, pick `~/Library/Application Support/Nunsseop/muxy-bridge` (Settings › Alerts › Show extension in Finder opens it) and turn the extension on. Without it, a click selects the session's project. Sessions that only Muxy lists (no hook) can be gone to but not typed into.
 - **Orca:** through the `orca` command line; recent conversations resume in a new tab of the worktree that holds them while Orca has a window.
-- **Paseo:** messages go through `paseo send` and only to agents that are idle (it would interrupt a working one); a click opens the agent in Paseo, and archived agents come back from Recent.
-- **Resume** happens in the terminal chosen in Settings › Alerts › Resume conversations in; one that isn't installed or running isn't offered, and Terminal is the fallback. Ghostty opens a new tab when it is running (one Automation permission), otherwise a new window.
+- **Paseo:** messages go through `paseo send` and only to agents that aren't working (finished ones and those waiting for your turn included; it would interrupt a working one); a click opens the agent in Paseo (the first cell of its row), and archived agents come back from Recent.
+- **Resume** happens in the terminal chosen in Settings › Alerts › Resume conversations in; Terminal is the fallback. Ghostty, iTerm2 and cmux are offered when installed and are started if not running; WezTerm when its command-line tool exists; kitty only while a socket one of its sessions reported still exists; Orca only while it runs with a window, and only for folders Orca knows as a worktree (otherwise the next terminal takes it); Muxy only while its bridge runs. Ghostty and iTerm2 open a new tab through Automation (Ghostty a new window if that's refused); cmux opens a new workspace, not a tab. Paseo's Recent entries ignore the setting and open in Paseo.
 
 ## Permissions
 
-Nunsseop asks for most permissions only when you first use the feature that needs them. The exception is the Desktop and Downloads folders, where it watches for screenshots and downloads: macOS asks about them when Nunsseop first starts.
+Nunsseop asks for most permissions only when you first use the feature that needs them. The exception is the folder it watches for screenshots (the Desktop by default, or the folder set for screenshots) and Downloads: macOS may ask about them when Nunsseop first starts.
 
 | Feature | Permission | When it is asked |
 | --- | --- | --- |
@@ -223,10 +224,10 @@ Nunsseop asks for most permissions only when you first use the feature that need
 | Taking over volume, brightness and keyboard backlight keys | Accessibility | When you turn the option on in Settings |
 | Fallback now playing for Music, Spotify and browsers | Automation | Only if the MediaRemote helper is unavailable |
 | Showing Google Meet, Zoom and Teams calls in a browser, and Meet's mute and camera buttons | Automation (that browser) | When a browser first uses the microphone |
-| Adding new screenshots to the shelf, download alerts | Desktop and Downloads folders | When Nunsseop first starts (from then on it watches the screenshot folder, the Desktop by default, and Downloads) |
+| Adding new screenshots to the shelf, download alerts | Desktop and Downloads folders | macOS may ask when Nunsseop first starts (it watches the screenshot folder, the Desktop by default, and Downloads) |
 | Per-app volume | System audio recording | The first time you turn an app down in the Tools tab |
-| Mute and camera buttons for Zoom and FaceTime calls | Accessibility | Never asked for by itself: the buttons appear once Nunsseop is allowed in Accessibility (for example through the volume key option above) |
-| Typing messages into agent sessions, going to a session's tab, resuming in a new tab | Automation (Terminal, iTerm2, Ghostty) | The first time you do one in that app; for Ghostty also when the Agents tab first lists a session running in it |
+| Mute button for Zoom and FaceTime calls, camera button for Zoom | Accessibility | Never asked for by itself: the buttons appear once Nunsseop is allowed in Accessibility (for example through the volume key option above) |
+| Typing messages into agent sessions, going to a session's tab, resuming in a new tab (iTerm2 and Ghostty only) | Automation (Terminal, iTerm2, Ghostty) | The first time you do one in that app; for Ghostty also when the Agents tab first lists a session running in it |
 | Launch at login | Login Items | When you turn it on in Settings |
 
 ## Privacy

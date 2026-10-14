@@ -508,7 +508,7 @@
 "You're all set" = "一切就绪";
 "Now hover over the notch." = "现在把指针移到刘海上试试。";
 "Now move the pointer to the top of the screen." = "现在把指针移到屏幕顶部试试。";
-"Permissions are asked only on first use" = "权限仅在首次使用时询问";
+"Most permissions are asked on first use" = "大多数权限在首次使用时询问";
 "Calendar, screen recording and camera: when used" = "日历、屏幕录制、相机：使用时才请求";
 "Open at login" = "登录时打开";
 "On · change in Settings › General" = "已开启 · 可在“设置 › 通用”更改";

@@ -664,7 +664,7 @@ struct OnboardingFitTests {
             line(key, key, room: rowNoEnd - 15)
         }
         // The ready step's rows: the lock row has nothing at its end, the login row a switch.
-        line("permissions title", "Permissions are asked only on first use", size: 12, weight: .semibold, room: rowNoEnd)
+        line("permissions title", "Most permissions are asked on first use", size: 12, weight: .semibold, room: rowNoEnd)
         line("permissions text", "Calendar, screen recording and camera: when used", room: rowNoEnd)
         line("login title", "Open at login", size: 12, weight: .semibold, room: rowNoEnd - 10 - 38)
         line("login on", "On · change in Settings › General", room: rowNoEnd - 10 - 38)
@@ -718,7 +718,7 @@ struct OnboardingFitTests {
                     "Right-click the notch › Settings… to hide or reorder tabs.",
                     "Tools found on this Mac are listed. Connect one to see its sessions and reply in the Agents tab.",
                     "Or connect later in Settings › Alerts.", "Asks once to trust the hooks", "Not connected", "Retry", "Open at login",
-                    "Couldn't change %@", "Permissions are asked only on first use", "Calendar, screen recording and camera: when used",
+                    "Couldn't change %@", "Most permissions are asked on first use", "Calendar, screen recording and camera: when used",
                     "On · change in Settings › General", "Off · change in Settings › General", "Drag files onto the notch", "to open Search",
                     "They collect on the Shelf. Send them with AirDrop or Share; screenshots land there too.",
                     "Find apps, files, commands and emoji, and do math."] {
