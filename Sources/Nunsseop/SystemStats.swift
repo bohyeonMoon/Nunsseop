@@ -1,16 +1,16 @@
 import Darwin
 import SwiftUI
 
-/// CPU, memory, network and disk figures, sampled only while the System tab is visible. The figures are settable so that a render can put its own in.
+/// CPU, memory, network and disk figures, sampled only while the System tab is visible.
 @MainActor
 final class SystemStats: ObservableObject {
-    @Published var cpu: Double = 0
-    @Published var memoryUsed: UInt64 = 0
+    @Published private(set) var cpu: Double = 0
+    @Published private(set) var memoryUsed: UInt64 = 0
     let memoryTotal = ProcessInfo.processInfo.physicalMemory
-    @Published var downloadRate: Double = 0
-    @Published var uploadRate: Double = 0
-    @Published var diskFree: Int64 = 0
-    @Published var diskTotal: Int64 = 0
+    @Published private(set) var downloadRate: Double = 0
+    @Published private(set) var uploadRate: Double = 0
+    @Published private(set) var diskFree: Int64 = 0
+    @Published private(set) var diskTotal: Int64 = 0
 
     private var timer: Timer?
     private var lastTicks: (busy: UInt64, total: UInt64)?

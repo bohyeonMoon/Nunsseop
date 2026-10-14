@@ -27,7 +27,7 @@ struct PeripheralBattery: Identifiable, Equatable {
 /// Battery levels of connected mice, keyboards and trackpads.
 @MainActor
 final class PeripheralMonitor: ObservableObject {
-    @Published var devices: [PeripheralBattery] = []
+    @Published private(set) var devices: [PeripheralBattery] = []
     var onLow: ((PeripheralBattery) -> Void)?
 
     private var timer: Timer?
