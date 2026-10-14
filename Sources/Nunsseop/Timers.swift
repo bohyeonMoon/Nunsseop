@@ -241,239 +241,209 @@ final class TimerModel: ObservableObject {
 
 struct TimerTab: View {
     @ObservedObject var timer: TimerModel
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var pickerWidth: CGFloat = 0
 
     var body: some View {
-        GeometryReader { geometry in
-            // The ring takes the height it's given, within reason, so it grows with taller notches, but no more than the
-            // width the picker (its width depends on the language), spacers, side column and buttons leave.
-            let diameter = min(150, max(92, geometry.size.height - 4), geometry.size.width - pickerWidth - 2 * 12 - 18 - 104 - 44)
-            HStack(spacing: 0) {
-                ModePicker(mode: $timer.mode, animated: !reduceMotion)
-                    .fixedSize()
-                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { pickerWidth = $0 }
-                Spacer(minLength: 12)
-                HStack(spacing: 18) {
-                    TimerRing(timer: timer, diameter: diameter, tint: tint, animated: !reduceMotion)
-                    sideColumn
-                        .frame(width: 104)
-                }
-                Spacer(minLength: 12)
-                VStack(spacing: 10) {
-                    RoundButton(symbol: timer.isRunning ? "pause.fill" : "play.fill", prominent: true) {
-                        timer.isRunning ? timer.pause() : timer.start()
-                    }
-                    RoundButton(symbol: "arrow.counterclockwise", prominent: false) { timer.reset() }
-                        .disabled(!timer.isActive)
-                        .opacity(timer.isActive ? 1 : 0.4)
-                }
+        GeometryReader { proxy in
+            // The clock keeps its width unless the notch is too narrow for the lengths beside it.
+            let clock = min(236, max(160, proxy.size.width - 138 - 2 - 2 * 14 - 140))
+            HStack(alignment: .top, spacing: 0) {
+                ModeList(mode: $timer.mode).frame(width: 138, alignment: .topLeading)
+                PanelVLine().padding(.vertical, 2)
+                TimerClock(timer: timer).frame(width: clock, alignment: .topLeading).padding(.horizontal, 14)
+                PanelVLine().padding(.vertical, 2)
+                side.padding(.leading, 14).frame(maxWidth: .infinity, alignment: .topLeading)
             }
-            .frame(width: geometry.size.width, height: geometry.size.height)
+            .frame(height: proxy.size.height, alignment: .top)
         }
         .foregroundStyle(.white)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private var tint: Color { timer.mode == .pomodoro && timer.phase == .rest ? .green : .orange }
-
     @ViewBuilder
-    private var sideColumn: some View {
+    private var side: some View {
         switch timer.mode {
         case .countdown:
-            // Fewer presets when the notch is too short for all of them.
-            ViewThatFits(in: .vertical) {
-                presets([5, 10, 15, 25, 45])
-                presets([5, 10, 25, 45])
-            }
-            .disabled(timer.isRunning)
-        case .pomodoro:
-            VStack(spacing: 5) {
-                Group {
-                    Chip(title: String(localized: "Focus \(TimerModel.lengthLabel(timer.workMinutes * 60))"), tint: .orange,
-                         selected: timer.phase == .work) { timer.selectPhase(.work) }
-                    Chip(title: String(localized: "Break \(TimerModel.lengthLabel(timer.restMinutes * 60))"), tint: .green,
-                         selected: timer.phase == .rest) { timer.selectPhase(.rest) }
+            VStack(alignment: .leading, spacing: 0) {
+                PanelCaption(String(localized: "Length")).padding(.vertical, 4)
+                // Two to a row when the notch is narrow.
+                ViewThatFits(in: .horizontal) {
+                    presets(perRow: 3)
+                    presets(perRow: 2)
                 }
-                .disabled(timer.isActive)
-                Text("Completed today: \(timer.completedPomodoros)")
-                    .font(.system(size: 10, weight: .medium).monospacedDigit())
-                    .foregroundStyle(.white.opacity(0.45))
+            }
+        case .pomodoro:
+            VStack(alignment: .leading, spacing: 0) {
+                PanelCaption(String(localized: "Phase")).padding(.vertical, 4)
+                Group {
+                    phase(.work, String(localized: "Focus \(TimerModel.lengthLabel(timer.workMinutes * 60))"))
+                    phase(.rest, String(localized: "Break \(TimerModel.lengthLabel(timer.restMinutes * 60))"))
+                }
+                .allowsHitTesting(!timer.isActive)
+                Text.panel(String(localized: "Completed today: \(timer.completedPomodoros)"), size: 11, opacity: 0.65, mono: true)
                     .lineLimit(1).minimumScaleFactor(0.8)
-                    .padding(.top, 4)
+                    .padding(.horizontal, 8).padding(.top, 8)
             }
         case .stopwatch:
             Text("Counts up until you stop it")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.white.opacity(0.45))
+                .font(.system(size: 11)).foregroundStyle(PanelInk.hint)
                 .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 8)
         }
     }
 
-    private func presets(_ list: [Int]) -> some View {
-        VStack(spacing: 5) {
-            ForEach(list, id: \.self) { minutes in
-                Chip(title: TimerModel.lengthLabel(minutes * 60), tint: .orange,
-                     selected: timer.countdownSeconds == minutes * 60) {
-                    timer.reset()
-                    timer.countdownSeconds = minutes * 60
+    private func presets(perRow: Int) -> some View {
+        let minutes = [5, 10, 15, 25, 45]
+        return VStack(alignment: .leading, spacing: 4) {
+            ForEach(Array(stride(from: 0, to: minutes.count, by: perRow)), id: \.self) { start in
+                HStack(spacing: 4) {
+                    ForEach(minutes[start..<min(start + perRow, minutes.count)], id: \.self) { value in
+                        LengthChip(title: TimerModel.lengthLabel(value * 60), selected: timer.countdownSeconds == value * 60,
+                                   enabled: !timer.isRunning) {
+                            timer.reset()
+                            timer.countdownSeconds = value * 60
+                        }
+                    }
                 }
             }
         }
     }
+
+    private func phase(_ phase: TimerModel.Phase, _ title: String) -> some View {
+        let selected = timer.phase == phase
+        return Button { timer.selectPhase(phase) } label: {
+            LedgerRow(selected: selected) {
+                HStack(spacing: 8) {
+                    Circle().fill(selected ? Color.white : .clear).overlay(Circle().stroke(.white.opacity(0.6), lineWidth: selected ? 0 : 1))
+                        .frame(width: 7, height: 7).accessibilityHidden(true)
+                    Text.panel(title, size: 12, weight: .semibold, opacity: selected ? 1 : 0.75).lineLimit(1)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
 }
 
-/// Timer, Pomodoro or stopwatch, as a column of capsules styled like the notch's tab buttons.
-private struct ModePicker: View {
+/// Timer, Pomodoro or stopwatch, as rows of a list.
+private struct ModeList: View {
     @Binding var mode: TimerModel.Mode
-    let animated: Bool
-    @Namespace private var selection
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 0) {
+            PanelCaption(String(localized: "Mode")).padding(.horizontal, 8).frame(height: 24)
             item(.countdown, "timer", String(localized: "Timer"))
             item(.pomodoro, "target", String(localized: "Pomodoro"))
             item(.stopwatch, "stopwatch", String(localized: "Stopwatch"))
         }
-        .padding(3)
-        .background(RoundedRectangle(cornerRadius: 15, style: .continuous).fill(.white.opacity(0.06)))
+        .padding(.trailing, 10)
     }
 
     private func item(_ value: TimerModel.Mode, _ symbol: String, _ title: String) -> some View {
         let selected = mode == value
-        return Button {
-            withAnimation(animated ? .snappy(duration: 0.25) : nil) { mode = value }
-        } label: {
-            HStack(spacing: 7) {
-                Image(systemName: symbol)
-                    .font(.system(size: 11, weight: .semibold))
-                    .frame(width: 14)
-                Text(title)
-                    .font(.system(size: 12, weight: .semibold))
-                    .lineLimit(1)
-            }
-            .foregroundStyle(selected ? .white : .white.opacity(0.45))
-            .padding(.leading, 9).padding(.trailing, 12)
-            .frame(maxWidth: .infinity, minHeight: 26, alignment: .leading)
-            .background {
-                if selected {
-                    Capsule().fill(.white.opacity(0.16))
-                        .matchedGeometryEffect(id: "selection", in: selection)
+        return Button { mode = value } label: {
+            LedgerRow(selected: selected) {
+                HStack(spacing: 8) {
+                    Image(systemName: symbol).font(.system(size: 11, weight: .semibold)).frame(width: 14)
+                        .foregroundStyle(.white.opacity(selected ? 1 : 0.7)).accessibilityHidden(true)
+                    Text.panel(title, size: 12, weight: .semibold, opacity: selected ? 1 : 0.75).lineLimit(1)
                 }
             }
-            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
-struct RoundButton: View {
-    let symbol: String
-    let prominent: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: prominent ? 16 : 13, weight: .semibold))
-                .frame(width: prominent ? 44 : 34, height: prominent ? 44 : 34)
-                .background(Circle().fill(.white.opacity(prominent ? 0.2 : 0.1)))
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-/// A preset length or Pomodoro phase; the selected one takes the tint.
-private struct Chip: View {
+/// A preset length. Unselected it is bare, like a list row; while a countdown runs they are all dashed, because they do nothing.
+private struct LengthChip: View {
     let title: String
-    let tint: Color
     let selected: Bool
+    let enabled: Bool
     let action: () -> Void
+    @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
-            Text(title)
-                .font(.system(size: 11, weight: .semibold).monospacedDigit())
-                .lineLimit(1).minimumScaleFactor(0.75)
-                .foregroundStyle(selected ? tint : .white.opacity(0.65))
-                .padding(.horizontal, 8)
-                .frame(maxWidth: .infinity, minHeight: 22)
-                .background(Capsule().fill(selected ? tint.opacity(0.18) : .white.opacity(0.08)))
-                .contentShape(Capsule())
+            Text.panel(title, size: 11, weight: .semibold, opacity: selected ? 1 : (enabled ? 0.8 : 0.5), mono: true)
+                .lineLimit(1).fixedSize()
+                .padding(.horizontal, 3).frame(minWidth: 42, minHeight: 24)
+                .background {
+                    if selected { RoundedRectangle(cornerRadius: 8).fill(.white.opacity(0.1)) }
+                    else if enabled && hovering { RoundedRectangle(cornerRadius: 8).fill(.white.opacity(0.06)) }
+                }
+                .overlay {
+                    if selected {
+                        RoundedRectangle(cornerRadius: 8).stroke(.white.opacity(0.4), lineWidth: 0.75)
+                    } else if !enabled {
+                        RoundedRectangle(cornerRadius: 8).stroke(.white.opacity(0.22), style: StrokeStyle(lineWidth: 0.75, dash: [2, 2]))
+                    }
+                }
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .disabled(!enabled)
+        .onHover { hovering = $0 }
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
-/// The ring and the time inside it. Stopped, it shows the length with units and is the control: scroll over it
-/// or use the arrows to change it a minute at a time (five with Shift), or click it to type a length.
-/// Running, it shows what's left (or elapsed) and the ring empties; the stopwatch's ring sweeps once a minute.
-private struct TimerRing: View {
+/// The time, a 3 pt bar and the buttons. Stopped, the time is the length: scroll over it or use the buttons beside it to change it
+/// a minute at a time (five with Shift), or click it to type a length. Running, it is what is left (or elapsed) and the bar empties;
+/// the stopwatch's bar sweeps once a minute.
+private struct TimerClock: View {
     @ObservedObject var timer: TimerModel
-    let diameter: CGFloat
-    let tint: Color
-    let animated: Bool
     @State private var editing = false
     @State private var text = ""
     @FocusState private var focused: Bool
 
+    private static let digits: CGFloat = 42
+
     var body: some View {
         let editable = timer.canEditLength
-        let lineWidth = max(6, diameter * 0.06)
-        // Redraws only while running; the arc moves less than a point per step, so it needs no animation.
-        TimelineView(.animation(minimumInterval: 0.25, paused: !timer.isRunning)) { context in
-            let value = timer.value(at: context.date)
-            ZStack {
-                Circle().stroke(.white.opacity(0.1), lineWidth: lineWidth)
-                Circle()
-                    .trim(from: 0, to: progress(value))
-                    .stroke(tint.opacity(timer.isActive && !timer.isRunning ? 0.5 : 1),
-                            style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                    // Only state changes animate (a new length, start, reset, the next phase), not the ticking.
-                    .animation(animated ? .easeOut(duration: 0.35) : nil, value: AnimationKey(timer: timer))
-                if timer.isActive || timer.mode == .stopwatch {
-                    running(value)
-                } else {
-                    stopped(editable: editable)
+        let paused = timer.isActive && !timer.isRunning
+        VStack(alignment: .leading, spacing: 4) {
+            PanelCaption(title).frame(height: 20)
+            // Redraws only while running; the bar moves less than a point per step, so it needs no animation.
+            TimelineView(.animation(minimumInterval: 0.25, paused: !timer.isRunning)) { context in
+                let value = timer.value(at: context.date)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .lastTextBaseline, spacing: 6) {
+                        if timer.isActive || timer.mode == .stopwatch {
+                            Text.panel(TimerModel.format(value), size: Self.digits, weight: .semibold, mono: true)
+                                .lineLimit(1).minimumScaleFactor(0.6)
+                            Text.panel(caption, size: 12, opacity: 0.6).lineLimit(1)
+                        } else {
+                            stopped
+                            Spacer(minLength: 0)
+                            if editable { stepButtons }
+                        }
+                    }
+                    .frame(height: 50, alignment: .bottom)
+                    PanelMeter(fraction: progress(value), tint: .white.opacity(paused ? 0.4 : 0.75)).padding(.top, 2)
                 }
             }
-            .padding(lineWidth / 2)
+            HStack(spacing: 6) {
+                PanelAction(title: timer.isRunning ? "Pause" : (timer.isActive ? "Resume" : "Start"),
+                            symbol: timer.isRunning ? "pause.fill" : "play.fill", style: .primary) {
+                    timer.isRunning ? timer.pause() : timer.start()
+                }
+                PanelAction(title: "Reset", symbol: "arrow.counterclockwise",
+                            reason: timer.isActive ? nil : String(localized: "Nothing to reset")) { timer.reset() }
+            }
+            .padding(.top, 6)
         }
-        .frame(width: diameter, height: diameter)
+        .padding(.top, 2)
         .onChange(of: editable) { _, isEditable in if !isEditable { editing = false } }
     }
 
-    private struct AnimationKey: Equatable {
-        let active: Bool, mode: TimerModel.Mode, phase: TimerModel.Phase, length: TimeInterval
-        @MainActor init(timer: TimerModel) {
-            active = timer.isActive; mode = timer.mode; phase = timer.phase; length = timer.fullLength
-        }
-    }
-
-    private func progress(_ value: TimeInterval) -> CGFloat {
+    private var title: String {
         switch timer.mode {
-        case .stopwatch: return CGFloat(value.truncatingRemainder(dividingBy: 60) / 60)
-        case .countdown, .pomodoro: return timer.fullLength > 0 ? CGFloat(min(1, value / timer.fullLength)) : 0
+        case .countdown: return "\(String(localized: "Timer")) · \(TimerModel.lengthLabel(Int(timer.fullLength)))"
+        case .pomodoro:
+            let phase = timer.phase == .work ? String(localized: "Focus") : String(localized: "Break")
+            return "\(phase) · \(TimerModel.lengthLabel(Int(timer.fullLength)))"
+        case .stopwatch: return String(localized: "Stopwatch")
         }
-    }
-
-    private func running(_ value: TimeInterval) -> some View {
-        VStack(spacing: 1) {
-            Text(TimerModel.format(value))
-                .font(.system(size: diameter * 0.24, weight: .semibold, design: .rounded).monospacedDigit())
-                .lineLimit(1).minimumScaleFactor(0.6)
-                .contentTransition(.numericText())
-            Text(caption)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(timer.isActive && !timer.isRunning ? tint : .white.opacity(0.5))
-                .lineLimit(1).minimumScaleFactor(0.8)
-        }
-        .frame(width: diameter * 0.72)
     }
 
     private var caption: String {
@@ -481,47 +451,59 @@ private struct TimerRing: View {
         return timer.mode == .stopwatch ? String(localized: "elapsed") : String(localized: "left")
     }
 
-    private func stopped(editable: Bool) -> some View {
-        VStack(spacing: 2) {
-            arrow("chevron.up", delta: 1)
-            ZStack {
-                lengthText(TimerModel.lengthLabel(Int(timer.fullLength)))
-                    .lineLimit(1).minimumScaleFactor(0.5)
-                    .opacity(editing ? 0 : 1)
-                if editing {
-                    TextField("", text: $text)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: diameter * 0.2, weight: .semibold, design: .rounded).monospacedDigit())
-                        .multilineTextAlignment(.center)
-                        .focused($focused)
-                        .onSubmit(commit)
-                        .onExitCommand { editing = false }
-                        .onChange(of: focused) { _, isFocused in if !isFocused { commit() } }
-                }
-            }
-            .frame(width: diameter * 0.74)
-            .overlay {
-                if editable && !editing {
-                    ScrollCatcher(onStep: { timer.adjustLength(byMinutes: $0) }, onClick: startEditing)
-                }
-            }
-            .help(editable ? String(localized: "Scroll or click the time to change it") : "")
-            arrow("chevron.down", delta: -1)
+    private func progress(_ value: TimeInterval) -> Double {
+        switch timer.mode {
+        case .stopwatch: return value.truncatingRemainder(dividingBy: 60) / 60
+        case .countdown, .pomodoro: return timer.fullLength > 0 ? min(1, value / timer.fullLength) : 0
         }
+    }
+
+    private var stopped: some View {
+        ZStack(alignment: .leading) {
+            lengthText(TimerModel.lengthLabel(Int(timer.fullLength))).lineLimit(1).minimumScaleFactor(0.5)
+                .opacity(editing ? 0 : 1)
+            if editing {
+                TextField("", text: $text)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: Self.digits * 0.8, weight: .semibold).monospacedDigit())
+                    .focused($focused)
+                    .onSubmit(commit)
+                    .onExitCommand { editing = false }
+                    .onChange(of: focused) { _, isFocused in if !isFocused { commit() } }
+            }
+        }
+        .overlay {
+            if timer.canEditLength && !editing {
+                ScrollCatcher(onStep: { timer.adjustLength(byMinutes: $0) }, onClick: startEditing)
+            }
+        }
+        .help(timer.canEditLength ? String(localized: "Scroll or click the time to change it") : "")
+    }
+
+    private var stepButtons: some View {
+        HStack(spacing: 2) {
+            PanelIconButton(symbol: "minus", title: String(localized: "Shorter")) { step(-1) }
+            PanelIconButton(symbol: "plus", title: String(localized: "Longer")) { step(1) }
+        }
+        .opacity(editing ? 0 : 1)
+    }
+
+    private func step(_ delta: Int) {
+        timer.adjustLength(byMinutes: NSEvent.modifierFlags.contains(.shift) ? delta * 5 : delta)
     }
 
     /// Numbers large, units small: "25" big with "min" beside it. Lengths with more units get smaller numbers.
     private func lengthText(_ label: String) -> Text {
         let units = label.split(whereSeparator: { !$0.isNumber }).count
-        let digitSize = diameter * (units >= 3 ? 0.15 : units == 2 ? 0.19 : 0.26)
+        let digitSize = Self.digits * (units >= 3 ? 0.6 : units == 2 ? 0.75 : 1)
         var result = Text("")
         var run = ""
         var runIsDigits = true
         func flush() {
             guard !run.isEmpty else { return }
             result = result + Text(run).font(runIsDigits
-                ? .system(size: digitSize, weight: .semibold, design: .rounded).monospacedDigit()
-                : .system(size: digitSize * 0.46, weight: .semibold, design: .rounded))
+                ? .system(size: digitSize, weight: .semibold).monospacedDigit()
+                : .system(size: digitSize * 0.4, weight: .semibold))
                 .foregroundColor(runIsDigits ? .white : .white.opacity(0.6))
             run = ""
         }
@@ -540,21 +522,6 @@ private struct TimerRing: View {
         text = seconds % 60 == 0 ? "\(seconds / 60)" : TimerModel.format(timer.fullLength)
         editing = true
         focused = true
-    }
-
-    private func arrow(_ symbol: String, delta: Int) -> some View {
-        Button {
-            timer.adjustLength(byMinutes: NSEvent.modifierFlags.contains(.shift) ? delta * 5 : delta)
-        } label: {
-            Image(systemName: symbol)
-                .font(.system(size: 9, weight: .bold))
-                .foregroundStyle(.white.opacity(0.35))
-                .frame(width: 40, height: 12)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .disabled(!timer.canEditLength)
-        .opacity(editing ? 0 : 1)
     }
 
     private func commit() {
