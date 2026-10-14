@@ -157,7 +157,7 @@ struct OpenCodePluginRunTests {
         let (first, _, _) = try start(server, body: Self.setUp + """
             await event("permission.asked", request("per_4"))
             await gate("answered")
-            await sleep(500)
+            await sleep(1500)
             out({ replies })
             """)
         await eventually { server.events.prompts.count == 1 }

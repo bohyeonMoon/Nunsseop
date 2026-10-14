@@ -317,9 +317,9 @@ struct PaseoClientTests {
         await eventually { socket.sent("agent_permission_response").count == 2 }
         // Two answers to different requests go out on tasks of their own, so which is first on the wire is not a contract.
         let answers = socket.sent("agent_permission_response").compactMap { $0["message"] as? [String: Any] }
-        let behaviors = Dictionary(uniqueKeysWithValues: answers.compactMap { answer in
+        let behaviors = Dictionary(answers.compactMap { answer in
             (answer["requestId"] as? String).map { ($0, (answer["response"] as? [String: String])?["behavior"]) }
-        })
+        }, uniquingKeysWith: { first, _ in first })
         #expect(answers.count == 2 && behaviors == ["r1": "allow", "r2": "deny"])
         client.stop()
         #expect(!client.respond(agent: agentA, request: "r3", allow: true))
