@@ -67,7 +67,7 @@ struct PermissionServerTests {
         #expect(prompt.grant == nil)
         server.server.permissions.answer(prompt.id, .always)
         // Nothing allows more than was offered: the connection closes without an answer, and the terminal asks.
-        #expect(await client.closes(within: 10))
+        #expect(await client.closes(within: Int(eventDeadline)))
     }
 
     // MARK: Who may ask
@@ -251,14 +251,14 @@ struct PermissionServerTests {
         await eventually { server.events.prompts.count == 3 }
         server.server.permissions.cancelAll()
         await eventually { server.events.goneIDs.count == 3 }
-        for client in clients { #expect(await client.closes(within: 10)) }
+        for client in clients { #expect(await client.closes(within: Int(eventDeadline))) }
 
         let again = try RawClient(port: server.port)
         again.send(server.request(body: PermissionTestServer.hookInput()))
         await eventually { server.events.prompts.count == 4 }
         server.server.stop()
         await eventually { server.events.goneIDs.count == 4 }
-        #expect(await again.closes(within: 10))
+        #expect(await again.closes(within: Int(eventDeadline)))
     }
 
     @Test func aWaitingPromptIsNotDroppedAsAStalledClient() async throws {

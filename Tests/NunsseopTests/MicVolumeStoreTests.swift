@@ -5,11 +5,9 @@ import Testing
 @MainActor
 struct MicVolumeStoreTests {
     @Test func persistsPerDeviceAndClears() throws {
-        // One fixed name: removing a domain empties it but leaves its plist behind, so a fresh name per run piles up files.
-        let suite = "NunsseopTests.MicVolumeStore"
-        let defaults = try #require(UserDefaults(suiteName: suite))
-        defaults.removePersistentDomain(forName: suite)
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let scratch = ScratchDefaults("MicVolumeStore")
+        let defaults = scratch.defaults
+        defer { scratch.remove() }
 
         #expect(ToolsModel.savedInputVolume(for: "mic-a", defaults: defaults) == nil)
         ToolsModel.setSavedInputVolume(0.6, for: "mic-a", defaults: defaults)

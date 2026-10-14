@@ -30,20 +30,19 @@ private struct ShellRun {
         try "tok\n".write(to: support.appendingPathComponent("notify-token"), atomically: true, encoding: .utf8)
         try "Authorization: Bearer tok\n".write(to: support.appendingPathComponent("notify-auth"), atomically: true, encoding: .utf8)
         let curl = dir.appendingPathComponent("bin/curl")
-        try """
+        try StubTool.write("""
         #!/bin/sh
         echo x >> "\(dir.path)/calls"
         for arg; do printf '%s\\n' "$arg"; done > "\(dir.path)/args"
         cat > "\(dir.path)/body"
         echo LEAK
         exit \(curlExit)
-        """.write(to: curl, atomically: true, encoding: .utf8)
+        """, to: curl)
         let previous = dir.appendingPathComponent("prev.sh")
-        try """
+        try StubTool.write("""
         #!/bin/sh
         for arg; do printf '%s\\n' "$arg"; done > "\(dir.path)/prev-args"
-        """.write(to: previous, atomically: true, encoding: .utf8)
-        for file in [curl, previous] { try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: file.path) }
+        """, to: previous)
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
@@ -89,7 +88,7 @@ struct AgentHookShellTests {
             "-s", "-m", "1", "--connect-timeout", "1", "-X", "POST", "http://127.0.0.1:\(NotifyServer.port)/agent", "-d", "",
             "-H", sent.authArgument, "-H", "X-Session: abc-123", "-H", "X-Event: Stop",
             "-H", "X-Type: permission_prompt", "-H", "X-Subagent: ", "-H", "X-App: com.x",
-            "-H", "X-Herdr: ", "-H", "X-Background: ", "-H", "X-Pid: \(getpid())",
+            "-H", "X-Herdr: ", "-H", "X-Muxy: ", "-H", "X-Cmux: ", "-H", "X-Mux: ", "-H", "X-Wezterm: ", "-H", "X-Wezterm-Socket: ", "-H", "X-Kitty: ", "-H", "X-Kitty-Socket: ", "-H", "X-Iterm: ", "-H", "X-Orca: ", "-H", "X-Background: ", "-H", "X-Pid: \(getpid())", "-H", "X-Background-Tasks: ",
         ])
         #expect(sent.curlCalls == 1)
         #expect(sent.stdout.isEmpty)
@@ -106,11 +105,82 @@ struct AgentHookShellTests {
         #expect(unset.args.contains("X-App: "))
     }
 
+    @Test func theTerminalsInputTargetIsSentAsHeadersForBothTools() throws {
+        let stdin = json(["session_id": "s", "hook_event_name": "Stop"])
+        let environment = ["__CFBundleIdentifier": "com.x", "MUXY_SESSION_ID": "1978299613479001934",
+                           "CMUX_SURFACE_ID": "6F1B2C3D-0000-4000-8000-000000000001"]
+        for command in [NotifyServer.agentHookCommand, NotifyServer.agentHookCommand(for: .codex)] {
+            let sent = try ShellRun.run({ _ in ["-c", command] }, stdin: stdin, environment: environment)
+            #expect(sent.args.contains("X-Muxy: 1978299613479001934"))
+            #expect(sent.args.contains("X-Cmux: 6F1B2C3D-0000-4000-8000-000000000001"))
+            #expect(sent.stdout.isEmpty && sent.status == 0)
+        }
+    }
+
+    @Test func theIdsOfWezTermKittyAndITerm2AreSentForBothTools() throws {
+        let stdin = json(["session_id": "s", "hook_event_name": "Stop"])
+        let environment = ["__CFBundleIdentifier": "com.x", "WEZTERM_PANE": "7", "WEZTERM_UNIX_SOCKET": "/tmp/wezterm-gui-sock-1", "KITTY_WINDOW_ID": "3",
+                           "KITTY_LISTEN_ON": "unix:/tmp/kitty-1234", "ITERM_SESSION_ID": "w0t0p0:6F1B2C3D-0000-4000-8000-000000000001"]
+        for command in [NotifyServer.agentHookCommand, NotifyServer.agentHookCommand(for: .codex)] {
+            let sent = try ShellRun.run({ _ in ["-c", command] }, stdin: stdin, environment: environment)
+            #expect(sent.args.contains("X-Wezterm: 7") && sent.args.contains("X-Kitty: 3"))
+            #expect(sent.args.contains("X-Wezterm-Socket: /tmp/wezterm-gui-sock-1"))
+            #expect(sent.args.contains("X-Kitty-Socket: unix:/tmp/kitty-1234"))
+            #expect(sent.args.contains("X-Iterm: w0t0p0:6F1B2C3D-0000-4000-8000-000000000001"))
+            #expect(sent.stdout.isEmpty && sent.status == 0)
+        }
+    }
+
+    @Test func theOrcaPaneKeyIsSentAsItIsForBothTools() throws {
+        let stdin = json(["session_id": "s", "hook_event_name": "Stop"])
+        let key = "7d1e6f0a-4b2c-4a85-9c3d-0e5f1a2b3c4d:2c9a0f1e-8b7d-4e6a-a1b2-c3d4e5f60718"
+        for command in [NotifyServer.agentHookCommand, NotifyServer.agentHookCommand(for: .codex)] {
+            let sent = try ShellRun.run({ _ in ["-c", command] }, stdin: stdin, environment: ["__CFBundleIdentifier": "com.x", "ORCA_PANE_KEY": key])
+            #expect(sent.args.contains("X-Orca: \(key)"))
+            // Nothing else of Orca's environment is sent: the hook endpoint's port and token are not Nunsseop's to use.
+            #expect(sent.args.allSatisfy { !$0.contains("ORCA_AGENT_HOOK") })
+            #expect(sent.stdout.isEmpty && sent.status == 0)
+        }
+    }
+
+    @Test func runningInsideTmuxZellijOrScreenIsSentForBothTools() throws {
+        let stdin = json(["session_id": "s", "hook_event_name": "Stop"])
+        for command in [NotifyServer.agentHookCommand, NotifyServer.agentHookCommand(for: .codex)] {
+            for variable in ["TMUX", "ZELLIJ", "STY"] {
+                let sent = try ShellRun.run({ _ in ["-c", command] }, stdin: stdin,
+                                            environment: ["__CFBundleIdentifier": "com.x", variable: "/tmp/x,1,0"])
+                #expect(sent.args.contains("X-Mux: 1"), "\(variable)")
+            }
+            let outside = try ShellRun.run({ _ in ["-c", command] }, stdin: stdin, environment: ["__CFBundleIdentifier": "com.x"])
+            #expect(outside.args.contains("X-Mux: "))
+        }
+    }
+
     @Test func sessionStartSendsItsProcessAndPrintsNothing() throws {
         let sent = try run(json(["session_id": "s", "hook_event_name": "SessionStart", "source": "resume"]))
         #expect(sent.args.contains("X-Event: SessionStart") && sent.args.contains("X-Pid: \(getpid())"))
         // SessionStart's stdout goes into Claude's context.
         #expect(sent.stdout.isEmpty && sent.status == 0)
+    }
+
+    @Test func aStopSendsHowManyBackgroundTasksItListsAndOnlyTheCount() throws {
+        let tasks = #"[{"id":"a1","type":"subagent","status":"running","description":"secret plan"},{"id":"b2","type":"shell","status":"running","command":"rm -rf secret"}]"#
+        let two = try run(#"{"session_id":"s","hook_event_name":"Stop","background_tasks":\#(tasks)}"#)
+        #expect(two.args.contains("X-Background-Tasks: 2") && two.args.last == "X-Background-Tasks: 2")
+        #expect(!two.args.joined().contains("secret") && two.body.isEmpty)
+        // An empty list is a 0, which tells the hand-back's Stop that everything is done; no list and no key send nothing.
+        let none = try run(#"{"session_id":"s","hook_event_name":"Stop","background_tasks":[]}"#)
+        #expect(none.args.contains("X-Background-Tasks: 0"))
+        let absent = try run(json(["session_id": "s", "hook_event_name": "Stop"]))
+        #expect(absent.args.contains("X-Background-Tasks: "))
+        // Twelve tasks keep every digit of the count.
+        let many = try run(#"{"session_id":"s","hook_event_name":"Stop","background_tasks":[\#(Array(repeating: "{}", count: 12).joined(separator: ","))]}"#)
+        #expect(many.args.contains("X-Background-Tasks: 12"))
+        // Whatever the value, only characters of the safe set leave, and nothing is run.
+        let text = try run(json(["session_id": "s", "hook_event_name": "Stop", "background_tasks": "3$(touch pwn)"]))
+        #expect(text.args.contains("X-Background-Tasks: 3touchpwn"))
+        #expect(!FileManager.default.fileExists(atPath: text.dir.appendingPathComponent("pwn").path))
+        #expect(two.status == 0 && two.stdout.isEmpty)
     }
 
     @Test func aSubagentCallCarriesItsId() throws {
@@ -161,7 +231,8 @@ struct CodexAgentHookShellTests {
             "-s", "-m", "1", "--connect-timeout", "1", "-X", "POST", "http://127.0.0.1:\(NotifyServer.port)/agent", "-d", "",
             "-H", sent.authArgument, "-H", "X-Session: 019e5b2c-7a41-7c10-8d3e-2f6a9c1b4e07",
             "-H", "X-Event: PermissionRequest", "-H", "X-Type: ", "-H", "X-Subagent: ", "-H", "X-App: com.x",
-            "-H", "X-Herdr: ", "-H", "X-Background: ", "-H", "X-Agent: codex",
+            "-H", "X-Herdr: ", "-H", "X-Muxy: ", "-H", "X-Cmux: ", "-H", "X-Mux: ", "-H", "X-Wezterm: ", "-H", "X-Wezterm-Socket: ", "-H", "X-Kitty: ", "-H", "X-Kitty-Socket: ", "-H", "X-Iterm: ", "-H", "X-Orca: ", "-H", "X-Background: ", "-H", "X-Pid: \(getpid())",
+            "-H", "X-Agent: codex",
         ])
         #expect(sent.body.isEmpty)
         #expect(!sent.args.joined().contains("secret") && !sent.args.joined().contains("rm -rf") && !sent.args.joined().contains("gpt"))
@@ -178,7 +249,7 @@ struct CodexAgentHookShellTests {
                 headers[header[..<colon].lowercased()] = header[header.index(after: colon)...].trimmingCharacters(in: .whitespaces)
             }
             #expect(AgentHook.event(headers: headers)
-                    == AgentEvent(session: "s-1", action: action, app: "com.x", inHerdr: false, agent: .codex), "\(event)")
+                    == AgentEvent(session: "s-1", action: action, app: "com.x", inHerdr: false, agent: .codex, pid: getpid()), "\(event)")
         }
     }
 

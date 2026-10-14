@@ -1,4 +1,4 @@
-"NSAppleEventsUsageDescription" = "Music, Spotify, 브라우저의 재생 정보를 표시하고 재생을 제어합니다.";
+"NSAppleEventsUsageDescription" = "Music, Spotify, 브라우저의 재생 정보를 표시하고 재생을 제어합니다. 또한 Terminal, iTerm2, Ghostty의 에이전트 세션에 메시지를 입력하고, iTerm2, Ghostty의 새 탭에서 대화를 엽니다.";
 "NSCalendarsFullAccessUsageDescription" = "노치의 홈 탭에 오늘과 이번 주 일정을 표시합니다.";
 "NSRemindersFullAccessUsageDescription" = "오늘까지인 미리 알림을 캘린더 아래에 표시하고 완료 처리할 수 있게 합니다.";
 "NSCameraUsageDescription" = "노치의 미러 탭에 카메라 화면을 보여 줍니다. 녹화하거나 전송하지 않습니다.";

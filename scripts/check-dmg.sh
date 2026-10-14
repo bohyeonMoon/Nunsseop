@@ -44,7 +44,8 @@ step "Signature"
 codesign --verify --deep --strict "$APP" || fail "Signature is broken"
 
 step "Resources"
-for item in Contents/Resources/nowplaying.pl Contents/Resources/AppIcon.icns Contents/Resources/en.lproj Contents/Resources/ko.lproj; do
+for item in Contents/Resources/nowplaying.pl Contents/Resources/AppIcon.icns Contents/Resources/en.lproj Contents/Resources/ko.lproj \
+            Contents/Resources/muxy-bridge/package.json Contents/Resources/muxy-bridge/background.js Contents/Resources/muxy-bridge/helper.html Contents/Resources/muxy-bridge/helper.js; do
     [[ -e "$APP/$item" ]] || fail "Missing $item"
 done
 

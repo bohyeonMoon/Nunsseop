@@ -44,7 +44,14 @@ struct NotchView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
 
-                if model.isExpanded {
+                if model.onboarding.shows(expanded: model.isExpanded, approvalShowing: model.approvals.current != nil) {
+                    OnboardingView(tour: model.onboarding, settings: model.settings,
+                                   hasNotch: model.geometry.hasNotch && !model.onboarding.showsWithoutNotch,
+                                   bandHeight: OnboardingTour.band(notchHeight: notchHeight))
+                        .padding(.horizontal, topRadius + 14)
+                        .padding(.bottom, 16)
+                        .transition(motion.expandedContent)
+                } else if model.isExpanded {
                     VStack(spacing: 0) {
                         HeaderBar(model: model, height: notchHeight)
                         // The tab stays where it is under a permission prompt, so what was typed in it is still there after.
@@ -306,7 +313,12 @@ struct NotchDropDelegate: DropDelegate {
     @Binding var isAirDropTargeted: Bool
     let airDropRect: CGRect
 
-    func validateDrop(info: DropInfo) -> Bool { info.hasItemsConforming(to: [.fileURL]) }
+    /// Not on the Agents tab: files dropped there belong to the session rows, and entering the notch would switch to the shelf.
+    func validateDrop(info: DropInfo) -> Bool {
+        info.hasItemsConforming(to: [.fileURL]) && !Self.agentsTabTakesDrops(expanded: model.isExpanded, tab: model.tab)
+    }
+
+    static func agentsTabTakesDrops(expanded: Bool, tab: NotchTab) -> Bool { expanded && tab == .agents }
 
     func dropEntered(info: DropInfo) {
         isTargeted = true
@@ -338,5 +350,45 @@ struct NotchDropDelegate: DropDelegate {
             return true
         }
         return model.shelf.handleDrop(providers)
+    }
+}
+
+/// A file drag held over a tab's button opens that tab after `delay`, so files can be taken to a tab that is not on screen yet
+/// (a Shelf item to a session in the Agents tab). It never takes the drop itself.
+@MainActor
+final class TabDragHover {
+    static let delay: TimeInterval = 0.6
+    private let schedule: (TimeInterval, DispatchWorkItem) -> Void
+    private var pending: DispatchWorkItem?
+
+    init(schedule: @escaping (TimeInterval, DispatchWorkItem) -> Void = { delay, work in
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }) {
+        self.schedule = schedule
+    }
+
+    func entered(open: @escaping () -> Void) {
+        pending?.cancel()
+        let work = DispatchWorkItem { open() }
+        pending = work
+        schedule(Self.delay, work)
+    }
+
+    func exited() {
+        pending?.cancel()
+        pending = nil
+    }
+}
+
+struct TabDragHoverDelegate: DropDelegate {
+    let hover: TabDragHover
+    let open: () -> Void
+
+    func validateDrop(info: DropInfo) -> Bool { info.hasItemsConforming(to: [.fileURL]) }
+    func dropEntered(info: DropInfo) { hover.entered(open: open) }
+    func dropExited(info: DropInfo) { hover.exited() }
+    func performDrop(info: DropInfo) -> Bool {
+        hover.exited()
+        return false
     }
 }

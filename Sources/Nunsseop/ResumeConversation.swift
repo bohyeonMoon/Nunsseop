@@ -1,32 +1,64 @@
 import AppKit
 import Foundation
 
-/// The terminal a conversation is resumed in. Muxy is left out: it can't open a visible tab from outside.
+/// The terminal a conversation is resumed in. Muxy can open a tab from outside only through its bridge extension (see `MuxyBridge`), so
+/// it is offered while that runs.
 enum ResumeTerminal: String, CaseIterable, Identifiable {
-    case ghostty, cmux, terminal
+    case ghostty, iterm, wezterm, kitty, cmux, orca, muxy, terminal
 
     var id: String { rawValue }
 
     var name: String {
         switch self {
         case .ghostty: "Ghostty"
+        case .iterm: "iTerm2"
+        case .wezterm: "WezTerm"
+        case .kitty: "kitty"
         case .cmux: "cmux"
+        case .orca: "Orca"
+        case .muxy: "Muxy"
         case .terminal: "Terminal"
         }
     }
 
     var bundleID: String {
         switch self {
-        case .ghostty: "com.mitchellh.ghostty"
+        case .ghostty: TerminalScripts.ghosttyID
+        case .iterm: TerminalScripts.itermID
+        case .wezterm: WezTerm.bundleID
+        case .kitty: Kitty.bundleID
         case .cmux: Cmux.bundleID
-        case .terminal: "com.apple.Terminal"
+        case .orca: Orca.bundleID
+        case .muxy: Muxy.bundleID
+        case .terminal: TerminalScripts.terminalID
         }
     }
 
     var appURL: URL? { NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) }
 
-    /// Terminal is always there.
-    static var installed: [ResumeTerminal] { allCases.filter { $0 == .terminal || $0.appURL != nil } }
+    /// Terminal is always there. WezTerm may be only its command-line tool. kitty can be told from outside only through a socket, which
+    /// a session in it reported and which still exists: without one it isn't offered. Orca is offered while it runs, since its tool
+    /// can't open a tab in an Orca that isn't (and must not start one), nor in one with no window left to show it in. Muxy is offered
+    /// while its bridge extension runs.
+    static var installed: [ResumeTerminal] {
+        installed(appURL: \.appURL, weztermInstalled: WezTerm.isInstalled, kittyCLI: Kitty.cli, kittySocket: Kitty.socket, socketExists: Kitty.socketExists,
+                  orcaCLI: Orca.cli, orcaRunning: Orca.isRunning && Orca.hasWindow, muxyBridgeRunning: MuxyBridge.isRunning())
+    }
+
+    /// `installed` for the given state of the machine.
+    static func installed(appURL: (ResumeTerminal) -> URL?, weztermInstalled: Bool, kittyCLI: URL?, kittySocket: String?,
+                          socketExists: (String) -> Bool, orcaCLI: URL? = nil, orcaRunning: Bool = false, muxyBridgeRunning: Bool = false) -> [ResumeTerminal] {
+        allCases.filter { terminal in
+            switch terminal {
+            case .terminal: true
+            case .muxy: muxyBridgeRunning && appURL(terminal) != nil
+            case .wezterm: weztermInstalled
+            case .orca: appURL(terminal) != nil && orcaCLI != nil && orcaRunning
+            case .kitty: appURL(terminal) != nil && kittyCLI != nil && kittySocket.map(socketExists) == true
+            default: appURL(terminal) != nil
+            }
+        }
+    }
 
     /// The saved choice when it is installed, else Ghostty when it is, else Terminal.
     static func effective(saved: String, installed: [ResumeTerminal]) -> ResumeTerminal {
@@ -35,7 +67,8 @@ enum ResumeTerminal: String, CaseIterable, Identifiable {
     }
 }
 
-/// Opens a conversation again with `claude --resume` or `codex resume` in a new terminal window in its folder.
+/// Opens a conversation again (`claude --resume`, `codex resume`, `omp --resume=`...: see `AgentKind.resumeCommand`) in a new terminal tab
+/// (a window where the terminal can't make a tab from outside) in its folder.
 /// Programs started by an app don't get the shell's PATH, so the command runs through the user's login shell.
 enum Resume {
     /// What the terminals are run with, so a test can run none.
@@ -53,8 +86,25 @@ enum Resume {
         var installed: [ResumeTerminal]
         var ghostty: URL?
         var cmuxCLI: URL?
+        var wezterm: URL?
+        var weztermCLI: URL?
+        var kittyCLI: URL?
+        /// The socket of kitty's remote control (`unix:/path`), as a session in it reported.
+        var kittySocket: String?
+        var orcaCLI: URL?
+        /// Whether Orca has a window to open a tab in (see `Orca.hasWindow`).
+        var orcaHasWindow = true
+        /// The bundle ids of the apps that are running.
+        var running: Set<String> = []
+        /// Whether an app runs now, for waiting on one that was just started.
+        var isRunning: (String) -> Bool = { !NSRunningApplication.runningApplications(withBundleIdentifier: $0).isEmpty }
+        /// What the Apple Event terminals are asked through.
+        var appleScript: AppleScriptRunner = .live
         /// Whether cmux is running already, in which case a socket that doesn't answer is a refusal, not a start-up.
         var cmuxRunning = false
+        /// Opens `line` in a new Muxy tab through the bridge extension: given the line, the folder and the user's shell; true when Muxy took it.
+        /// Only `live` reaches Muxy.
+        var muxyResume: (_ line: String, _ cwd: String, _ shell: String) -> Bool = { _, _, _ in false }
         /// The user's login shell.
         var shell: String
         /// A private folder for the script Terminal opens is made in here.
@@ -62,13 +112,21 @@ enum Resume {
 
         static var live: Setup {
             Setup(installed: ResumeTerminal.installed, ghostty: ResumeTerminal.ghostty.appURL, cmuxCLI: Cmux.cli,
+                  wezterm: ResumeTerminal.wezterm.appURL, weztermCLI: WezTerm.cli, kittyCLI: Kitty.cli, kittySocket: Kitty.socket,
+                  orcaCLI: Orca.cli, orcaHasWindow: Orca.hasWindow,
+                  running: Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier)),
                   cmuxRunning: !NSRunningApplication.runningApplications(withBundleIdentifier: Cmux.bundleID).isEmpty,
+                  muxyResume: { MuxyBridge.resume(line: $0, cwd: $1, shell: $2, desktop: MuxyDesktop.read()) },
                   shell: Resume.shell(from: ProcessInfo.processInfo.environment["SHELL"]),
                   scripts: FileManager.default.temporaryDirectory)
         }
     }
 
     static let openTool = URL(fileURLWithPath: "/usr/bin/open")
+
+    /// How long a Ghostty that was just started gets to come up.
+    private static let ghosttyStartAttempts = 20
+    private static let ghosttyStartPause: TimeInterval = 0.25
 
     /// How long cmux gets to answer after being started.
     private static let cmuxAttempts = 20
@@ -79,14 +137,26 @@ enum Resume {
         let terminal = MainActor.assumeIsolated {
             ResumeTerminal.effective(saved: AppSettings.shared.resumeTerminal, installed: ResumeTerminal.installed)
         }
-        DispatchQueue.global(qos: .userInitiated).async { open(conversation, in: terminal) }
+        DispatchQueue.global(qos: .userInitiated).async {
+            open(conversation, in: terminal, denied: { app in
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(name: notAllowedNotification, object: nil, userInfo: ["bundleID": app])
+                }
+            })
+        }
     }
+
+    /// Posted on the main thread when macOS refused Nunsseop's Apple Events to a terminal; `userInfo["bundleID"]` names it.
+    static let notAllowedNotification = Notification.Name("NunsseopResumeNotAllowed")
 
     // MARK: Safe pieces
 
-    /// Session ids are hex digits and dashes (UUIDs, Codex's too), 8 to 64 of them.
+    /// Session ids are hex digits and dashes (UUIDs, Codex's and the pi family's too), 8 to 64 of them; OpenCode's are
+    /// `ses_` and letters and digits.
     static func isSafeSession(_ id: String) -> Bool {
-        (8...64).contains(id.count) && id.allSatisfy { $0.isASCII && ($0.isHexDigit || $0 == "-") }
+        guard (8...64).contains(id.count) else { return false }
+        if id.hasPrefix("ses_") { return id.dropFirst(4).allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber) } }
+        return id.allSatisfy { $0.isASCII && ($0.isHexDigit || $0 == "-") }
     }
 
     /// An absolute path without control or line-breaking characters.
@@ -118,16 +188,17 @@ enum Resume {
     /// `cd -- '<folder>' && exec claude --resume '<id>'`; nil when the folder or the id could be anything but what they should be.
     static func line(_ conversation: RecentConversation) -> String? {
         guard isSafeSession(conversation.session), isSafeFolder(conversation.cwd) else { return nil }
-        let command = conversation.kind == .claude ? "claude --resume" : "codex resume"
-        return "cd -- \(quote(conversation.cwd)) && exec \(command) \(quote(conversation.session))"
+        return "cd -- \(quote(conversation.cwd)) && exec \(conversation.kind.resumeCommand(session: conversation.session))"
     }
 
     // MARK: Terminals
 
     /// Opens the conversation in `terminal`, or in Terminal when that one isn't installed or can't be started.
     /// Returns the terminal that took it, nil when none did.
+    /// - denied: told the bundle id of an app that macOS refused Apple Events to (Automation), whatever came of the conversation after.
     @discardableResult
-    static func open(_ conversation: RecentConversation, in terminal: ResumeTerminal, setup: Setup = .live, launcher: Launcher = .live) -> ResumeTerminal? {
+    static func open(_ conversation: RecentConversation, in terminal: ResumeTerminal, setup: Setup = .live, launcher: Launcher = .live,
+                     denied: ((String) -> Void)? = nil) -> ResumeTerminal? {
         var isDirectory: ObjCBool = false
         guard let line = line(conversation),
               FileManager.default.fileExists(atPath: conversation.cwd, isDirectory: &isDirectory), isDirectory.boolValue else { return nil }
@@ -136,8 +207,13 @@ enum Resume {
         for candidate in order where candidate == .terminal || setup.installed.contains(candidate) {
             let opened: Bool
             switch candidate {
-            case .ghostty: opened = openInGhostty(conversation.cwd, line, setup: setup, launcher: launcher)
+            case .ghostty: opened = openInGhostty(conversation.cwd, line, setup: setup, launcher: launcher, denied: denied)
+            case .iterm: opened = openInITerm(line, setup: setup, denied: denied)
+            case .wezterm: opened = openInWezTerm(conversation.cwd, line, setup: setup, launcher: launcher)
+            case .kitty: opened = openInKitty(conversation.cwd, line, setup: setup, launcher: launcher)
             case .cmux: opened = openInCmux(conversation.cwd, line, setup: setup, launcher: launcher)
+            case .orca: opened = openInOrca(conversation.cwd, line, setup: setup, launcher: launcher)
+            case .muxy: opened = setup.muxyResume(line, conversation.cwd, setup.shell)
             case .terminal: opened = openInTerminal(line, setup: setup, launcher: launcher)
             }
             if opened { return candidate }
@@ -147,23 +223,93 @@ enum Resume {
 
     /// A new window of a new Ghostty process, in the folder: argv, not a shell string. The new process doesn't bring
     /// back the windows Ghostty saved, which would open beside it as tabs.
-    static func ghosttyArguments(app: URL, cwd: String, line: String, shell: String) -> [String] {
-        ["-na", app.path, "--args", "--window-save-state=never", "--working-directory=\(cwd)", "-e", shell, "-lc", line]
+    static func ghosttyArguments(app: URL, cwd: String, script: String) -> [String] {
+        ["-na", app.path, "--args", "--window-save-state=never", "--working-directory=\(cwd)", "-e", script]
     }
 
-    static func cmuxArguments(cwd: String, line: String) -> [String] {
-        ["new-workspace", "--cwd", cwd, "--command", line, "--focus", "true"]
+    /// A tab in the WezTerm that is running; `--no-auto-start` so none is started for it.
+    static func weztermArguments(cwd: String, line: String, shell: String) -> [String] {
+        ["cli", "--no-auto-start", "spawn", "--cwd", cwd, "--", shell, "-lc", line]
     }
 
-    /// The script Terminal opens: it removes itself, then hands the line to the login shell as one `-lc` argument. It is
-    /// sh whatever the user's shell is, which needn't understand any of this (fish and nu don't).
+    /// A new WezTerm, when none runs: the app is opened by `open` as a process of its own, in the folder.
+    static func weztermStartArguments(app: URL, cwd: String, line: String, shell: String) -> [String] {
+        ["-na", app.path, "--args", "start", "--cwd", cwd, "--", shell, "-lc", line]
+    }
+
+    /// A tab in the kitty whose socket is given.
+    static func kittyArguments(socket: String, cwd: String, line: String, shell: String) -> [String] {
+        ["@", "--to", socket, "launch", "--type=tab", "--cwd=\(cwd)", shell, "-lc", line]
+    }
+
+    static func cmuxArguments(cwd: String, script: String) -> [String] {
+        ["new-workspace", "--cwd", cwd, "--command", script, "--focus", "true"]
+    }
+
+    /// The script a terminal runs: it removes itself, then hands the line to the login shell as one `-lc` argument. It is
+    /// sh whatever the user's shell is, which needn't understand any of this (fish and nu don't). Ghostty, iTerm2, cmux and
+    /// Terminal each read a command as text by rules of their own (Ghostty and iTerm2 split it, cmux types it into the user's
+    /// shell), so they are given only this script's path, which needs no quoting under any of them.
     static func terminalScript(line: String, shell: String) -> String {
         "#!/bin/sh\nrm -f -- \"$0\"\nrmdir -- \"$(dirname -- \"$0\")\" 2>/dev/null\nexec \(quote(shell)) -lc \(quote(line))\n"
     }
 
-    private static func openInGhostty(_ cwd: String, _ line: String, setup: Setup, launcher: Launcher) -> Bool {
-        guard let app = setup.ghostty else { return false }
-        return launcher.run(openTool, ghosttyArguments(app: app, cwd: cwd, line: line, shell: setup.shell)) != nil
+    /// A tab of the Ghostty that is running, by AppleScript; a window of a new process when none runs or the script is refused or fails.
+    /// By AppleScript, which Ghostty doesn't ask about: a command given with `-e` makes it ask whether to run it, every time. A Ghostty
+    /// that isn't running is started without its first window, so the conversation's window is the only one.
+    private static func openInGhostty(_ cwd: String, _ line: String, setup: Setup, launcher: Launcher, denied: ((String) -> Void)?) -> Bool {
+        guard let app = setup.ghostty, let script = writeScript(line, setup: setup) else { return false }
+        var running = setup.running.contains(TerminalScripts.ghosttyID)
+        if !running, launcher.run(openTool, ["-a", app.path, "--args", "--initial-window=false", "--window-save-state=never"]) != nil {
+            for _ in 0..<ghosttyStartAttempts where !running {
+                launcher.sleep(ghosttyStartPause)
+                running = setup.isRunning(TerminalScripts.ghosttyID)
+            }
+        }
+        if running {
+            let call = TerminalScripts.ghosttyTab(cwd: cwd, command: script.path)
+            switch setup.appleScript.run(call) {
+            case .value(let answer) where answer == call.expecting: return true
+            case .notAllowed: denied?(call.bundleID)
+            default: break
+            }
+        }
+        if launcher.run(openTool, ghosttyArguments(app: app, cwd: cwd, script: script.path)) != nil { return true }
+        discard(script)
+        return false
+    }
+
+    /// A tab of the front iTerm2 window, or a window of its own; iTerm2 is started if it isn't running.
+    private static func openInITerm(_ line: String, setup: Setup, denied: ((String) -> Void)?) -> Bool {
+        guard let script = writeScript(line, setup: setup) else { return false }
+        let call = TerminalScripts.itermTab(command: script.path)
+        switch setup.appleScript.run(call) {
+        case .value(let answer) where answer == call.expecting: return true
+        case .notAllowed: denied?(call.bundleID)
+        default: break
+        }
+        discard(script)
+        return false
+    }
+
+    /// A tab through the running WezTerm, which is brought forward; with none running, a new WezTerm.
+    private static func openInWezTerm(_ cwd: String, _ line: String, setup: Setup, launcher: Launcher) -> Bool {
+        if setup.running.contains(WezTerm.bundleID) {
+            guard let cli = setup.weztermCLI,
+                  launcher.run(cli, weztermArguments(cwd: cwd, line: line, shell: setup.shell)) != nil else { return false }
+            _ = launcher.run(openTool, ["-b", WezTerm.bundleID])
+            return true
+        }
+        guard let app = setup.wezterm else { return false }
+        return launcher.run(openTool, weztermStartArguments(app: app, cwd: cwd, line: line, shell: setup.shell)) != nil
+    }
+
+    /// A tab through kitty's remote control, which needs the socket of a running kitty.
+    private static func openInKitty(_ cwd: String, _ line: String, setup: Setup, launcher: Launcher) -> Bool {
+        guard let cli = setup.kittyCLI, let socket = AgentInput.kittySocket(setup.kittySocket),
+              launcher.run(cli, kittyArguments(socket: socket, cwd: cwd, line: line, shell: setup.shell)) != nil else { return false }
+        _ = launcher.run(openTool, ["-b", Kitty.bundleID])
+        return true
     }
 
     /// cmux must be running with its socket up; it is started if not, and given a few seconds. A running one that
@@ -179,23 +325,58 @@ enum Resume {
             }
             guard answered else { return false }
         }
-        return launcher.run(cli, cmuxArguments(cwd: cwd, line: line)) != nil
+        guard let script = writeScript(line, setup: setup) else { return false }
+        if launcher.run(cli, cmuxArguments(cwd: cwd, script: script.path)) != nil { return true }
+        discard(script)
+        return false
+    }
+
+    /// A focused tab of the worktree the folder is in or is, through the running Orca's tool, which opens tabs only in worktrees Orca
+    /// knows. The tab is given the plain path of a script, which its shell runs; Orca is brought forward after. Not started: with none
+    /// running or none with a window (it would run the script in a hidden process), or a folder in no worktree of Orca's, the next
+    /// terminal takes the conversation. A reply that doesn't say the tab is on screen counts as a failure.
+    private static func openInOrca(_ cwd: String, _ line: String, setup: Setup, launcher: Launcher) -> Bool {
+        guard setup.running.contains(Orca.bundleID), setup.orcaHasWindow, let cli = setup.orcaCLI,
+              let listing = launcher.run(cli, Orca.worktreeListArguments), let worktree = Orca.worktree(containing: cwd, in: listing),
+              let script = writeScript(line, setup: setup) else { return false }
+        if !(launcher.run(cli, Orca.createArguments(worktree: worktree, script: script.path)).map(Orca.isVisible(created:)) ?? false) {
+            discard(script)
+            return false
+        }
+        _ = launcher.run(openTool, ["-b", Orca.bundleID])
+        return true
     }
 
     private static func openInTerminal(_ line: String, setup: Setup, launcher: Launcher) -> Bool {
+        guard let script = writeScript(line, setup: setup) else { return false }
+        if launcher.run(openTool, ["-b", ResumeTerminal.terminal.bundleID, script.path]) != nil { return true }
+        discard(script)
+        return false
+    }
+
+    /// The script for `line` in a private folder of its own; nil when it can't be written or its path isn't plain.
+    static func writeScript(_ line: String, setup: Setup) -> URL? {
         let files = FileManager.default
         let folder = setup.scripts.appendingPathComponent("nunsseop-resume-\(UUID().uuidString)", isDirectory: true)
         let script = folder.appendingPathComponent("resume.command")
+        guard isPlainPath(script.path) else { return nil }
         do {
             try files.createDirectory(at: folder, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
             guard files.createFile(atPath: script.path, contents: Data(terminalScript(line: line, shell: setup.shell).utf8),
                                    attributes: [.posixPermissions: 0o700]) else { throw CocoaError(.fileWriteUnknown) }
         } catch {
             try? files.removeItem(at: folder)
-            return false
+            return nil
         }
-        if launcher.run(openTool, ["-b", ResumeTerminal.terminal.bundleID, script.path]) != nil { return true }
-        try? files.removeItem(at: folder)
-        return false
+        return script
+    }
+
+    /// Only ASCII letters, digits and `/._-`: the same text under every terminal's parser and every shell.
+    static func isPlainPath(_ path: String) -> Bool {
+        path.hasPrefix("/") && path.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || "/._-".contains($0)) }
+    }
+
+    private static func discard(_ script: URL) {
+        try? FileManager.default.removeItem(at: script.deletingLastPathComponent())
     }
 }

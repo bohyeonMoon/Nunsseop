@@ -47,7 +47,7 @@ final class AgentBoard: ObservableObject {
         var since: Date? = nil
         /// Waiting because its turn ended, as opposed to asking for input.
         var finished = false
-        /// `claude` or `codex` for the hooks, the agent's own name in a herdr pane.
+        /// The tool's `AgentKind` name for the hooks, the agent's own name in a herdr pane.
         var tool: String? = nil
         /// The bundle id of the terminal app it runs in.
         var app: String? = nil
@@ -60,12 +60,31 @@ final class AgentBoard: ObservableObject {
         var session: String? = nil
         /// From then on the agent is idle: a finished hand nobody looked at, a turn that sent nothing for too long.
         var idleFrom: Date? = nil
+        /// Where the terminal it runs in takes input from outside, when it has an API for that.
+        var input: AgentInput? = nil
+        /// The tool's process, which `input` is checked against: only a session whose process is in that terminal is typed into.
+        var pid: Int32? = nil
+        /// Whether the hook said it runs in tmux, zellij or screen: the terminal around it isn't where its text would go.
+        var inMultiplexer = false
+        /// How many background tasks (subagents, shell commands) still run after the turn's own end, which keeps the agent working: "Background · 3 tasks".
+        var background = 0
+        /// The agent's own name for the session, when its source keeps one (Paseo's title); it comes before the transcript's.
+        var title: String? = nil
+        /// The model the source says it runs; the transcript's, when it has one, is more exact.
+        var model: String? = nil
+        /// The program that runs it for the tool, named on its row (Paseo).
+        var host: String? = nil
+
+        /// Set by `effective(at:)`: asking for input when last told, so its dialog may be open still, however long ago. Going idle
+        /// by the clock doesn't close a dialog; only a later event does.
+        var promptMayBeOpen = false
 
         /// The agent as it is at `now`: idle once `idleFrom` has passed.
         func effective(at now: Date) -> Agent {
-            guard state != .idle, let idleFrom, idleFrom <= now else { return self }
             var agent = self
-            (agent.state, agent.finished, agent.since) = (.idle, false, idleFrom)
+            agent.promptMayBeOpen = state == .waiting && !finished
+            guard state != .idle, let idleFrom, idleFrom <= now else { return agent }
+            (agent.state, agent.finished, agent.since, agent.background) = (.idle, false, idleFrom, 0)
             return agent
         }
     }
@@ -96,8 +115,47 @@ final class AgentBoard: ObservableObject {
 
     /// Everything listed that hasn't expired, as it is at `now`.
     func entries(now: Date = .now) -> [Entry] {
-        bySource.flatMap { source, agents in agents.map { Entry(source: source, id: $0.key, agent: $0.value.effective(at: now)) } }
+        listed(at: now).map { Entry(source: $0.source, id: $0.id, agent: $0.agent.effective(at: now)) }
+    }
+
+    /// What every source lists that hasn't expired. A session Muxy lists that a hook also reports (the hook's `input` names the same
+    /// Muxy session) is listed once, as the hook has it: it knows more of the session, and the provider's own events keep it current.
+    /// A hook that predates the terminal variables names no terminal, so it can't be matched to a session: it takes the place of one
+    /// Muxy row of the same tool, since the hook of a tool that Muxy lists is more likely in Muxy than elsewhere. At most one each.
+    private func listed(at now: Date) -> [(source: String, id: String, agent: Agent)] {
+        let live = withoutHookRowsOfPaseo(at: now)
+        let hooked = Set(live.compactMap { entry -> String? in
+            if entry.source != MuxyActivityWatcher.source, case .muxy(let session)? = entry.agent.input { session } else { nil }
+        })
+        var unplaced = live.filter { $0.source.hasPrefix("hooks:") && $0.agent.input == nil && ($0.agent.app == nil || $0.agent.app == Muxy.bundleID) }
+            .sorted { ($0.source, $0.id) < ($1.source, $1.id) }
+        var hidden = hooked
+        for row in live.filter({ $0.source == MuxyActivityWatcher.source && !hooked.contains($0.id) }).sorted(by: { $0.id < $1.id }) {
+            guard let tool = row.agent.tool, let index = unplaced.firstIndex(where: { $0.agent.tool == tool }) else { continue }
+            unplaced.remove(at: index)
+            hidden.insert(row.id)
+        }
+        return hidden.isEmpty ? live : live.filter { !($0.source == MuxyActivityWatcher.source && hidden.contains($0.id)) }
+    }
+
+    /// The agents that haven't expired. A session Paseo runs may report through the tools' hooks as well (a Claude Code SDK session
+    /// loads the user's settings), and the hooks' row is dropped for Paseo's own, the one that can be sent to and answered. Except that
+    /// a hook row that works while Paseo's row doesn't is kept: the same session resumed in a terminal (`claude --resume` keeps the
+    /// id) is working there, and Paseo's idle row must not hide it.
+    private func withoutHookRowsOfPaseo(at now: Date) -> [(source: String, id: String, agent: Agent)] {
+        let all = bySource.flatMap { source, agents in agents.map { (source: source, id: $0.key, agent: $0.value) } }
             .filter { $0.agent.expiresAt.map { $0 > now } ?? true }
+        var claimed: [String: Bool] = [:]
+        for row in all where row.source == Paseo.source {
+            guard let session = row.agent.session?.lowercased() else { continue }
+            let agent = row.agent.effective(at: now)
+            claimed[session] = claimed[session] == true || agent.state == .working || (agent.state == .waiting && !agent.finished)
+        }
+        guard !claimed.isEmpty else { return all }
+        return all.filter { row in
+            guard row.source != Paseo.source, let session = row.agent.session?.lowercased(), let paseoActive = claimed[session] else { return true }
+            return !paseoActive && row.agent.effective(at: now).state == .working
+        }
     }
 
     /// Everything one source knows now; agents it no longer lists are gone.
@@ -114,7 +172,7 @@ final class AgentBoard: ObservableObject {
 
     /// Counts the agents that haven't expired, and wakes up when the next one expires or turns idle.
     func recount(now: Date = .now) {
-        let live = bySource.values.flatMap(\.values).filter { $0.expiresAt.map { $0 > now } ?? true }
+        let live = listed(at: now).map(\.agent)
         let new = Counts(live.map { $0.effective(at: now).state })
         if new != counts { counts = new }
         revision &+= 1
@@ -163,7 +221,8 @@ extension Herdr {
             agents[id] = AgentBoard.Agent(
                 state: state, expiresAt: listed ? pane.since.addingTimeInterval(AgentBoard.recentWindow) : nil,
                 since: pane.since, finished: done, tool: pane.agent, pane: id, socket: socket, cwd: pane.cwd,
-                session: pane.session, idleFrom: done ? pane.since.addingTimeInterval(doneWindow) : nil)
+                session: pane.session, idleFrom: done ? pane.since.addingTimeInterval(doneWindow) : nil,
+                input: socket.map { .herdr(pane: id, socket: $0) })
         }
         return agents
     }
@@ -186,16 +245,34 @@ extension Herdr {
 
 #if DEBUG
 extension AgentBoard {
-    /// Two Claude Code sessions working, one asking for input, one idle and a Codex session working.
+    /// Two Claude Code sessions working, one asking for input, one idle and a Codex session working. "a" and "c" are in (made-up) Muxy
+    /// sessions the demo's fakes vouch for (see `demoTargets`), so the Message button can be seen working ("a") and refused ("c": a
+    /// prompt is open); the others have no terminal, so it refuses with its other reasons.
     static func demoAgents(now: Date = .now) -> [String: Agent] {
         [
-            "a": Agent(state: .working, since: now.addingTimeInterval(-190), tool: "claude", cwd: "/Users/demo/Projects/nunsseop"),
+            "a": Agent(state: .working, since: now.addingTimeInterval(-190), tool: "claude", cwd: "/Users/demo/Projects/nunsseop", input: .muxy("demo-a"), pid: 9_101),
             "b": Agent(state: .working, since: now.addingTimeInterval(-45), tool: "claude", cwd: "/Users/demo/Projects/site"),
-            "c": Agent(state: .waiting, since: now.addingTimeInterval(-720), tool: "claude", cwd: "/Users/demo/Projects/api-server"),
+            "c": Agent(state: .waiting, since: now.addingTimeInterval(-720), tool: "claude", cwd: "/Users/demo/Projects/api-server", input: .muxy("demo-c"), pid: 9_201),
             "d": Agent(state: .working, since: now.addingTimeInterval(-3_900), tool: "codex", cwd: "/Users/demo/Projects/ios-app"),
             "e": Agent(state: .idle, since: now.addingTimeInterval(-2_400), tool: "claude", cwd: "/Users/demo/Projects/docs"),
         ]
     }
+
+    /// The demo's process tree: each of the two Muxy sessions has the shell and Muxy's server above it.
+    static let demoTargets = AgentTargetCheck(
+        processes: ProcessTable { pid in
+            switch pid {
+            case 9_101, 9_201: ProcessRecord(parent: pid + 1, executable: "/usr/local/bin/claude", hasTTY: true)
+            case 9_102, 9_202: ProcessRecord(parent: pid + 1, executable: "/bin/zsh", hasTTY: true)
+            case 9_103, 9_203: ProcessRecord(parent: pid + 1, executable: "/Applications/Muxy.app/Contents/MacOS/muxy-server", hasTTY: false)
+            case 9_104, 9_204: ProcessRecord(parent: 1, executable: "/Applications/Muxy.app/Contents/MacOS/muxy-app", hasTTY: false)
+            default: nil
+            }
+        },
+        muxyList: { _ in "demo-a\ta\tLive\ttrue\t/tmp\ndemo-c\tc\tLive\ttrue\t/tmp\n" })
+    /// The demo never types into a real terminal.
+    static let demoSender = AgentSender { _ in .sent }
+    static let demoCLIs = TerminalCLIs(muxy: URL(fileURLWithPath: "/demo/muxy"))
 
     /// What their transcripts would say, by `Entry.key`.
     static let demoTranscripts: [String: AgentTranscript] = [

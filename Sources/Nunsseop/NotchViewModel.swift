@@ -106,13 +106,18 @@ final class NotchViewModel: ObservableObject {
     let capsLock = CapsLockWatcher()
     let notifyServer = NotifyServer()
     let approvals = PermissionBoard()
-    let muxy = MuxyWatcher()
+    let onboarding = OnboardingTour()
+    let muxy: MuxyActivityWatcher
     let notices = NoticeLog()
     let cmux = CmuxWatcher()
     let herdr = HerdrSessions()
     let agents = AgentBoard()
     let agentList: AgentsTabModel
     let agentHooks: ToolHooks
+    /// gjc has no hook to send events, so its state files are polled.
+    let gjcWatcher: GjcWatcher
+    /// Paseo's agents for the count and the tab, and its permissions and finished agents from its local daemon.
+    let paseoWatcher: PaseoWatcher
     let tmux = TmuxWatcher()
     let stats = SystemStats()
     let launcher = AppLauncher()
@@ -170,9 +175,20 @@ final class NotchViewModel: ObservableObject {
         self.hud = HUDCenter(settings: settings)
         let isOn = { settings.idleLeft == .agents || settings.idleRight == .agents || settings.agentsTab }
         self.agentList = AgentsTabModel(board: agents)
-        self.agentHooks = ToolHooks(claude: AgentHooks(board: agents, isOn: isOn, watchesHerdr: { settings.watchesHerdr }),
-                                    codex: AgentHooks(board: agents, agent: .codex, isOn: isOn,
-                                                      watchesHerdr: { settings.watchesHerdr }))
+        self.agentHooks = ToolHooks(board: agents, isOn: isOn, watchesHerdr: { settings.watchesHerdr })
+        self.gjcWatcher = GjcWatcher(board: agents, isOn: isOn)
+        self.muxy = MuxyActivityWatcher(board: agents)
+        muxy.wantsBoard = isOn
+        self.paseoWatcher = PaseoWatcher(board: agents, permissions: approvals, isOn: isOn, wantsApprovals: { settings.permissionPrompts },
+                                         wantsNotices: { settings.paseoNotifications })
+        // Looks only while the count or the tab is showing (every poll asks `isOn`).
+        gjcWatcher.start()
+        // The agents likewise; the connection to Paseo's daemon runs while cards or notices are wanted, and only if Paseo has been used.
+        paseoWatcher.start()
+        // Looks only while Muxy runs and a notice or the count wants it (every poll asks).
+        muxy.start()
+        // The bridge extension the user loads in Muxy is kept current beside Nunsseop's other files.
+        if Muxy.isInstalled { DispatchQueue.global(qos: .utility).async { MuxyBridge.installBundled() } }
         Publishers.CombineLatest4(nowPlaying.$track.map { $0?.isPlaying == true }, timer.$anchor.map { $0 != nil },
                                   settings.$collapsedMusic, settings.$collapsedTimer)
             .map { music, timer, showMusic, showTimer in (music && showMusic) || (timer && showTimer) }
@@ -237,13 +253,17 @@ final class NotchViewModel: ObservableObject {
             self?.agents.replace(source: "herdr:\(socket)", with: Herdr.boardAgents(panes, socket: socket))
         }
         // Claude Code and Codex sessions anywhere, through their hooks; kept only while the count or the tab is shown.
-        notifyServer.onAgent = { [agentHooks] in agentHooks.apply($0) }
+        notifyServer.onAgent = { [agentHooks] in agentHooks.receive($0) }
         // Claude Code's permission prompts wait here until answered, or until their hook is gone.
         PermissionLink.connect(board: approvals, gate: notifyServer.permissions, isOn: settings.$permissionPrompts.eraseToAnyPublisher(),
-                               enabled: { AppSettings.load("permissionPrompts", default: true) })
+                               enabled: { AppSettings.load("permissionPrompts", default: true) },
+                               other: { [paseoWatcher] in paseoWatcher.approvals.answer($0, $1) })
             .forEach { $0.store(in: &cancellables) }
         approvals.$prompts
             .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
+        onboarding.objectWillChange
+            .sink { [weak self] in self?.objectWillChange.send() }
             .store(in: &cancellables)
         approvals.$drafts
             .sink { [weak self] _ in self?.objectWillChange.send() }
@@ -252,7 +272,11 @@ final class NotchViewModel: ObservableObject {
             .map { $0 == .agents || $1 == .agents || $2 }
             .removeDuplicates()
             .filter { !$0 }
-            .sink { [weak self] _ in self?.agentHooks.reset() }
+            .sink { [weak self] _ in
+                self?.agentHooks.reset()
+                self?.gjcWatcher.reset()
+                self?.paseoWatcher.reset()
+            }
             .store(in: &cancellables)
         agents.$counts
             .removeDuplicates()
@@ -338,7 +362,13 @@ final class NotchViewModel: ObservableObject {
         var width = settings.expandedWidth
         if settings.widenForTabs { width = Self.widened(width, fitting: widthFittingTabs, limit: geometry.maxExpandedWidth) }
         // A permission prompt shows its command in full, so it takes all the height the panel has.
-        let height = approvals.current == nil ? settings.expandedHeight : max(settings.expandedHeight, AppSettings.expandedHeightRange.upperBound)
+        var height = approvals.current == nil ? settings.expandedHeight : max(settings.expandedHeight, AppSettings.expandedHeightRange.upperBound)
+        // The tour is laid out for this much room.
+        if onboarding.isActive {
+            let frame = OnboardingTour.minimumFrame(notchHeight: geometry.collapsedSize.height)
+            width = max(width, frame.width)
+            height = max(height, frame.height)
+        }
         return CGSize(width: width, height: height)
     }
 

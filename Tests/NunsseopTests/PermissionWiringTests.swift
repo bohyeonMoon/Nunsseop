@@ -44,7 +44,7 @@ struct PermissionWiringTests {
 
         rig.setting.send(false)
         #expect(rig.board.prompts.isEmpty)
-        for client in clients { #expect(await client.closes(within: 10), "the hook is left waiting") }
+        for client in clients { #expect(await client.closes(within: Int(eventDeadline)), "the hook is left waiting") }
     }
 
     @Test func aHookThatDisconnectsTakesItsCardOffTheBoard() async throws {

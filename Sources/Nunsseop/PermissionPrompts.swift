@@ -46,7 +46,18 @@ enum PermissionWire {
 
     /// What Claude Code reads from the hook's stdout. `always` echoes the one suggestion the prompt offered. `questionInput` is
     /// the `tool_input` of a question: it takes `answered` and nothing else, and an approval takes everything but `answered`.
-    static func decision(_ answer: PermissionAnswer, suggestion: [String: Any]?, questionInput: [String: Any]? = nil) -> Data? {
+    static func decision(_ answer: PermissionAnswer, suggestion: [String: Any]?, questionInput: [String: Any]? = nil,
+                         openCode: Bool = false) -> Data? {
+        // OpenCode's plugin reads only the behavior; "Always allow" isn't offered for it.
+        if openCode {
+            let behavior: String
+            switch answer {
+            case .allow: behavior = "allow"
+            case .deny: behavior = "deny"
+            case .always, .answered, .terminal: return nil
+            }
+            return try? JSONSerialization.data(withJSONObject: ["behavior": behavior], options: [.sortedKeys])
+        }
         if let questionInput {
             guard case .answered(let picked) = answer else { return nil }
             return questionDecision(picked, input: questionInput)
@@ -731,6 +742,9 @@ struct PermissionPrompt: Identifiable, Equatable {
     /// The call is Codex's, not Claude Code's: the card says so and offers "Answer in terminal", since Codex shows its own prompt
     /// only once the hook lets go.
     let isCodex: Bool
+    /// The tool the card names before the title when the call isn't Claude Code's ("Codex", "OpenCode"); such a card offers
+    /// "Answer in terminal" in place of "Always allow".
+    let tag: String?
 
     struct Flag: Equatable {
         let text: String
@@ -739,7 +753,7 @@ struct PermissionPrompt: Identifiable, Equatable {
     }
 
     init(id: UUID, title: String, symbol: String, detail: String, flags: [Flag] = [], secondary: String = "", folder: String,
-         grant: Grant?, codex: Bool = false) {
+         grant: Grant?, codex: Bool = false, tag: String? = nil) {
         self.id = id
         self.title = title
         self.symbol = symbol
@@ -750,7 +764,8 @@ struct PermissionPrompt: Identifiable, Equatable {
         self.grant = grant
         asking = nil
         isCodex = codex
-        toolLine = PermissionLayout.titleFits(title, folder: folder, codex: codex) ? "" : "tool: \(title)"
+        self.tag = tag ?? (codex ? PermissionLayout.codexTag : nil)
+        toolLine = PermissionLayout.titleFits(title, folder: folder, tag: self.tag) ? "" : "tool: \(title)"
         let text = PermissionText.isolated(Self.scrollText(toolLine: toolLine, flags: flags, detail: detail, secondary: secondary))
         card = PermissionLayout.measure(isolatedText: text, grant: grant, place: .card)
         panel = PermissionLayout.measure(isolatedText: text, grant: grant, place: .panel)
@@ -771,6 +786,7 @@ struct PermissionPrompt: Identifiable, Equatable {
         panel = card
         self.asking = asking
         isCodex = false
+        tag = nil
     }
 
     /// The scrolling text before its lines are isolated: the tool's name if needed, flags, detail and the rest, a line break between.
@@ -820,20 +836,24 @@ struct PermissionPrompt: Identifiable, Equatable {
         let suggestion: [String: Any]?
         /// The `tool_input` of a question, which the answer is built from; nil for an approval.
         var questionInput: [String: Any]?
+        /// The call is OpenCode's, whose plugin reads a smaller answer (see `PermissionWire.decision`).
+        var openCode = false
     }
 
     /// Plan approvals are answered in the terminal, and so is anything unreadable. A question is no approval: it comes as a
     /// PreToolUse (see `parseQuestion`), and as a PermissionRequest it stays in the terminal too.
     private static let terminalOnly: Set<String> = ["AskUserQuestion", "ExitPlanMode"]
 
-    static func parse(_ body: Data) -> Parsed? {
+    /// - tag: the program the call comes through, named on the card as Codex and OpenCode are; such a card has "Answer in terminal" or its
+    ///   like in place of "Always allow".
+    static func parse(_ body: Data, tag: String? = nil) -> Parsed? {
         guard let json = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else { return nil }
         if json["hook_event_name"] as? String == "PreToolUse" { return parseQuestion(json) }
         guard json["hook_event_name"] as? String == "PermissionRequest",
               let tool = json["tool_name"] as? String, !tool.isEmpty, !terminalOnly.contains(tool) else { return nil }
         let input = json["tool_input"] as? [String: Any] ?? [:]
-        let codex = isCodex(json)
-        let described = describe(tool: tool, input: input, codex: codex)
+        let codex = isCodex(json), openCode = isOpenCode(json)
+        let described = openCode ? describeOpenCode(permission: tool, input: input) : describe(tool: tool, input: input, codex: codex)
         let detail = PermissionText.escape(described.detail, multiline: true)
         let note = PermissionText.escape(described.note, multiline: true)
         let rest = PermissionText.escape(described.secondary, multiline: true)
@@ -849,12 +869,34 @@ struct PermissionPrompt: Identifiable, Equatable {
         }
         let shown = detail.unicodeScalars.count + secondary.unicodeScalars.count + flags.reduce(0) { $0 + $1.text.unicodeScalars.count }
         guard shown <= detailLimit, shownTitle.unicodeScalars.count <= titleLimit else { return nil }
-        // Codex takes neither updated permissions nor input from a hook, so it is never offered "Always allow".
-        let suggestion = codex ? nil : addRulesSuggestion(in: json["permission_suggestions"])
+        // Codex takes neither updated permissions nor input from a hook, and OpenCode's plugin gets only allow or deny, so neither is
+        // ever offered "Always allow".
+        let suggestion = codex || openCode ? nil : addRulesSuggestion(in: json["permission_suggestions"])
         let grant = suggestion.flatMap(grant(from:))
         let prompt = PermissionPrompt(id: UUID(), title: shownTitle, symbol: described.symbol, detail: detail, flags: flags,
-                                      secondary: secondary, folder: folder, grant: grant, codex: codex)
-        return Parsed(prompt: prompt, suggestion: grant == nil ? nil : suggestion)
+                                      secondary: secondary, folder: folder, grant: grant, codex: codex, tag: tag ?? (openCode ? "OpenCode" : nil))
+        return Parsed(prompt: prompt, suggestion: grant == nil ? nil : suggestion, openCode: openCode)
+    }
+
+    /// Whether the body is OpenCode's plugin's (see `OpenCodePlugin`): it says so in `agent`, which no other tool's hook does.
+    static func isOpenCode(_ json: [String: Any]) -> Bool { json["agent"] as? String == "opencode" }
+
+    /// An OpenCode permission request: `tool_name` is its `permission` (`bash`, `edit`, `webfetch`, `external_directory`...) and
+    /// `tool_input` holds the `patterns` it asks about, the `title` older versions give, and its `metadata` (an edit's `filepath`
+    /// and `diff`, a fetch's `url`). The patterns are the detail; everything else is listed after them, as for any other tool.
+    private static func describeOpenCode(permission: String, input: [String: Any]) -> Described {
+        let patterns = (input["patterns"] as? [Any])?.compactMap { $0 as? String } ?? []
+        var rest = input["metadata"] as? [String: Any] ?? [:]
+        if let title = input["title"] as? String, !title.isEmpty { rest["title"] = title }
+        let titles: [String: (String, String)] = [
+            "bash": (String(localized: "Run a command"), "terminal"), "edit": (String(localized: "Edit a file"), "pencil"),
+            "read": (String(localized: "Read a file"), "doc.text"), "webfetch": (String(localized: "Fetch a web page"), "globe"),
+            "websearch": (String(localized: "Search the web"), "magnifyingglass"),
+            "external_directory": (String(localized: "Use files outside the project"), "folder")]
+        var described = Described(title: titles[permission]?.0 ?? permission, symbol: titles[permission]?.1 ?? "puzzlepiece.extension",
+                                  detail: patterns.joined(separator: "\n"), namesTool: titles[permission] == nil)
+        described.secondary = listing(rest).joined(separator: "\n")
+        return described
     }
 
     /// Whether the hook input is Codex's: it names the turn, which Claude Code's never does.

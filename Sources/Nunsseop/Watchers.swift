@@ -99,14 +99,22 @@ enum AgentAction: Equatable {
     case opened
     /// The session is over.
     case remove
+    /// A subagent of the session started (its `agent_id`): background work that outlives the turn's `Stop`.
+    case subagentStarted(String)
+    /// A subagent of the session ended.
+    case subagentStopped(String)
 }
 
-/// The tools whose hooks report sessions for the agents count. Each keeps its sessions apart from the others'.
-enum AgentKind: String {
+/// The tools whose sessions the agents count and the Agents tab list. Each keeps its sessions apart from the others'. The raw
+/// value is what `X-Agent` carries; Claude Code's own hook sends none.
+enum AgentKind: String, CaseIterable {
     case claude, codex
+    /// pi and the forks that share its session files and extension API (see `PiSessions`), and gajae-code, which has no extension.
+    case pi, omp, gjc, omo
+    case opencode
 }
 
-/// One hook call from a Claude Code or Codex session, reduced to what the count needs.
+/// One hook call (or extension or plugin event) from a session of one of the tools, reduced to what the count needs.
 struct AgentEvent: Equatable {
     let session: String
     let action: AgentAction
@@ -117,11 +125,19 @@ struct AgentEvent: Equatable {
     var agent = AgentKind.claude
     /// The tool's own process, to tell when it is gone.
     var pid: Int32?
+    /// The input API of the terminal it runs in, when the hook says one.
+    var input: AgentInput?
+    /// Whether it runs inside tmux, zellij or screen (`X-Mux`), which no input API reaches.
+    var inMultiplexer = false
+    /// How many background tasks (subagents and shell commands) a Claude Code `Stop` says still run (`X-Background-Tasks`): 0 is
+    /// "none", nil is "not said".
+    var backgroundTasks: Int?
 }
 
-/// Claude Code's and Codex's hook events as the agents count reads them.
+/// The tools' hook events as the agents count reads them. The extension of the pi family and the OpenCode plugin send the same names.
 enum AgentHook {
-    /// What an event means; nil for the ones that say nothing about work (`auth_success`, `SubagentStop`).
+    /// What an event means; nil for the ones that say nothing about work (`auth_success`). `SubagentStart` and `SubagentStop` are
+    /// told by `event(headers:)`, which has the subagent's id.
     /// `PermissionRequest` and `Interrupt` are Codex's.
     static func action(event: String, type: String?) -> AgentAction? {
         switch event {
@@ -143,30 +159,92 @@ enum AgentHook {
     }
 
     /// The event a request's headers describe. The hook already trims its values; anything outside the
-    /// whitelist is refused here as well. A call from a subagent (`X-Subagent`) is the main session's business.
+    /// whitelist is refused here as well. A call from a subagent (`X-Subagent`) is the main session's business, except
+    /// `SubagentStart` and `SubagentStop`, which name the session they belong to and the subagent's id; they carry nothing else.
     /// A background session (`X-Background`, from `claude --bg`) runs in Claude Code's daemon, so the app and the herdr
     /// pane it seems to be in are only the daemon's, inherited from wherever it was first started, and its process may
     /// be one the daemon shares with other sessions.
-    static func event(headers: [String: String]) -> AgentEvent? {
+    static func event(headers: [String: String], processes: ProcessTable = .live) -> AgentEvent? {
         let word = { (name: String) -> String? in
             guard let value = headers[name], !value.isEmpty, value.count <= 64,
                   value.unicodeScalars.allSatisfy(CharacterSet.agentIDCharacters.contains) else { return nil }
             return value
         }
-        // Claude Code's hook sends no X-Agent; any other name than Codex's is refused, not taken for Claude Code.
+        // Claude Code's hook sends no X-Agent; a name that isn't a tool's is refused, not taken for Claude Code.
         let named = headers["x-agent"] ?? ""
         guard let agent = named.isEmpty ? AgentKind.claude : AgentKind(rawValue: named),
-              headers["x-subagent"]?.isEmpty ?? true,
-              let session = word("x-session"), let name = word("x-event"),
-              let action = action(event: name, type: word("x-type")) else { return nil }
+              let session = word("x-session"), let name = word("x-event") else { return nil }
+        if headers["x-subagent"]?.isEmpty == false {
+            guard let subagent = word("x-subagent") else { return nil }
+            let action: AgentAction
+            switch name {
+            case "SubagentStart": action = .subagentStarted(subagent)
+            case "SubagentStop": action = .subagentStopped(subagent)
+            default: return nil
+            }
+            return AgentEvent(session: session, action: action, inHerdr: headers["x-herdr"]?.isEmpty == false, agent: agent)
+        }
+        guard let action = action(event: name, type: word("x-type")) else { return nil }
         let background = headers["x-background"]?.isEmpty == false
         let app = background ? nil : headers["x-app"].flatMap { value in
             !value.isEmpty && value.count <= 80 && value.unicodeScalars.allSatisfy(CharacterSet.bundleIDCharacters.contains)
                 ? value : nil
         }
-        return AgentEvent(session: session, action: action, app: app,
-                          inHerdr: !background && headers["x-herdr"]?.isEmpty == false, agent: agent,
-                          pid: background ? nil : pid(headers["x-pid"]))
+        let inHerdr = !background && headers["x-herdr"]?.isEmpty == false
+        let inMultiplexer = headers["x-mux"]?.isEmpty == false
+        let pid = background ? nil : pid(headers["x-pid"])
+        let target = background || inHerdr || inMultiplexer ? nil : input(
+            muxy: headers["x-muxy"], cmux: headers["x-cmux"], wezterm: headers["x-wezterm"], weztermSocket: headers["x-wezterm-socket"],
+            kitty: headers["x-kitty"], kittySocket: headers["x-kitty-socket"], orca: headers["x-orca"], iterm: headers["x-iterm"], app: app,
+            tty: { pid.flatMap { processes.lookup($0)?.tty } },
+            hosted: { AgentTargetCheck(processes: processes).hosted($0, pid: pid) })
+        return AgentEvent(session: session, action: action, app: app, inHerdr: inHerdr, agent: agent, pid: pid, input: target,
+                          inMultiplexer: inMultiplexer, backgroundTasks: backgroundTasks(headers["x-background-tasks"]))
+    }
+
+    /// A task count from `X-Background-Tasks`: ASCII digits only, 0 to 999; anything else (empty, signs, spaces, text) says nothing.
+    static func backgroundTasks(_ value: String?) -> Int? {
+        guard let value, (1...3).contains(value.utf8.count), value.utf8.allSatisfy({ (UInt8(ascii: "0")...UInt8(ascii: "9")).contains($0) }) else { return nil }
+        return Int(value)
+    }
+
+    /// Where text for the session can go. Muxy before cmux: a Muxy session started from a cmux terminal inherits its variables
+    /// too; they come before WezTerm, kitty, Orca, iTerm2 and Terminal for the same reason. Of those the first whose terminal the session's
+    /// process tree is really in (`hosted`) is taken, so a kitty started from a WezTerm shell, which has both terminals' variables,
+    /// is told from the one it runs in; when none is, the first is kept and the check of the process tree (`AgentTargetCheck`)
+    /// refuses it later. Terminal.app and iTerm2 export nothing a hook could use as an address, so they are told by the app
+    /// (`X-App`) and addressed by the device of the session's process; iTerm2 also needs its session id.
+    /// Not for a session in a herdr pane, tmux, zellij or screen, or a background one: the variables are those of the
+    /// terminal around the multiplexer, or of the daemon, and text typed there reaches whichever pane is active, not the session.
+    static func input(muxy: String?, cmux: String?, wezterm: String? = nil, weztermSocket: String? = nil, kitty: String? = nil,
+                      kittySocket: String? = nil, orca: String? = nil, iterm: String? = nil, app: String? = nil, tty: () -> String? = { nil },
+                      hosted: (AgentInput) -> Bool = { _ in true }) -> AgentInput? {
+        if let session = AgentInput.muxySession(muxy) { return .muxy(session) }
+        if let surface = AgentInput.cmuxSurface(cmux) { return .cmux(surface) }
+        var candidates: [AgentInput] = []
+        if let pane = AgentInput.numericID(wezterm), let socket = AgentInput.weztermSocket(weztermSocket) { candidates.append(.wezterm(pane: pane, socket: socket)) }
+        if let window = AgentInput.numericID(kitty), let socket = AgentInput.kittySocket(kittySocket) { candidates.append(.kitty(window: window, socket: socket)) }
+        if let pane = AgentInput.orcaPane(orca) { candidates.append(.orca(paneKey: pane)) }
+        if app == TerminalScripts.itermID, AgentInput.itermSession(iterm) != nil, let device = AgentInput.ttyDevice(tty()) { candidates.append(.iterm(tty: device)) }
+        if app == TerminalScripts.terminalID, let device = AgentInput.ttyDevice(tty()) { candidates.append(.terminalApp(tty: device)) }
+        return candidates.first(where: hosted) ?? candidates.first
+    }
+
+    /// The target for a session whose hook named none, from the variables of its own process (see `ProcessEnvironment`): the same
+    /// parsers, priority and `hosted` check as the hook's headers. A herdr pane, tmux, zellij or screen means none, as `X-Herdr` and
+    /// `X-Mux` do.
+    static func input(environment: [String: String], app: String?, tty: () -> String? = { nil },
+                      hosted: (AgentInput) -> Bool = { _ in true }) -> AgentInput? {
+        guard !inMultiplexer(environment: environment), environment["HERDR_PANE_ID"]?.isEmpty != false else { return nil }
+        return input(muxy: environment["MUXY_SESSION_ID"], cmux: environment["CMUX_SURFACE_ID"],
+                     wezterm: environment["WEZTERM_PANE"], weztermSocket: environment["WEZTERM_UNIX_SOCKET"],
+                     kitty: environment["KITTY_WINDOW_ID"], kittySocket: environment["KITTY_LISTEN_ON"], orca: environment["ORCA_PANE_KEY"],
+                     iterm: environment["ITERM_SESSION_ID"], app: app, tty: tty, hosted: hosted)
+    }
+
+    /// Whether a process's own variables say it runs in tmux, zellij or screen, as `X-Mux` does.
+    static func inMultiplexer(environment: [String: String]) -> Bool {
+        ["TMUX", "ZELLIJ", "STY"].contains { environment[$0]?.isEmpty == false }
     }
 
     /// A process id from `X-Pid`: ASCII digits only, up to 10 of them, past 1 (init) and no more than a `pid_t` holds.
@@ -184,8 +262,8 @@ enum AgentHook {
 /// notify token is in no argument list, which `ps` would show to every user. It does go to whatever listens on the port,
 /// so a stranger who binds 47750 while Nunsseop is off can learn it and fake notices, and nothing more: it authenticates
 /// `/notify` and `/agent` only. Prompts are answered under the permission key (permission-key), which is never sent.
-/// `POST /agent` takes Claude Code's and Codex's session events for the agents count, as headers only (see `agentHookCommand`).
-/// `POST /permission` holds a Claude Code permission prompt until it is answered in the notch (see `PermissionGate`).
+/// `POST /agent` takes the tools' session events for the agents count, as headers only (see `agentHookCommand`, `PiExtension`, `OpenCodePlugin`).
+/// `POST /permission` holds a permission prompt (Claude Code's, Codex's or OpenCode's) until it is answered in the notch (see `PermissionGate`).
 final class NotifyServer: @unchecked Sendable {
     static let port: UInt16 = 47750
     /// A notification a local tool sent, with where it came from when the tool said so.
@@ -237,9 +315,16 @@ final class NotifyServer: @unchecked Sendable {
 
     /// Claude Code's hook for the agents count, the same for every event. Claude Code passes the event as JSON on
     /// stdin; only the ids and names below leave it, as headers (no prompt, reply, folder or transcript), trimmed to
-    /// safe characters so a stray newline can't break one. `$PPID` is the `claude` process itself, whose end tells that
-    /// a session is gone. Nothing may reach stdout, which `UserPromptSubmit` and `SessionStart` add to Claude's context,
-    /// and a closed or stuck Nunsseop costs a session at most a second.
+    /// safe characters so a stray newline can't break one. `$PPID` is the `claude` process itself (the same is assumed for
+    /// Codex, whose hook runs under it the same way; not checkable without running Codex), whose end tells that a session is
+    /// gone and whose terminal `AgentTargetCheck` looks up. `X-Muxy`, `X-Cmux`, `X-Wezterm` (with `X-Wezterm-Socket`), `X-Kitty` (with `X-Kitty-Socket`),
+    /// `X-Orca` (the pane key Orca puts in `ORCA_PANE_KEY`) and `X-Iterm` carry the ids of the terminal it runs in (empty when it isn't in one), which `AgentHook.event` checks again before they say where to type; `X-Mux` says it runs
+    /// inside tmux, zellij or screen.
+    /// `X-Background-Tasks` is the number of entries in the `background_tasks` array of Claude Code's `Stop` (`plutil` prints an
+    /// array's count; the key is missing from other events, which gives an empty header): the subagents and shell commands still
+    /// running when the turn ended. Codex's command is pinned and doesn't send it.
+    /// Nothing may reach stdout, which `UserPromptSubmit` and `SessionStart` add to Claude's context, and a closed or stuck
+    /// Nunsseop costs a session at most a second.
     static var agentHookCommand: String { agentHookCommand(for: .claude) }
 
     /// The same hook for Codex, which passes the same fields and adds `X-Agent` so its sessions stay apart from
@@ -250,8 +335,13 @@ final class NotifyServer: @unchecked Sendable {
             + authHeaderOption + " "
             + "-H \"X-Session: $(k session_id)\" -H \"X-Event: $(k hook_event_name)\" -H \"X-Type: $(k notification_type)\" "
             + "-H \"X-Subagent: $(k agent_id)\" -H \"X-App: $__CFBundleIdentifier\" -H \"X-Herdr: ${HERDR_PANE_ID:+1}\" "
+            + "-H \"X-Muxy: ${MUXY_SESSION_ID}\" -H \"X-Cmux: ${CMUX_SURFACE_ID}\" "
+            + "-H \"X-Mux: ${TMUX:+1}${ZELLIJ:+1}${STY:+1}\" "
+            + "-H \"X-Wezterm: ${WEZTERM_PANE}\" -H \"X-Wezterm-Socket: ${WEZTERM_UNIX_SOCKET}\" -H \"X-Kitty: ${KITTY_WINDOW_ID}\" -H \"X-Kitty-Socket: ${KITTY_LISTEN_ON}\" "
+            + "-H \"X-Iterm: ${ITERM_SESSION_ID}\" -H \"X-Orca: ${ORCA_PANE_KEY}\" "
             + "-H \"X-Background: ${CLAUDE_JOB_DIR:+1}\" "
-            + (agent == .claude ? "-H \"X-Pid: $PPID\" " : "-H 'X-Agent: \(agent.rawValue)' ")
+            + "-H \"X-Pid: $PPID\" "
+            + (agent == .claude ? "-H \"X-Background-Tasks: $(k background_tasks)\" " : "-H 'X-Agent: \(agent.rawValue)' ")
             + ">/dev/null 2>&1 || true"
     }
 

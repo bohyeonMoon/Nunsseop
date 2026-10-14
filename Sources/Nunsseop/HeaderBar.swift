@@ -126,6 +126,7 @@ private struct TabStrip: View {
     let overflowing: Bool
     let visibleCount: Int
     @State private var leading: NotchTab?
+    @State private var dragHover = TabDragHover()
 
     private var leadingIndex: Int { leading.flatMap { tabs.firstIndex(of: $0) } ?? 0 }
     private var canGoBack: Bool { overflowing && leadingIndex > 0 }
@@ -139,6 +140,7 @@ private struct TabStrip: View {
                               badge: tab == .shelf ? shelf.items.count : tab == .notices ? model.notices.unseen : 0) { model.tab = tab }
                         .help(tab.title)
                         .id(tab)
+                        .onDrop(of: tab == .agents ? [.fileURL] : [], delegate: TabDragHoverDelegate(hover: dragHover) { model.tab = tab })
                 }
             }
             .scrollTargetLayout()

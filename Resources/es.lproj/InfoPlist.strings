@@ -1,4 +1,4 @@
-"NSAppleEventsUsageDescription" = "Muestra lo que reproducen Music, Spotify y tus navegadores, y controla la reproducción.";
+"NSAppleEventsUsageDescription" = "Muestra lo que reproducen Music, Spotify y tus navegadores, y controla la reproducción. También escribe tus mensajes en sesiones de agentes de Terminal, iTerm2 y Ghostty y abre conversaciones en pestañas nuevas de iTerm2 y Ghostty.";
 "NSCalendarsFullAccessUsageDescription" = "Muestra los eventos de hoy y de esta semana en la pestaña Inicio del notch.";
 "NSRemindersFullAccessUsageDescription" = "Muestra los recordatorios de hoy bajo el calendario y permite completarlos.";
 "NSCameraUsageDescription" = "Muestra tu cámara en la pestaña Espejo del notch. No se graba ni se envía nada.";

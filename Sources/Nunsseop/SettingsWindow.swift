@@ -7,6 +7,14 @@ final class SettingsWindowController {
     static let shared = SettingsWindowController()
 
     private var window: NSWindow?
+    /// Set by the notch, which owns the tour.
+    var onReplayTour: (() -> Void)?
+
+    /// Closes Settings and starts the tour again from its first step.
+    func replayTour() {
+        window?.close()
+        onReplayTour?()
+    }
 
     func show() {
         if window == nil {
@@ -72,6 +80,7 @@ private struct GeneralPane: View {
                 if let error = launchAtLogin.lastError {
                     Text(error).font(.caption).foregroundStyle(.red)
                 }
+                Button(OnboardingText.showAgain) { SettingsWindowController.shared.replayTour() }
             }
             Section("Updates") {
                 Toggle("Check for updates automatically", isOn: $settings.checkForUpdates)
@@ -332,6 +341,8 @@ private struct AlertsPane: View {
     @State private var connected: Set<NotifyIntegration> = []
     @State private var failed: URL?
     @State private var terminals = ResumeTerminal.installed
+    @State private var muxyBridge = MuxyBridge.status()
+    @State private var paseo = PaseoStatus.current()
 
     var body: some View {
         Form {
@@ -382,6 +393,10 @@ private struct AlertsPane: View {
                 }
                 Text("Connecting changes the tool's own settings file and keeps the old one with a `.nunsseop-backup` extension. Sessions started afterwards send their notifications here. Claude Code and Codex also report their sessions for the agents count in the closed notch, which works while notifications from local tools are on.")
                     .font(.caption).foregroundStyle(.secondary)
+                if NotifyIntegration.allCases.contains(where: { $0.piAgent != nil && $0.isPresent }) {
+                    Text("Connecting omp, omo or pi adds a file to the extensions folder of the tool. Sessions started afterwards report to the agents count and the Agents tab; Disconnect removes the file. gjc needs no setup: its sessions are read from its own state files while the count or the Agents tab is showing.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 Text("The Agents tab lists their sessions and recent conversations with name, folder, model, context used, permission mode and last prompt, read from the tools' own session files on this Mac.")
                     .font(.caption).foregroundStyle(.secondary)
                 Picker("Resume conversations in", selection: Binding(
@@ -394,11 +409,19 @@ private struct AlertsPane: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 let asking = NotifyIntegration.askingForPermission(present: Set(NotifyIntegration.allCases.filter(\.isPresent)))
-                if !asking.isEmpty {
+                if !asking.isEmpty || paseo.present {
                     Toggle("Answer permission prompts and questions in the notch", isOn: $settings.permissionPrompts)
-                        .disabled(!settings.localNotifications)
+                        .disabled(!settings.localNotifications && !asking.isEmpty)
+                    if paseo.present {
+                        Text("Paseo's tool approvals show in the notch too, where you can allow or deny them. “Answer in Paseo” leaves one for Paseo's own screens, and the notch lets go of one you answer there.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                     if asking.contains(.claudeCode) {
                         Text("Claude Code's permission prompts and questions also show in the notch, where you can allow or deny a prompt and pick the answer to a question. Answer a prompt in the terminal and the notch lets go of it; a question is asked in the terminal once you press “Answer in terminal” in the notch. If Nunsseop isn't running, the terminal asks as before. Works with Claude Code connected above. What a prompt asks is kept in memory only.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    if asking.contains(.openCode) {
+                        Text("OpenCode's permission prompts show in the notch too, where you can allow or deny them. OpenCode's own prompt stays in its terminal: answer in either place and the other lets go. Works with OpenCode connected above.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     if asking.contains(.codex) {
@@ -420,9 +443,21 @@ private struct AlertsPane: View {
                     NSPasteboard.general.setString(NotifyServer.scriptCommand, forType: .string)
                 }
                 .disabled(!settings.localNotifications)
-                if MuxyNotice.isInstalled {
+                if Muxy.isInstalled {
                     Toggle("Show notifications from agents running in Muxy", isOn: $settings.muxyNotifications)
-                    Text("Read from Muxy's own notification list, so every agent and terminal in Muxy works without setup. Hidden while Muxy is in front, and skipped for tools connected above.")
+                    Text("Read from Muxy's own agent activity while it runs, so every agent in Muxy works without setup. Hidden while Muxy is in front, and skipped for tools connected above.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    HStack {
+                        Text("Muxy bridge")
+                        switch muxyBridge {
+                        case .running: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                        case .loaded: Text("Loaded, not running").foregroundStyle(.secondary)
+                        case .notLoaded: Text("Not loaded").foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button("Show extension in Finder") { MuxyBridge.reveal() }
+                    }
+                    Text("Lets Nunsseop open a session's own tab in Muxy and resume conversations there. In Muxy, open Settings › Extensions › Load Unpacked…, pick the folder shown in Finder, then turn the extension on.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 if Cmux.isInstalled {
@@ -455,15 +490,39 @@ private struct AlertsPane: View {
                     Text("Read from herdr's socket while its server runs, so nothing needs setting up.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
+                if paseo.present {
+                    Toggle("Show when agents in Paseo finish or fail", isOn: $settings.paseoNotifications)
+                    Text(verbatim: [paseo.daemonRunning ? String(localized: "Paseo daemon running") : String(localized: "Paseo daemon not running"),
+                                    paseo.cliFound ? String(localized: "command line found") : String(localized: "command line not found")].joined(separator: " · "))
+                        .font(.caption).foregroundStyle(.secondary)
+                    if paseo.daemonRunning && !paseo.approvalsAvailable {
+                        Text("Paseo's daemon asks for a password or listens on a socket, so its approvals and notices can't show here.")
+                            .font(.caption).foregroundStyle(.orange)
+                    }
+                    Text("Its agents are read from Paseo's own files, and its approvals and notices from its daemon on this Mac, which Nunsseop never starts. Messages go through its command line.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
             .onAppear(perform: refreshConnections)
+            // The bridge starts answering a moment after the user turns it on in Muxy.
+            .onReceive(Timer.publish(every: 3, on: .main, in: .common).autoconnect()) { _ in
+                if Muxy.isInstalled { refreshBridge() }
+            }
         }
         .formStyle(.grouped)
     }
 
     private func refreshConnections() {
+        paseo = PaseoStatus.current()
         connected = Set(NotifyIntegration.allCases.filter(\.isInstalled))
         terminals = ResumeTerminal.installed
+        muxyBridge = MuxyBridge.status()
+    }
+
+    /// Only what the bridge's heartbeat changes: the hooks' config files are not read again every few seconds.
+    private func refreshBridge() {
+        terminals = ResumeTerminal.installed
+        muxyBridge = MuxyBridge.status()
     }
 
     private func toggle(_ tool: NotifyIntegration) {

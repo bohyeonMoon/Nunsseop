@@ -81,9 +81,44 @@ private final class Home {
     }
 }
 
+extension Home {
+    /// A pi family session: a header (with `title` for omp and gjc), a user line unless `user` is false, the lines in `extra`.
+    @discardableResult
+    func pi(_ kind: AgentKind, _ id: String, cwd: String, ago: TimeInterval = 600, title: String? = nil, user: Bool = true,
+            extra: [String] = []) throws -> URL {
+        var lines = [PiFixture.header(id: id, cwd: cwd, title: title)]
+        if user { lines.append(PiFixture.user()) }
+        return try PiFixture.write(lines + extra, kind: kind, home: url, id: id, ago: ago, now: now)
+    }
+}
+
 private func id(_ n: Int) -> String { String(format: "5f0c2d1e-0000-4000-8000-%012d", n) }
 
 struct RecentConversationTests {
+    /// omp's `title` line is the current title, and most omp headers have none: Recent names the session by it, not by its folder.
+    @Test func ompSessionsAreNamedByTheirTitleLine() throws {
+        let home = Home()
+        let cwd = home.folder("api")
+        let user = PiFixture.user()
+        try PiFixture.write([PiFixture.titleLine("Only the title line"), PiFixture.header(id: id(1), cwd: cwd), user], kind: .omp, home: home.url, id: id(1), ago: 60, now: home.now)
+        try PiFixture.write([PiFixture.titleLine("Newer title"), PiFixture.header(id: id(2), cwd: cwd, title: "Older title"), user], kind: .omp, home: home.url, id: id(2), ago: 120, now: home.now)
+        try PiFixture.write([PiFixture.header(id: id(3), cwd: cwd, title: "Header only"), user], kind: .omp, home: home.url, id: id(3), ago: 180, now: home.now)
+        #expect(home.list().map(\.title) == ["Only the title line", "Newer title", "Header only"])
+    }
+
+    /// `gjc team` runs its workers in worktrees under `<repo>/.gjc/_session-<lead>/…`, each with a session file of its own.
+    @Test func aGjcTeamWorkersSessionIsNotAConversationToResume() throws {
+        let home = Home()
+        let repo = home.folder("repo")
+        let worker = home.folder("repo/.gjc/_session-\(id(9))/state/team/1/worktrees/worker-1")
+        try home.pi(.gjc, id(1), cwd: repo, ago: 60)
+        try home.pi(.gjc, id(2), cwd: worker, ago: 30)
+        try home.pi(.omp, id(3), cwd: worker, ago: 40)
+        #expect(home.list().map(\.session) == [id(1)])
+        #expect(GjcScanner.folder(inHeaderOf: try home.pi(.gjc, id(4), cwd: worker)) == nil)
+        #expect(GjcScanner.folder(inHeaderOf: try home.pi(.gjc, id(5), cwd: repo)) == repo)
+    }
+
     @Test func theMostRecentFiveFromTheLastWeekNewestFirst() {
         let home = Home()
         let cwd = home.folder("api")
@@ -353,4 +388,92 @@ struct RecentConversationModelTests {
         #expect(model.recent[0].title == "Resume list" && model.recent[0].details(now: now) == ["nunsseop", "Claude Code", "3h ago"])
         #expect(model.recent[1].title == "ios-app" && model.recent[1].details(now: now) == ["Codex", "1d ago"])
     }
+}
+
+struct RecentOtherToolsTests {
+    private func pid(_ n: Int) -> String { PiFixture.id(n) }
+
+    @Test func everyToolsConversationsAreListedTogetherNewestFirstWithTheSameLimit() throws {
+        let home = Home()
+        let cwd = home.folder("api")
+        try home.pi(.omo, pid(1), cwd: cwd, ago: 100)
+        try home.pi(.omp, pid(2), cwd: cwd, ago: 200, title: "Parser work")
+        try home.pi(.gjc, pid(3), cwd: cwd, ago: 300, title: "Sprint plan")
+        try home.pi(.pi, pid(4), cwd: cwd, ago: 400)
+        home.claude(id(5), cwd: cwd, ago: 500)
+        home.codex("01a130c4-3953-7f71-bc99-b8a6d37a5338", cwd: cwd, ago: 600)
+        try OpenCodeFixture.create(home: home.url, sessions: [.init(id: OpenCodeFixture.id(7), directory: cwd, title: "Fix tests", updated: home.now.addingTimeInterval(-50))])
+        let found = home.list()
+        #expect(found.count == RecentConversations.limit)
+        #expect(found.map(\.kind) == [.opencode, .omo, .omp, .gjc, .pi])
+        #expect(found.map(\.session) == [OpenCodeFixture.id(7), pid(1), pid(2), pid(3), pid(4)])
+        #expect(found.map(\.name) == ["Fix tests", nil, "Parser work", "Sprint plan", nil])
+        #expect(found.map(\.tool) == ["OpenCode", "omo", "omp", "gjc", "pi"])
+        #expect(found.allSatisfy { $0.cwd == cwd })
+        // Without the newer ones the older tools fill the list.
+        #expect(found.last?.modified == home.now.addingTimeInterval(-400))
+    }
+
+    @Test func aPiFamilySessionNeedsAPromptAndAFolderAndIsOpenOnlyByItsId() throws {
+        let home = Home()
+        let cwd = home.folder("api")
+        try home.pi(.omo, pid(1), cwd: cwd, ago: 60, user: false)
+        try home.pi(.omo, pid(2), cwd: "/Users/nobody/gone", ago: 120)
+        try home.pi(.omo, pid(3), cwd: cwd, ago: 180)
+        try home.pi(.omp, pid(4), cwd: cwd, ago: 240)
+        #expect(home.list().map(\.session) == [pid(3), pid(4)])
+        #expect(home.list(excluding: [pid(3)]).map(\.session) == [pid(4)])
+        // Files of other shapes in the folders are not sessions, and a subfolder (a subagent's) is not looked into.
+        let folder = home.url.appendingPathComponent(".omo/agent/sessions/--Users-me-work--")
+        try Data("x".utf8).write(to: folder.appendingPathComponent("notes.txt"))
+        try FileManager.default.createDirectory(at: folder.appendingPathComponent("sub"), withIntermediateDirectories: true)
+        try PiFixture.write([PiFixture.header(id: pid(9), cwd: cwd), PiFixture.user()], kind: .omo, home: home.url, id: pid(9), now: home.now, folder: "--Users-me-work--/sub")
+        #expect(home.list().map(\.session) == [pid(3), pid(4)])
+    }
+
+    @Test func theNameIsTheLatestRenameThenTheHeadersTitle() throws {
+        let home = Home()
+        let cwd = home.folder("api")
+        try home.pi(.omo, pid(1), cwd: cwd, ago: 60, extra: [PiFixture.sessionInfo("Fix the build")])
+        try home.pi(.omp, pid(2), cwd: cwd, ago: 120, title: "Header title", extra: [PiFixture.titleChange("Newer title")])
+        try home.pi(.gjc, pid(3), cwd: cwd, ago: 180, title: "Only the header")
+        let found = home.list()
+        #expect(found.map(\.name) == ["Fix the build", "Newer title", "Only the header"])
+        #expect(found.map(\.title) == ["Fix the build", "Newer title", "Only the header"])
+    }
+
+    @Test func openCodeLeavesOutSubagentsArchivedScratchAndWhatIsOpen() throws {
+        let home = Home()
+        let cwd = home.folder("api")
+        let ago = { (seconds: Double) in home.now.addingTimeInterval(-seconds) }
+        try OpenCodeFixture.create(home: home.url, sessions: [
+            .init(id: OpenCodeFixture.id(1), directory: cwd, title: "Kept", updated: ago(60)),
+            .init(id: OpenCodeFixture.id(2), directory: cwd, title: "Sub", parent: OpenCodeFixture.id(1), updated: ago(30)),
+            .init(id: OpenCodeFixture.id(3), directory: cwd, title: "Archived", updated: ago(40), archived: ago(10)),
+            .init(id: OpenCodeFixture.id(4), directory: "/private/tmp/x", title: "Scratch", updated: ago(50)),
+            .init(id: OpenCodeFixture.id(5), directory: home.url.appendingPathComponent("work/gone").path, title: "Gone", updated: ago(70)),
+            .init(id: OpenCodeFixture.id(6), directory: cwd, title: "Open", updated: ago(80)),
+            .init(id: OpenCodeFixture.id(7), directory: cwd, title: "Last week", updated: ago(8 * 86_400))])
+        var scanner = RecentConversations()
+        let found = scanner.list(home: home.url, excluding: [OpenCodeFixture.id(6)], now: home.now, scratch: ["/private/tmp"])
+        #expect(found.map(\.session) == [OpenCodeFixture.id(1)])
+        #expect(found.first?.name == "Kept" && found.first?.kind == .opencode)
+    }
+
+    @MainActor @Test func aRowAsksTheLauncherToResumeItWithItsKind() {
+        let opened = Locked<[RecentConversation]>([])
+        let board = AgentBoard()
+        let model = AgentsTabModel(board: board, home: { URL(fileURLWithPath: "/nonexistent") }, isConnected: { true }, onResume: { opened.append($0) })
+        let conversation = RecentConversation(kind: .omp, session: pid(1), cwd: "/Users/me/w", modified: .now, name: "Parser")
+        model.resume(conversation)
+        #expect(opened.value.map(\.kind) == [.omp] && Resume.line(opened.value[0]) == "cd -- '/Users/me/w' && exec omp --resume='\(pid(1))'")
+    }
+}
+
+private final class Locked<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: Value
+    init(_ value: Value) { stored = value }
+    var value: Value { lock.withLock { stored } }
+    func append<Element>(_ element: Element) where Value == [Element] { lock.withLock { stored.append(element) } }
 }

@@ -230,10 +230,10 @@ struct ClaudeStatusLineScriptTests {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let script = folder.appendingPathComponent("claude-statusline.sh")
         try Data(ClaudeStatusLine.script(original: original, snapshotName: "claude-rate-limits.json").utf8).write(to: script)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
 
         let process = Process()
-        process.executableURL = script
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = [script.path]
         let stdin = Pipe(), stdout = Pipe()
         process.standardInput = stdin
         process.standardOutput = stdout
@@ -297,7 +297,8 @@ struct ClaudeStatusLineScriptTests {
         try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: folder.path)
         let script = folder.appendingPathComponent("claude-statusline.sh")
         let process = Process()
-        process.executableURL = script
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = [script.path]
         let stdin = Pipe(), stdout = Pipe(), stderr = Pipe()
         process.standardInput = stdin
         process.standardOutput = stdout

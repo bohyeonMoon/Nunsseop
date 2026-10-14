@@ -1,4 +1,4 @@
-"NSAppleEventsUsageDescription" = "Shows what Music, Spotify and your browsers are playing and controls playback.";
+"NSAppleEventsUsageDescription" = "Shows what Music, Spotify and your browsers are playing and controls playback. Also types your messages into agent sessions in Terminal, iTerm2 and Ghostty, and opens conversations in new tabs of iTerm2 and Ghostty.";
 "NSCalendarsFullAccessUsageDescription" = "Shows today's and this week's events on the notch's Home tab.";
 "NSRemindersFullAccessUsageDescription" = "Shows reminders due today under the calendar and lets you complete them.";
 "NSCameraUsageDescription" = "Shows your camera in the notch's Mirror tab. Nothing is recorded or sent.";

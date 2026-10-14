@@ -365,19 +365,28 @@ struct NotifyServerListenTests {
     }
 
     @Test func aPortHeldAtStartIsListenedOnOnceItIsFree() async throws {
-        let holder = try PortHolder()
-        let server = try withTempHome { _ in NotifyServer(port: holder.port) }
-        server.start()
-        defer { server.stop() }
-        // Long enough for the listener to have failed against the held port, and short of its first retry.
-        try await Task.sleep(for: .milliseconds(300))
-        holder.release()
-        var answer: String?
+        // A port let go of is anyone's: another process of the machine can start a connection from it in the time between the holder
+        // closing it and the server's next try (a long one on a busy machine), and then the server never gets it. The test takes another
+        // port when the server has not got this one in a while (its tries are 1 to 4 seconds apart), and only a hang makes it give up.
         let deadline = Date.now.addingTimeInterval(eventDeadline)
-        while answer == nil && Date.now < deadline {
+        var answer: String?
+        repeat {
+            let holder = try PortHolder()
+            let server = try withTempHome { _ in NotifyServer(port: holder.port) }
+            server.start()
+            // Long enough for the listener to have failed against the held port, and short of its first retry.
+            try await Task.sleep(for: .milliseconds(300))
+            holder.release()
+            // The deadline is looked at after an ask, never before it: on a busy machine the wake-up from the sleep that follows can come
+            // after the deadline, and the one ask that counts would never be made.
+            let giveUp = Date.now.addingTimeInterval(20)
             answer = ask(holder.port)
-            if answer == nil { try await Task.sleep(for: .milliseconds(100)) }
-        }
+            while answer == nil && Date.now < giveUp {
+                try await Task.sleep(for: .milliseconds(100))
+                answer = ask(holder.port)
+            }
+            server.stop()
+        } while answer == nil && Date.now < deadline
         #expect(answer == "HTTP/1.1 404 Not Found")
     }
 

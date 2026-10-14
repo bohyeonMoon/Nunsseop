@@ -34,9 +34,23 @@ private func conversation(_ kind: AgentKind = .claude, id: String = session, cwd
 }
 
 private func setup(installed: [ResumeTerminal] = ResumeTerminal.allCases, scripts: URL? = nil) -> Resume.Setup {
+    // Nothing here runs or asks a real app: no app counts as running, and no Apple Event goes out.
     Resume.Setup(installed: installed, ghostty: URL(fileURLWithPath: "/Applications/Ghostty.app"),
-                 cmuxCLI: URL(fileURLWithPath: "/Applications/cmux.app/Contents/Resources/bin/cmux"), shell: "/bin/zsh",
+                 cmuxCLI: URL(fileURLWithPath: "/Applications/cmux.app/Contents/Resources/bin/cmux"),
+                 isRunning: { _ in false }, appleScript: AppleScriptRunner { _ in .failed }, shell: "/bin/zsh",
                  scripts: scripts ?? FileManager.default.temporaryDirectory)
+}
+
+/// What a terminal that parses its command was given: only the path of a private 0700 script, plain under every parser,
+/// that hands `line` to the login shell. The script is removed afterwards.
+func expectResumeScript(_ path: String?, runs line: String, sourceLocation: SourceLocation = #_sourceLocation) throws {
+    let path = try #require(path, sourceLocation: sourceLocation)
+    #expect(Resume.isPlainPath(path), "\(path)", sourceLocation: sourceLocation)
+    let text = try String(contentsOfFile: path, encoding: .utf8)
+    #expect(text == Resume.terminalScript(line: line, shell: "/bin/zsh"), sourceLocation: sourceLocation)
+    let mode = (try FileManager.default.attributesOfItem(atPath: path)[.posixPermissions] as? NSNumber)?.intValue
+    #expect(mode == 0o700, sourceLocation: sourceLocation)
+    try? FileManager.default.removeItem(at: URL(fileURLWithPath: path).deletingLastPathComponent())
 }
 
 struct ResumeLineTests {
@@ -85,8 +99,7 @@ struct ResumeLineTests {
         let record = bin.appendingPathComponent("record")
         for tool in ["claude", "codex"] {
             let script = bin.appendingPathComponent(tool)
-            try "#!/bin/sh\nprintf '%s\\n' \"$(pwd)\" \"$@\" > \(Resume.quote(record.path))\n".write(to: script, atomically: true, encoding: .utf8)
-            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+            try StubTool.write("#!/bin/sh\nprintf '%s\\n' \"$(pwd)\" \"$@\" > \(Resume.quote(record.path))\n", to: script)
         }
         for (kind, arguments) in [(AgentKind.claude, ["--resume", session]), (.codex, ["resume", session])] {
             try? FileManager.default.removeItem(at: record)
@@ -122,23 +135,55 @@ struct ResumeTerminalChoiceTests {
         #expect(ResumeTerminal.effective(saved: "cmux", installed: [.ghostty, .terminal]) == .ghostty)
         #expect(ResumeTerminal.effective(saved: "", installed: [.cmux, .terminal]) == .terminal)
         #expect(ResumeTerminal.effective(saved: "ghostty", installed: [.terminal]) == .terminal)
-        #expect(ResumeTerminal.effective(saved: "muxy", installed: all) == .ghostty)
+        // Muxy is a choice only while its bridge runs (it is then among the installed ones).
+        #expect(ResumeTerminal.effective(saved: "muxy", installed: all) == .muxy)
+        #expect(ResumeTerminal.effective(saved: "muxy", installed: [.ghostty, .terminal]) == .ghostty)
         #expect(ResumeTerminal.installed.contains(.terminal))
-        #expect(ResumeTerminal.allCases.map(\.name) == ["Ghostty", "cmux", "Terminal"])
+        #expect(ResumeTerminal.allCases.map(\.name) == ["Ghostty", "iTerm2", "WezTerm", "kitty", "cmux", "Orca", "Muxy", "Terminal"])
+        #expect(ResumeTerminal.effective(saved: "iterm", installed: all) == .iterm)
+        #expect(ResumeTerminal.effective(saved: "kitty", installed: [.ghostty, .terminal]) == .ghostty)
     }
 }
 
 struct ResumeOpenTests {
-    @Test func ghosttyGetsANewWindowInTheFolderAsArguments() throws {
+    @Test func aGhosttyThatNeverComesUpGetsANewWindowInTheFolderAsArguments() throws {
         let cwd = try folder("it's a project")
         let recorder = Recorder()
         let used = Resume.open(conversation(cwd: cwd), in: .ghostty, setup: setup(), launcher: recorder.launcher)
         #expect(used == .ghostty)
-        #expect(recorder.calls.count == 1)
-        let call = try #require(recorder.calls.first)
+        #expect(recorder.calls.count == 2)
+        #expect(recorder.calls.first?.arguments == ["-a", "/Applications/Ghostty.app", "--args", "--initial-window=false", "--window-save-state=never"])
+        let call = try #require(recorder.calls.last)
         let line = "cd -- \(Resume.quote(cwd)) && exec claude --resume '\(session)'"
         #expect(call.program == "open")
-        #expect(call.arguments == ["-na", "/Applications/Ghostty.app", "--args", "--window-save-state=never", "--working-directory=\(cwd)", "-e", "/bin/zsh", "-lc", line])
+        #expect(Array(call.arguments.dropLast()) == ["-na", "/Applications/Ghostty.app", "--args", "--window-save-state=never", "--working-directory=\(cwd)", "-e"])
+        try expectResumeScript(call.arguments.last, runs: line)
+    }
+
+    @Test func muxyTakesTheLineThroughItsBridgeAndNothingElseIsRun() throws {
+        let cwd = try folder("api")
+        let recorder = Recorder()
+        var taken: [(String, String, String)] = []
+        var muxy = setup()
+        muxy.muxyResume = { taken.append(($0, $1, $2)); return true }
+        #expect(Resume.open(conversation(.codex, cwd: cwd), in: .muxy, setup: muxy, launcher: recorder.launcher) == .muxy)
+        #expect(taken.count == 1 && taken[0].0 == "cd -- '\(cwd)' && exec codex resume '\(session)'" && taken[0].1 == cwd && taken[0].2 == "/bin/zsh")
+        #expect(recorder.calls.isEmpty)
+    }
+
+    @Test func aMuxyThatDoesNotTakeItFallsBackToTerminalAndOneNotOfferedIsSkipped() throws {
+        let cwd = try folder("api")
+        let refused = Recorder()
+        var muxy = setup()
+        var asked = 0
+        muxy.muxyResume = { _, _, _ in asked += 1; return false }
+        #expect(Resume.open(conversation(cwd: cwd), in: .muxy, setup: muxy, launcher: refused.launcher) == .terminal)
+        #expect(asked == 1 && refused.calls.map(\.program) == ["open"] && refused.calls.first?.arguments.prefix(2) == ["-b", "com.apple.Terminal"])
+        let absent = Recorder()
+        var gone = setup(installed: [.terminal])
+        gone.muxyResume = { _, _, _ in asked += 1; return true }
+        #expect(Resume.open(conversation(cwd: cwd), in: .muxy, setup: gone, launcher: absent.launcher) == .terminal)
+        #expect(asked == 1)
     }
 
     @Test func cmuxTypesTheLineIntoANewWorkspaceOfARunningApp() throws {
@@ -147,8 +192,9 @@ struct ResumeOpenTests {
         #expect(Resume.open(conversation(.codex, cwd: cwd), in: .cmux, setup: setup(), launcher: recorder.launcher) == .cmux)
         #expect(recorder.calls.map(\.program) == ["cmux", "cmux"])
         #expect(recorder.calls[0].arguments == ["ping"])
-        #expect(recorder.calls[1].arguments == ["new-workspace", "--cwd", cwd, "--command", "cd -- '\(cwd)' && exec codex resume '\(session)'",
-                                                "--focus", "true"])
+        let arguments = recorder.calls[1].arguments
+        #expect(arguments.count == 7 && arguments[0...3] == ["new-workspace", "--cwd", cwd, "--command"] && arguments[5...] == ["--focus", "true"])
+        try expectResumeScript(arguments.count == 7 ? arguments[4] : nil, runs: "cd -- '\(cwd)' && exec codex resume '\(session)'")
         #expect(recorder.sleeps == 0)
     }
 
@@ -215,7 +261,7 @@ struct ResumeOpenTests {
         let failing = Recorder()
         failing.answers = { name, _ in name != "open:-na" }
         #expect(Resume.open(conversation(cwd: cwd), in: .ghostty, setup: setup(scripts: URL(fileURLWithPath: try folder("scripts"))), launcher: failing.launcher) == .terminal)
-        #expect(failing.calls.map { $0.arguments.first } == ["-na", "-b"])
+        #expect(failing.calls.map { $0.arguments.first } == ["-a", "-na", "-b"])
     }
 
     @Test func terminalOpensAPrivateScriptThatRemovesItself() throws {
@@ -224,8 +270,7 @@ struct ResumeOpenTests {
         // A stand-in for the login shell, which records what it is given and runs the line the way `-c` does.
         let shellArguments = scripts.appendingPathComponent("shell-arguments")
         let shell = scripts.appendingPathComponent("login shell")
-        try "#!/bin/sh\nprintf '%s\\n' \"$@\" > \(Resume.quote(shellArguments.path))\nexec /bin/sh -c \"$2\"\n".write(to: shell, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: shell.path)
+        try StubTool.write("#!/bin/sh\nprintf '%s\\n' \"$@\" > \(Resume.quote(shellArguments.path))\nexec /bin/sh -c \"$2\"\n", to: shell)
         var setup = setup(scripts: scripts)
         setup.shell = shell.path
         let recorder = Recorder()
@@ -247,8 +292,7 @@ struct ResumeOpenTests {
         try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
         let record = scripts.appendingPathComponent("record")
         let tool = bin.appendingPathComponent("claude")
-        try "#!/bin/sh\nprintf '%s\\n' \"$(pwd)\" \"$@\" > \(Resume.quote(record.path))\n".write(to: tool, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tool.path)
+        try StubTool.write("#!/bin/sh\nprintf '%s\\n' \"$(pwd)\" \"$@\" > \(Resume.quote(record.path))\n", to: tool)
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         process.arguments = [path]
@@ -309,5 +353,24 @@ struct ResumeEnvironmentTests {
     @Test func theCommandRunsWithThatEnvironment() throws {
         let output = try #require(TerminalFocus.run(URL(fileURLWithPath: "/usr/bin/env"), [], environment: ["A": "1"]))
         #expect(output == "A=1\n")
+    }
+}
+
+struct ResumeScriptPathTests {
+    @Test func aTerminalThatParsesItsCommandGetsOnlyAPlainPathEvenForAHostileFolder() throws {
+        let hostile = try FileManager.default.temporaryDirectory.appendingPathComponent("nunsseop-hostile-\(UUID().uuidString)/a'b\\c $(x) `y`; z \"q\"").path
+        try FileManager.default.createDirectory(atPath: hostile, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(atPath: URL(fileURLWithPath: hostile).deletingLastPathComponent().path) }
+        let line = try #require(Resume.line(conversation(cwd: hostile)))
+        let script = try #require(Resume.writeScript(line, setup: setup()))
+        #expect(Resume.isPlainPath(script.path) && !script.path.contains("'"))
+        try expectResumeScript(script.path, runs: line)
+    }
+
+    @Test func onlyLettersDigitsAndSlashDotUnderscoreDashArePlain() {
+        #expect(Resume.isPlainPath("/var/folders/_2/T/nunsseop-resume-0A-1/resume.command"))
+        for bad in ["relative/path", "/a b", "/a'b", "/a\"b", "/a$b", "/a;b", "/a\\b", "/é", "/a\nb", ""] {
+            #expect(!Resume.isPlainPath(bad), "\(bad)")
+        }
     }
 }

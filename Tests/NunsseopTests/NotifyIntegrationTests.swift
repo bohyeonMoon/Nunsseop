@@ -38,7 +38,8 @@ struct JSONHookTests {
 
 struct AgentHookInstallTests {
     private let claude = NotifyIntegration.$permissionPromptsOverride.withValue(true) { NotifyIntegration.claudeCode.hooks }
-    private let events = ["Notification", "UserPromptSubmit", "Stop", "StopFailure", "SessionEnd", "SessionStart"]
+    private let events = ["Notification", "UserPromptSubmit", "Stop", "StopFailure", "SessionEnd", "SessionStart",
+                                "SubagentStart", "SubagentStop"]
 
     private func commands(_ settings: [String: Any], _ event: String) -> [[String]] {
         (((settings["hooks"] as? [String: Any])?[event] as? [[String: Any]]) ?? []).map { group in
@@ -48,8 +49,8 @@ struct AgentHookInstallTests {
 
     @Test func claudeCodeGetsTheNoticeHookAndTheAgentHooks() throws {
         let notice = NotifyServer.hookCommand(title: "Claude Code"), agent = NotifyServer.agentHookCommand
-        // The notice hook, then the agent hook under Notification and the five events, then the permission hook, twice (for approvals and for questions).
-        #expect(claude.count == 9)
+        // The notice hook, then the agent hook under Notification and the seven events, then the permission hook, twice (for approvals and for questions).
+        #expect(claude.count == 11)
         let settings = try JSONHook.adding(claude, to: [:])
         #expect(JSONHook.isInstalled(in: settings))
         #expect(JSONHook.isCurrent(claude, in: settings))
@@ -81,6 +82,27 @@ struct AgentHookInstallTests {
         #expect(commands(updated, "Notification").count == 2)
         #expect(updated["model"] as? String == "opus")
         #expect(try JSONHook.updating(claude, in: updated) == nil)
+    }
+
+    @Test func subagentHooksAreAddedInPlaceToAClaudeCodeInstallThatLacksThem() throws {
+        let agent = NotifyServer.agentHookCommand
+        let before = ["Notification", "UserPromptSubmit", "Stop", "StopFailure", "SessionEnd", "SessionStart"].map { ($0, agent) }
+        let mine: [String: Any] = ["hooks": [["type": "command", "command": "mine.sh"]]]
+        var seed = try JSONHook.adding([("Notification", NotifyServer.hookCommand(title: "Claude Code"))] + before, to: [:])
+        seed["hooks"] = (seed["hooks"] as! [String: Any]).merging(["SubagentStop": [mine]]) { $1 }
+        #expect(!JSONHook.isCurrent(claude, in: seed))
+        let updated = try #require(try JSONHook.updating(claude, in: seed))
+        #expect(JSONHook.isCurrent(claude, in: updated))
+        #expect(commands(updated, "SubagentStart") == [[agent]])
+        // The user's own hook keeps its place ahead of ours; the others are untouched.
+        #expect(commands(updated, "SubagentStop") == [["mine.sh"], [agent]])
+        for event in events.prefix(6) { #expect(commands(updated, event) == commands(seed, event), "\(event)") }
+        #expect(try JSONHook.updating(claude, in: updated) == nil)
+    }
+
+    @Test func codexIsNotGivenSubagentHooks() {
+        let codex = NotifyIntegration.$permissionPromptsOverride.withValue(false) { NotifyIntegration.codex.hooks }
+        #expect(!codex.map(\.event).contains { $0.hasPrefix("Subagent") })
     }
 
     @Test func geminiKeepsTheNoticeHookOnly() {

@@ -5,8 +5,6 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct TimerModelTests {
-    private static let suiteName = "NunsseopTests.TimerModel"
-
     private final class ClockBox {
         var now: Date
         var chimes = 0
@@ -17,15 +15,14 @@ struct TimerModelTests {
     @MainActor private final class Fixture {
         let t0 = Date(timeIntervalSinceReferenceDate: 800_000_000)
         let clock: ClockBox
-        let defaults: UserDefaults
+        let scratch = ScratchDefaults("TimerModel")
+        var defaults: UserDefaults { scratch.defaults }
         let model: TimerModel
 
         init() {
-            defaults = UserDefaults(suiteName: TimerModelTests.suiteName)!
-            defaults.removePersistentDomain(forName: TimerModelTests.suiteName)
             let box = ClockBox(t0)
             clock = box
-            model = TimerModel(defaults: defaults, now: { box.now }, chime: { box.chimes += 1 })
+            model = TimerModel(defaults: scratch.defaults, now: { box.now }, chime: { box.chimes += 1 })
             model.onFinished = { box.finished.append($0) }
         }
 
@@ -35,7 +32,7 @@ struct TimerModelTests {
 
         func tearDown() {
             model.reset()
-            defaults.removePersistentDomain(forName: TimerModelTests.suiteName)
+            scratch.remove()
         }
     }
 

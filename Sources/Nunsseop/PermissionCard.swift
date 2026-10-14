@@ -80,11 +80,13 @@ enum PermissionLayout {
     static let codexTagFont = NSFont.systemFont(ofSize: 10, weight: .semibold)
     static let codexTagPadding: CGFloat = 5
 
-    /// Whether the title and the folder after it show in full on one line, with the Codex label before them for Codex's calls.
-    static func titleFits(_ title: String, folder: String, codex: Bool = false) -> Bool {
+    /// Whether the title and the folder after it show in full on one line, with the tool's label before them for a call that is
+    /// not Claude Code's (`codex` for Codex's, else the `tag`).
+    static func titleFits(_ title: String, folder: String, codex: Bool = false, tag: String? = nil) -> Bool {
         func width(_ text: String, _ font: NSFont) -> CGFloat { (text as NSString).size(withAttributes: [.font: font]).width }
-        let tag = codex ? 6 + width(codexTag, codexTagFont) + 2 * codexTagPadding : 0
-        return tag + width(title, titleFont) + (folder.isEmpty ? 0 : 6 + width(folder, NSFont.systemFont(ofSize: 11))) <= titleRoom
+        let label = tag ?? (codex ? codexTag : nil)
+        let tagWidth = label.map { 6 + width($0, codexTagFont) + 2 * codexTagPadding } ?? 0
+        return tagWidth + width(title, titleFont) + (folder.isEmpty ? 0 : 6 + width(folder, NSFont.systemFont(ofSize: 11))) <= titleRoom
     }
 
     /// `isolatedText` is the scrolling text with its lines already isolated, as it is drawn.
@@ -125,9 +127,9 @@ enum PermissionLayout {
         hidden == 1 ? String(localized: "Scroll for the rest: 1 more line") : String(localized: "Scroll for the rest: \(hidden) more lines")
     }
 
-    /// Whether the buttons have a third one, "Always allow" or, for Codex, "Answer in terminal".
+    /// Whether the buttons have a third one, "Always allow" or, for a call that is not Claude Code's, "Answer in terminal".
     static func hasThirdButton(_ prompt: PermissionPrompt, _ place: Place) -> Bool {
-        prompt.isCodex || offered(prompt, place) != nil
+        prompt.tag != nil || offered(prompt, place) != nil
     }
 
     /// What the body takes below the top row.
@@ -180,8 +182,9 @@ struct PermissionBody: View {
     }
 
     @ViewBuilder private var thirdButton: some View {
-        if prompt.isCodex {
-            pill("Answer in terminal", fill: .white.opacity(0.15), text: .white, shrinks: true) { answer(.terminal) }
+        if prompt.tag != nil {
+            // Paseo's request stays pending in Paseo: there is no terminal to hand it back to.
+            pill(prompt.tag == Paseo.name ? "Answer in Paseo" : "Answer in terminal", fill: .white.opacity(0.15), text: .white, shrinks: true) { answer(.terminal) }
         } else {
             pill("Always allow", fill: .white.opacity(0.15), text: .white) { answer(.always) }
         }
@@ -320,15 +323,15 @@ private struct PermissionGrantNote: View {
     }
 }
 
-/// "Run a command" and the folder the session runs in, after "Codex" for Codex's calls. A name too long for the line loses
+/// "Run a command" and the folder the session runs in, after the tool's name for calls that aren't Claude Code's. A name too long for the line loses
 /// its middle, never its end.
 struct PermissionTitle: View {
     let prompt: PermissionPrompt
 
     var body: some View {
         HStack(spacing: 6) {
-            if prompt.isCodex {
-                Text(verbatim: PermissionLayout.codexTag)
+            if let tag = prompt.tag {
+                Text(verbatim: tag)
                     .font(Font(PermissionLayout.codexTagFont))
                     .foregroundStyle(.white.opacity(0.85))
                     .padding(.horizontal, PermissionLayout.codexTagPadding)
