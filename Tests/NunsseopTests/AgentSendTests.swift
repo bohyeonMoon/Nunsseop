@@ -1528,7 +1528,7 @@ struct AgentSendExecutionTests {
     }
 
     /// herdr's socket: answers one request per connection, then closes it. Every request is logged with the number of its connection.
-    private func serve(replying reply: String, at path: String) throws -> Process {
+    private func serve(replying reply: String, at path: String) async throws -> Process {
         let server = try StandIn.python("""
         import json, os, socket, sys
         # The socket has its name once it listens: a file that exists is not yet one a client can connect to.
@@ -1548,8 +1548,7 @@ struct AgentSendExecutionTests {
             f.write((json.dumps(out) + "\\n").encode()); f.flush()
             c.close()
         """, arguments: [path, reply])
-        let deadline = Date.now.addingTimeInterval(eventDeadline)
-        while !FileManager.default.fileExists(atPath: path) && Date.now < deadline { usleep(20_000) }
+        await eventually { FileManager.default.fileExists(atPath: path) }
         return server
     }
 
@@ -1560,9 +1559,9 @@ struct AgentSendExecutionTests {
         }
     }
 
-    @Test func herdrGetsOneSendInputRequestOnOneConnectionAndTheSendPasses() throws {
+    @Test func herdrGetsOneSendInputRequestOnOneConnectionAndTheSendPasses() async throws {
         let path = "/tmp/nunsseop-send-\(UUID().uuidString.prefix(6)).sock"
-        let server = try serve(replying: "ok", at: path)
+        let server = try await serve(replying: "ok", at: path)
         defer { server.terminate(); try? FileManager.default.removeItem(atPath: path); try? FileManager.default.removeItem(atPath: path + ".log") }
         let steps = try #require(AgentSend.steps(.herdr(pane: "w1:p1", socket: path), text: "go on", submit: true, clis: TerminalCLIs()))
         #expect(AgentSender.live.run(steps) == .sent)
@@ -1580,9 +1579,9 @@ struct AgentSendExecutionTests {
         #expect((all[1].request["params"] as? [String: String]) == ["pane_id": "w1:p1", "text": "/tmp/a.png "])
     }
 
-    @Test func eachRequestOfASocketStepGetsAConnectionOfItsOwn() throws {
+    @Test func eachRequestOfASocketStepGetsAConnectionOfItsOwn() async throws {
         let path = "/tmp/nunsseop-send-\(UUID().uuidString.prefix(6)).sock"
-        let server = try serve(replying: "ok", at: path)
+        let server = try await serve(replying: "ok", at: path)
         defer { server.terminate(); try? FileManager.default.removeItem(atPath: path); try? FileManager.default.removeItem(atPath: path + ".log") }
         // The stand-in closes after one reply, as herdr does: on one connection the second request would find it closed.
         let requests = ["{\"id\":\"one\",\"method\":\"a\"}", "{\"id\":\"two\",\"method\":\"b\"}", "{\"id\":\"three\",\"method\":\"c\"}"]
@@ -1592,9 +1591,9 @@ struct AgentSendExecutionTests {
         #expect(seen.map { $0.request["id"] as? String } == ["one", "two", "three"])
     }
 
-    @Test func anErrorReplyOrAMissingSocketFailsTheStep() throws {
+    @Test func anErrorReplyOrAMissingSocketFailsTheStep() async throws {
         let failing = "/tmp/nunsseop-send-\(UUID().uuidString.prefix(6)).sock"
-        let broken = try serve(replying: "error", at: failing)
+        let broken = try await serve(replying: "error", at: failing)
         defer { broken.terminate(); try? FileManager.default.removeItem(atPath: failing); try? FileManager.default.removeItem(atPath: failing + ".log") }
         let steps = try #require(AgentSend.steps(.herdr(pane: "gone", socket: failing), text: "x", submit: true, clis: TerminalCLIs()))
         #expect(AgentSender.live.run(steps) == .failed)

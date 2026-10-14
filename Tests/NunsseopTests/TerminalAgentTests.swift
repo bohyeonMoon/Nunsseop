@@ -101,22 +101,23 @@ struct TerminalAgentWatcherTests {
     }
 
     private func waitUntil(_ condition: () -> Bool) async {
-        // Stops as soon as it holds; the cap only matters on a slow or busy machine.
-        let deadline = Date.now.addingTimeInterval(eventDeadline)
-        while !condition() && Date.now < deadline {
-            try? await Task.sleep(for: .milliseconds(50))
-        }
+        await eventually(condition)
     }
 
     /// Serves a herdr socket at `socket` that lists one working pane and then reports it done. With `quietSubscription`,
     /// the pane is done by the time of the second list and the subscription never reports it.
-    /// The stand-in server: `kill` stops it and leaves its socket file behind, as a crashed herdr does.
+    /// The stand-in server: `kill` stops it and leaves its socket file behind, as a crashed herdr does. It waits for the process to be gone
+    /// on a thread of its own, since ending takes a busy machine seconds and the main actor is what the other tests wait for. `shutDown`
+    /// does not wait: the stand-in ends on its own once the process that started it is gone, as every stand-in does (see `StandIn`).
     struct FakeHerdr {
         let server: Process
         let files: [URL]
-        func kill() { server.terminate(); server.waitUntilExit() }
+        func kill() async {
+            server.terminate()
+            await offPool { server.waitUntilExit() }
+        }
         func shutDown() {
-            if server.isRunning { kill() }
+            if server.isRunning { server.terminate() }
             files.forEach { try? FileManager.default.removeItem(at: $0) }
         }
     }
@@ -213,7 +214,7 @@ struct TerminalAgentWatcherTests {
         await waitUntil { seen.last?["w1:p1"] != nil }
         #expect(seen.last?["w1:p1"] != nil)
         // herdr dies and leaves its socket file: every reconnect now fails or waits.
-        herdr.kill()
+        await herdr.kill()
         #expect(FileManager.default.fileExists(atPath: socket.path))
         await waitUntil { seen.last == [:] }
         #expect(seen.last == [:])
@@ -346,7 +347,7 @@ struct TmuxHookTests {
 /// HOME holding a token and a PATH whose `curl` records each request, so the shipped script runs as it would.
 @MainActor
 struct TmuxWatcherTests {
-    private func tmux(_ socket: String, environment: [String: String]? = nil, _ arguments: String...) -> String? {
+    nonisolated private static func run(_ socket: String, environment: [String: String]? = nil, _ arguments: [String]) -> String? {
         let process = Process()
         process.executableURL = Tmux.binary
         process.arguments = ["-L", socket] + arguments
@@ -360,12 +361,13 @@ struct TmuxWatcherTests {
         return process.terminationStatus == 0 ? String(decoding: data, as: UTF8.self) : nil
     }
 
-    private func waitUntil(_ condition: () -> Bool) async {
-        // Stops as soon as it holds; the cap only matters on a slow or busy machine.
-        let deadline = Date.now.addingTimeInterval(eventDeadline)
-        while !condition() && Date.now < deadline {
-            try? await Task.sleep(for: .milliseconds(50))
-        }
+    /// tmux runs on a thread of its own, since the main actor is what the other tests wait for and a command can take seconds on a busy machine.
+    private func tmux(_ socket: String, environment: [String: String]? = nil, _ arguments: String...) async -> String? {
+        await offPool { Self.run(socket, environment: environment, arguments) }
+    }
+
+    private func waitUntil(_ condition: () async -> Bool) async {
+        await eventually(condition)
     }
 
     @Test(.enabled(if: Tmux.isInstalled)) func bellsCarryNamesReadByTheScriptUnexpanded() async throws {
@@ -374,7 +376,7 @@ struct TmuxWatcherTests {
         let home = URL(fileURLWithPath: "/tmp/nunsseop-test-\(id)")
         let requests = home.appendingPathComponent("requests")
         defer {
-            _ = tmux(socket, "kill-server")
+            _ = Self.run(socket, ["kill-server"])
             try? FileManager.default.removeItem(at: home)
             try? FileManager.default.removeItem(atPath: "/private/tmp/tmux-\(getuid())/\(socket)")
         }
@@ -395,11 +397,11 @@ struct TmuxWatcherTests {
         let environment = ["HOME": home.path, "PATH": "\(home.path)/bin:/usr/bin:/bin", "TERM": "xterm"]
         // Names a program could set: braces, commas and ~ must arrive as typed, not expanded by sh.
         let names = ["x{a,claude}", "{z,claude}", "~root", "{1..5}"]
-        #expect(tmux(socket, environment: environment, "-f", "/dev/null", "new-session", "-d", "-s", "work", "-n", names[0], "sleep 600") != nil)
-        for name in names.dropFirst() { _ = tmux(socket, "new-window", "-d", "-t", "work", "-n", name, "sleep 600") }
+        #expect(await tmux(socket, environment: environment, "-f", "/dev/null", "new-session", "-d", "-s", "work", "-n", names[0], "sleep 600") != nil)
+        for name in names.dropFirst() { _ = await tmux(socket, "new-window", "-d", "-t", "work", "-n", name, "sleep 600") }
         // A split window: which pane rang isn't known, so no agent is named.
         // Windows are targeted by index: tmux reads `{…}` in a target as one of its own tokens.
-        _ = tmux(socket, "split-window", "-d", "-t", "work:2", "sleep 600")
+        _ = await tmux(socket, "split-window", "-d", "-t", "work:2", "sleep 600")
 
         let watcher = TmuxWatcher(socketName: socket, scriptURL: home.appendingPathComponent("terminal-notify.sh"))
         watcher.start()
@@ -407,19 +409,19 @@ struct TmuxWatcherTests {
         let binary = try #require(Tmux.binary)
         let command = try #require(Tmux.hookCommand(script: home.appendingPathComponent("terminal-notify.sh"),
                                                      binary: binary, socketName: socket))
-        await waitUntil { Tmux.isHooked(tmux(socket, "show-hooks", "-g") ?? "", command: command) }
-        #expect(Tmux.isHooked(tmux(socket, "show-hooks", "-g") ?? "", command: command))
+        await waitUntil { Tmux.isHooked(await tmux(socket, "show-hooks", "-g") ?? "", command: command) }
+        #expect(Tmux.isHooked(await tmux(socket, "show-hooks", "-g") ?? "", command: command))
 
-        for index in names.indices { _ = tmux(socket, "respawn-pane", "-k", "-t", "work:\(index).0", "printf '\\a'; sleep 600") }
+        for index in names.indices { _ = await tmux(socket, "respawn-pane", "-k", "-t", "work:\(index).0", "printf '\\a'; sleep 600") }
         let bodies = { (try? FileManager.default.contentsOfDirectory(atPath: requests.path))?.filter { $0.hasSuffix(".body") } ?? [] }
         let started = Date()
         await waitUntil { bodies().count >= names.count }
         // This has failed now and then in a busy full run, always missing the first window's bell; what tmux held then
         // says why, for next time.
-        let diagnostics = {
-            let windows = tmux(socket, "list-windows", "-t", "work",
-                               "-F", "#{window_index} #{window_id} #{window_name} bell=#{window_bell_flag} #{pane_current_command}") ?? "none"
-            return "waited \(String(format: "%.1f", Date().timeIntervalSince(started))) s; hooks: \(tmux(socket, "show-hooks", "-g") ?? "none")windows:\n\(windows)"
+        let diagnostics = { () async -> String in
+            let windows = await tmux(socket, "list-windows", "-t", "work",
+                                     "-F", "#{window_index} #{window_id} #{window_name} bell=#{window_bell_flag} #{pane_current_command}") ?? "none"
+            return "waited \(String(format: "%.1f", Date().timeIntervalSince(started))) s; hooks: \(await tmux(socket, "show-hooks", "-g") ?? "none")windows:\n\(windows)"
         }
 
         var sent: [String: [String]] = [:]
@@ -428,7 +430,8 @@ struct TmuxWatcherTests {
             let body = try String(contentsOf: base.appendingPathExtension("body"), encoding: .utf8)
             sent[body] = try String(contentsOf: base.appendingPathExtension("args"), encoding: .utf8).split(separator: "\n").map(String.init)
         }
-        #expect(Set(sent.keys) == Set(names.map { "work · \($0)" }), "\(diagnostics())")
+        let diagnostic = await diagnostics()
+        #expect(Set(sent.keys) == Set(names.map { "work · \($0)" }), Comment(rawValue: diagnostic))
         for (body, args) in sent {
             #expect(!args.contains("X-Agent: claude") && !args.contains("X-Title: claude"), "\(body): \(args)")
             #expect(args.contains { $0.hasPrefix("X-Target: tmux:@") }, "\(body): \(args)")
@@ -531,7 +534,7 @@ struct WezTermSnippetTests {
         #expect(snippet.contains("if nunsseop_last_bell[id] and now - nunsseop_last_bell[id] < 3 then return end"))
     }
 
-    @Test func focusDoesNotStartAMuxServer() throws {
+    @Test func focusDoesNotStartAMuxServer() async throws {
         let dir = URL(fileURLWithPath: "/tmp/nunsseop-test-\(UUID().uuidString.prefix(8))")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -542,8 +545,7 @@ struct WezTermSnippetTests {
         let args = dir.appendingPathComponent("args")
         // The CLI runs in the background: wait for what it writes, not just for the file, which exists before the write.
         let read = { (try? String(contentsOf: args, encoding: .utf8)) ?? "" }
-        let deadline = Date.now.addingTimeInterval(eventDeadline)
-        while !read().hasSuffix("--pane-id 7 ") && Date.now < deadline { usleep(20_000) }
+        await eventually { read().hasSuffix("--pane-id 7 ") }
         #expect(read() == "cli --no-auto-start activate-pane --pane-id 7 ")
     }
 }
@@ -671,7 +673,7 @@ struct NoticeClickTests {
         #expect(TerminalFocus.parentPID(of: -1) == nil)
     }
 
-    @Test func socketClientReadsOneReplyPerLine() throws {
+    @Test func socketClientReadsOneReplyPerLine() async throws {
         let path = "/tmp/nunsseop-test-\(UUID().uuidString.prefix(8)).sock"
         let script = """
         import os, socket, sys
@@ -682,13 +684,12 @@ struct NoticeClickTests {
         """
         let server = try StandIn.python(script, arguments: [path])
         defer { server.terminate(); try? FileManager.default.removeItem(atPath: path) }
-        let deadline = Date.now.addingTimeInterval(eventDeadline)
-        while !FileManager.default.fileExists(atPath: path) && Date.now < deadline { usleep(20_000) }
+        await eventually { FileManager.default.fileExists(atPath: path) }
         #expect(TerminalFocus.send(["switch-project|A", "switch-tab|B"], toSocket: path) == ["ok:switch-project|A", "ok:switch-tab|B"])
         #expect(TerminalFocus.send(["x"], toSocket: "/tmp/nunsseop-missing.sock").isEmpty)
     }
 
-    @Test func aServerThatAnswersOneCommandPerConnectionNeedsAConnectionEach() throws {
+    @Test func aServerThatAnswersOneCommandPerConnectionNeedsAConnectionEach() async throws {
         // Like herdr: one reply, then the connection closes.
         let path = "/tmp/nunsseop-test-\(UUID().uuidString.prefix(8)).sock"
         let script = """
@@ -700,8 +701,7 @@ struct NoticeClickTests {
         """
         let server = try StandIn.python(script, arguments: [path])
         defer { server.terminate(); try? FileManager.default.removeItem(atPath: path) }
-        let deadline = Date.now.addingTimeInterval(eventDeadline)
-        while !FileManager.default.fileExists(atPath: path) && Date.now < deadline { usleep(20_000) }
+        await eventually { FileManager.default.fileExists(atPath: path) }
         let commands = ["switch-project|A", "switch-worktree|B|A", "switch-tab|C"]
         #expect(commands.compactMap { TerminalFocus.send([$0], toSocket: path).first } == commands.map { "ok \($0)" })
         // On one connection only the first would get through.
@@ -729,36 +729,39 @@ struct NoticeClickTests {
 /// tmux's focus against a real server on a socket of its own.
 @MainActor
 struct TmuxFocusTests {
-    private func tmux(_ socket: String, _ arguments: String...) -> String? {
+    nonisolated private static func run(_ socket: String, _ arguments: [String]) -> String? {
         TerminalFocus.run(Tmux.binary!, ["-L", socket] + arguments)
+    }
+
+    /// tmux runs on a thread of its own, since the main actor is what the other tests wait for and a command can take seconds on a busy machine.
+    private func tmux(_ socket: String, _ arguments: String...) async -> String? {
+        await offPool { Self.run(socket, arguments) }
     }
 
     @Test(.enabled(if: Tmux.isInstalled)) func focusSelectsThePanesWindowAndPane() async throws {
         let socket = "nunsseop-test-\(UUID().uuidString.prefix(8))"
         defer {
-            _ = tmux(socket, "kill-server")
+            _ = Self.run(socket, ["kill-server"])
             try? FileManager.default.removeItem(atPath: "/private/tmp/tmux-\(getuid())/\(socket)")
         }
-        _ = tmux(socket, "-f", "/dev/null", "new-session", "-d", "-s", "work", "-n", "one", "sleep 600")
-        _ = tmux(socket, "new-window", "-d", "-t", "work", "-n", "two", "sleep 600")
-        _ = tmux(socket, "split-window", "-d", "-t", "work:two", "sleep 600")
-        let panes = (tmux(socket, "list-panes", "-t", "work:two", "-F", "#{pane_id}") ?? "").split(separator: "\n").map(String.init)
+        _ = await tmux(socket, "-f", "/dev/null", "new-session", "-d", "-s", "work", "-n", "one", "sleep 600")
+        _ = await tmux(socket, "new-window", "-d", "-t", "work", "-n", "two", "sleep 600")
+        _ = await tmux(socket, "split-window", "-d", "-t", "work:two", "sleep 600")
+        let panes = (await tmux(socket, "list-panes", "-t", "work:two", "-F", "#{pane_id}") ?? "").split(separator: "\n").map(String.init)
         let target = try #require(panes.last)
-        #expect(tmux(socket, "display-message", "-p", "#{window_name}")?.trimmingCharacters(in: .whitespacesAndNewlines) == "one")
+        #expect(await tmux(socket, "display-message", "-p", "#{window_name}")?.trimmingCharacters(in: .whitespacesAndNewlines) == "one")
 
         Tmux.focus(pane: target, socketName: socket)
         var active = ""
-        let deadline = Date.now.addingTimeInterval(eventDeadline)
-        repeat {
-            active = tmux(socket, "display-message", "-p", "#{window_name} #{pane_id}")?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            if active == "two \(target)" { break }
-            try? await Task.sleep(for: .milliseconds(30))
-        } while Date.now < deadline
+        await eventually {
+            active = await tmux(socket, "display-message", "-p", "#{window_name} #{pane_id}")?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return active == "two \(target)"
+        }
         #expect(active == "two \(target)")
         // Pane ids are numbers after %; anything else is ignored.
         Tmux.focus(pane: "%1; kill-server", socketName: socket)
         try? await Task.sleep(for: .milliseconds(200))
-        #expect(tmux(socket, "display-message", "-p", "#{window_name}") != nil)
+        #expect(await tmux(socket, "display-message", "-p", "#{window_name}") != nil)
     }
 }
 
@@ -767,56 +770,58 @@ struct TmuxFocusTests {
 /// and the hook as tmux prints it back matches, so it isn't set again every 10 s.
 @MainActor
 struct TmuxSlotTests {
-    private func tmux(_ socket: String, _ arguments: String...) -> String? {
+    nonisolated private static func run(_ socket: String, _ arguments: [String]) -> String? {
         TerminalFocus.run(Tmux.binary!, ["-L", socket] + arguments)
+    }
+
+    /// tmux runs on a thread of its own, since the main actor is what the other tests wait for and a command can take seconds on a busy machine.
+    private func tmux(_ socket: String, _ arguments: String...) async -> String? {
+        await offPool { Self.run(socket, arguments) }
     }
 
     private func withServer(_ body: (String) async throws -> Void) async throws {
         let socket = "nunsseop-test-\(UUID().uuidString.prefix(8))"
         defer {
-            _ = tmux(socket, "kill-server")
+            _ = Self.run(socket, ["kill-server"])
             try? FileManager.default.removeItem(atPath: "/private/tmp/tmux-\(getuid())/\(socket)")
         }
-        _ = tmux(socket, "-f", "/dev/null", "new-session", "-d", "-s", "w", "sleep 600")
+        _ = await tmux(socket, "-f", "/dev/null", "new-session", "-d", "-s", "w", "sleep 600")
         try await body(socket)
     }
 
-    private func slot(_ socket: String) -> String? { Tmux.slot(in: tmux(socket, "show-hooks", "-g") ?? "") }
+    private func slot(_ socket: String) async -> String? { Tmux.slot(in: await tmux(socket, "show-hooks", "-g") ?? "") }
 
-    private func waitUntil(_ condition: () -> Bool) async {
-        let deadline = Date.now.addingTimeInterval(eventDeadline)
-        while !condition() && Date.now < deadline {
-            try? await Task.sleep(for: .milliseconds(20))
-        }
+    private func waitUntil(_ condition: () async -> Bool) async {
+        await eventually(condition)
     }
 
     @Test(.enabled(if: Tmux.isInstalled)) func someoneElsesHookInTheSlotStays() async throws {
         try await withServer { socket in
-            _ = tmux(socket, "set-hook", "-g", Tmux.hook, "run-shell 'say mine'")
+            _ = await tmux(socket, "set-hook", "-g", Tmux.hook, "run-shell 'say mine'")
             let script = URL(fileURLWithPath: "/tmp/nunsseop-test slot \(UUID().uuidString.prefix(8))/terminal-notify.sh")
             let watcher = TmuxWatcher(socketName: socket, scriptURL: script)
             watcher.start()
             try await Task.sleep(for: .milliseconds(400))
-            #expect(slot(socket) == "alert-bell[4775] run-shell \"say mine\"")
+            #expect(await slot(socket) == "alert-bell[4775] run-shell \"say mine\"")
             watcher.stop(waiting: true)
-            #expect(slot(socket) == "alert-bell[4775] run-shell \"say mine\"")
+            #expect(await slot(socket) == "alert-bell[4775] run-shell \"say mine\"")
             try? FileManager.default.removeItem(at: script.deletingLastPathComponent())
         }
     }
 
     @Test(.enabled(if: Tmux.isInstalled)) func leftoverHookComesOffWhileTheFeatureIsOff() async throws {
         try await withServer { socket in
-            _ = tmux(socket, "set-hook", "-g", Tmux.hook,
+            _ = await tmux(socket, "set-hook", "-g", Tmux.hook,
                      "run-shell -b \"'/Users/a/Library/Application Support/Nunsseop/tmux-notify.sh' tmux #{q:session_name}\"")
             let watcher = TmuxWatcher(socketName: socket)
             watcher.clearLeftover()
-            await waitUntil { slot(socket) == nil }
-            #expect(slot(socket) == nil)
+            await waitUntil { await slot(socket) == nil }
+            #expect(await slot(socket) == nil)
             // Someone else's is kept.
-            _ = tmux(socket, "set-hook", "-g", Tmux.hook, "run-shell 'say mine'")
+            _ = await tmux(socket, "set-hook", "-g", Tmux.hook, "run-shell 'say mine'")
             watcher.clearLeftover()
             try await Task.sleep(for: .milliseconds(300))
-            #expect(slot(socket) != nil)
+            #expect(await slot(socket) != nil)
         }
     }
 
@@ -830,8 +835,8 @@ struct TmuxSlotTests {
             watcher.start()
             defer { watcher.stop(waiting: true) }
             let command = try #require(Tmux.hookCommand(script: script, binary: Tmux.binary!, socketName: socket))
-            await waitUntil { slot(socket) != nil }
-            let printed = try #require(tmux(socket, "show-hooks", "-g"))
+            await waitUntil { await slot(socket) != nil }
+            let printed = try #require(await tmux(socket, "show-hooks", "-g"))
             #expect(Tmux.isHooked(printed, command: command), "\(printed)")
         }
     }

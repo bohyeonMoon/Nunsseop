@@ -118,8 +118,7 @@ struct StandInTests {
         let line = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         shell.waitUntilExit()
         let pid = try #require(pid_t(line))
-        let deadline = Date.now.addingTimeInterval(eventDeadline)
-        while kill(pid, 0) == 0 && Date.now < deadline { try await Task.sleep(for: .milliseconds(200)) }
+        await eventually { kill(pid, 0) != 0 }
         let ended = kill(pid, 0) != 0
         if !ended { kill(pid, SIGKILL) }
         #expect(ended)
@@ -232,9 +231,9 @@ struct EventuallyTests {
     /// in a job that was queued after the wait's own timer fired: it runs right after the wait is first resumed, which is past the cap.
     @Test func aWaitThatTheActorCouldNotResumeForLongerThanTheCapStillSeesWhatComesAfterwards() async {
         var arrived = false
-        DispatchQueue.main.async { Thread.sleep(forTimeInterval: 3) }
+        DispatchQueue.main.async { Thread.sleep(forTimeInterval: 1.5) }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { arrived = true }
-        await eventually(within: 2) { arrived }
+        await eventually(within: 1.2) { arrived }
         #expect(arrived)
     }
 
