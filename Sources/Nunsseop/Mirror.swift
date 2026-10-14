@@ -26,6 +26,11 @@ final class MirrorModel: ObservableObject {
         ).devices
     }
 
+    /// The name of the camera `deviceID` picks (empty means the system default), if there is one.
+    nonisolated static func cameraName(for deviceID: String) -> String? {
+        (cameras.first { $0.uniqueID == deviceID } ?? AVCaptureDevice.default(for: .video))?.localizedName
+    }
+
     func requestAccess() {
         if access == .denied {
             NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera")!)
@@ -94,36 +99,77 @@ private struct CameraPreview: NSViewRepresentable {
 struct MirrorTab: View {
     @ObservedObject var mirror: MirrorModel
     let deviceID: String
+    @State private var cameraName: String?
 
     var body: some View {
-        Group {
-            switch mirror.access {
-            case .granted:
-                CameraPreview(session: mirror.session)
-                    .clipShape(RoundedRectangle(cornerRadius: 14))
-                    .onAppear { mirror.start(deviceID: deviceID) }
-                    .onDisappear { mirror.stop() }
-                    .onChange(of: deviceID) { _, id in mirror.start(deviceID: id) }
-            case .unknown, .denied:
-                VStack(spacing: 8) {
-                    Image(systemName: "camera.fill").font(.system(size: 22)).foregroundStyle(.white.opacity(0.5))
-                    Text(mirror.access == .denied
-                         ? String(localized: "Camera access is off")
-                         : String(localized: "Use your camera as a mirror"))
-                        .font(.system(size: 12))
-                        .foregroundStyle(.white.opacity(0.6))
-                    Button(mirror.access == .denied ? String(localized: "Open System Settings") : String(localized: "Allow Camera")) {
-                        mirror.requestAccess()
+        MirrorPanels(access: mirror.access, cameraName: cameraName, requestAccess: mirror.requestAccess) {
+            CameraPreview(session: mirror.session)
+                .onAppear { mirror.start(deviceID: deviceID) }
+                .onDisappear { mirror.stop() }
+                .onChange(of: deviceID) { _, id in mirror.start(deviceID: id) }
+        }
+        .task(id: deviceID) { cameraName = MirrorModel.cameraName(for: deviceID) }
+    }
+}
+
+/// The preview (or the way to allow the camera) on the left, which camera it is and whether it is allowed on the right. The camera
+/// is picked in Settings, so the rows only say what it is.
+struct MirrorPanels<Preview: View>: View {
+    let access: MirrorModel.Access
+    let cameraName: String?
+    let requestAccess: () -> Void
+    @ViewBuilder let preview: Preview
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Group {
+                if access == .granted {
+                    preview.clipShape(RoundedRectangle(cornerRadius: 12)).accessibilityLabel(Text("Camera preview"))
+                } else {
+                    VStack(spacing: 8) {
+                        Image(systemName: "camera.fill").font(.system(size: 22)).foregroundStyle(.white.opacity(0.5)).accessibilityHidden(true)
+                        Text(access == .denied ? String(localized: "Camera access is off") : String(localized: "Use your camera as a mirror"))
+                            .font(.system(size: 12)).foregroundStyle(PanelInk.hint)
+                        PanelAction(title: access == .denied ? "Open System Settings" : "Allow Camera", style: .primary, action: requestAccess)
                     }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 11, weight: .semibold))
-                    .padding(.horizontal, 10).padding(.vertical, 4)
-                    .background(Capsule().fill(.white.opacity(0.15)))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(.white.opacity(0.05)))
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .surface(RoundedRectangle(cornerRadius: 14), opacity: 0.04)
             }
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(.white.opacity(0.2), lineWidth: 0.75))
+            .frame(width: 290)
+            VStack(alignment: .leading, spacing: 0) {
+                row(String(localized: "Camera"), cameraName ?? String(localized: "System default"))
+                PanelHLine()
+                row(String(localized: "Access"), accessText)
+                HStack(spacing: 6) {
+                    Image(systemName: "gearshape").font(.system(size: 10)).accessibilityHidden(true)
+                    Text("Pick the camera in Settings › Services").font(.system(size: 11)).lineLimit(2)
+                }
+                .foregroundStyle(PanelInk.hint)
+                .padding(.top, 8)
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .foregroundStyle(.white)
+    }
+
+    private var accessText: String {
+        switch access {
+        case .granted: return String(localized: "Allowed")
+        case .denied: return String(localized: "Not allowed")
+        case .unknown: return String(localized: "Not asked yet")
+        }
+    }
+
+    private func row(_ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text.panel(label, size: 11, opacity: 0.6)
+            Text.panel(value, size: 13, weight: .semibold).lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: 40, alignment: .leading)
+        .accessibilityElement(children: .combine)
     }
 }
