@@ -101,6 +101,13 @@ struct SearchResult: Identifiable {
     let icon: Icon
     let title: String
     let subtitle: String
+    /// A line more for the detail pane: where an app is, what was typed for an answer.
+    var detail: String?
+    /// The title is the answer to a sum, so the detail pane shows it large.
+    var isAnswer = false
+    /// The detail pane's button: what running the row does.
+    var verb: LocalizedStringKey = "Open"
+    var verbSymbol = "arrow.up.forward.app"
     let run: () -> Void
 }
 
@@ -283,7 +290,7 @@ final class QuickSearchModel: ObservableObject {
             let term = String(q.dropFirst())
             results = emoji.results(for: term).prefix(term.isEmpty ? 12 : 30).map { item in
                 SearchResult(id: "emoji-\(item.character)", icon: .text(item.character), title: item.name.capitalized,
-                             subtitle: String(localized: "Copy emoji")) { [weak self] in
+                             subtitle: String(localized: "Copy emoji"), verb: "Copy emoji", verbSymbol: "doc.on.doc") { [weak self] in
                     self?.emoji.copy(item)
                     self?.finish()
                 }
@@ -293,7 +300,8 @@ final class QuickSearchModel: ObservableObject {
         var list: [SearchResult] = []
         if let value = Calculator.evaluate(q) {
             list.append(SearchResult(id: "calc", icon: .symbol("equal.circle.fill"), title: Calculator.format(value),
-                                     subtitle: String(localized: "Copy result")) { [weak self] in
+                                     subtitle: String(localized: "Copy result"), detail: q, isAnswer: true,
+                                     verb: "Copy result", verbSymbol: "doc.on.doc") { [weak self] in
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(Calculator.copyString(value), forType: .string)
                 self?.finish()
@@ -307,7 +315,7 @@ final class QuickSearchModel: ObservableObject {
         ranked += commands.compactMap { command in
             guard let s = [Self.score(command.title, q), Self.score(command.keywords, q)].compactMap({ $0 }).max() else { return nil }
             return (s - 0.5, SearchResult(id: command.id, icon: .symbol(command.symbol), title: command.title,
-                                          subtitle: String(localized: "Command")) { [weak self] in
+                                          subtitle: String(localized: "Command"), verb: "Run", verbSymbol: "play.fill") { [weak self] in
                 command.action()
                 self?.finish()
             })
@@ -318,14 +326,14 @@ final class QuickSearchModel: ObservableObject {
             list += clipboard.items.filter { $0.text.localizedCaseInsensitiveContains(q) }.prefix(3).map { item in
                 SearchResult(id: "clip-\(item.id)", icon: .symbol("doc.on.clipboard"),
                              title: item.text.replacingOccurrences(of: "\n", with: " "),
-                             subtitle: String(localized: "Clipboard")) { [weak self, weak clipboard] in
+                             subtitle: String(localized: "Clipboard"), verb: "Copy", verbSymbol: "doc.on.doc") { [weak self, weak clipboard] in
                     clipboard?.copy(item)
                     self?.finish()
                 }
             }
         }
         list.append(SearchResult(id: "web", icon: .symbol("globe"), title: String(localized: "Search the web for “\(q)”"),
-                                 subtitle: "Google") { [weak self] in
+                                 subtitle: "Google", verb: "Search", verbSymbol: "magnifyingglass") { [weak self] in
             var components = URLComponents(string: "https://www.google.com/search")!
             components.queryItems = [URLQueryItem(name: "q", value: q)]
             if let url = components.url { NSWorkspace.shared.open(url) }
@@ -336,7 +344,7 @@ final class QuickSearchModel: ObservableObject {
 
     private func appResult(_ app: AppItem) -> SearchResult {
         SearchResult(id: "app-\(app.url.path)", icon: .image(NSWorkspace.shared.icon(forFile: app.url.path)), title: app.name,
-                     subtitle: String(localized: "Application")) { [weak self] in
+                     subtitle: String(localized: "Application"), detail: app.url.path) { [weak self] in
             NSWorkspace.shared.openApplication(at: app.url, configuration: NSWorkspace.OpenConfiguration())
             self?.launchCounts[app.url.path, default: 0] += 1
             self?.finish()
@@ -422,37 +430,33 @@ struct SearchTab: View {
     let shortcut: String?
     @FocusState private var focused: Bool
 
+    private var shown: SearchResult? { model.results.indices.contains(model.selection) ? model.results[model.selection] : nil }
+
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
             HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").font(.system(size: 13)).foregroundStyle(.white.opacity(0.55))
-                TextField("Search apps, files, commands, or calculate", text: $model.query)
-                    .textFieldStyle(.plain).font(.system(size: 15))
+                Image(systemName: "magnifyingglass").font(.system(size: 13)).foregroundStyle(PanelInk.secondary).accessibilityHidden(true)
+                TextField("Search apps, files, commands, or calculate", text: $model.query,
+                          prompt: Text("Search apps, files, commands, or calculate").foregroundStyle(PanelInk.secondary))
+                    .textFieldStyle(.plain).font(.system(size: 14))
                     .focused($focused)
                     .onSubmit { model.runSelected() }
                     .onKeyPress(.downArrow) { model.move(1); return .handled }
                     .onKeyPress(.upArrow) { model.move(-1); return .handled }
+                if let shortcut { PanelKeycap(shortcut) }
             }
-            .padding(.horizontal, 12).frame(height: 34)
-            .surface(RoundedRectangle(cornerRadius: 10), opacity: 0.1)
+            .padding(.horizontal, 10).frame(height: 28)
+            .background(RoundedRectangle(cornerRadius: 8).fill(.white.opacity(0.1)))
 
-            ScrollViewReader { proxy in
-                ScrollView(.vertical, showsIndicators: false) {
-                    VStack(spacing: 2) {
-                        if model.query.isEmpty {
-                            hint
-                        }
-                        ForEach(Array(model.results.enumerated()), id: \.element.id) { index, result in
-                            ResultRow(result: result, selected: index == model.selection)
-                                .id(result.id)
-                                .onTapGesture { model.selection = index; model.runSelected() }
-                        }
+            PanelSplit {
+                VStack(alignment: .leading, spacing: 0) {
+                    if model.query.isEmpty && !model.results.isEmpty {
+                        PanelCaption(String(localized: "Frequently used")).padding(.horizontal, 8).padding(.bottom, 2)
                     }
+                    list
                 }
-                .onChange(of: model.selection) { _, index in
-                    guard model.results.indices.contains(index) else { return }
-                    withAnimation(.easeOut(duration: 0.12)) { proxy.scrollTo(model.results[index].id) }
-                }
+            } right: {
+                detail
             }
         }
         .foregroundStyle(.white)
@@ -463,45 +467,97 @@ struct SearchTab: View {
         .onChange(of: model.focusToken) { _, _ in focused = true }
     }
 
+    private var list: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.vertical, showsIndicators: false) {
+                LazyVStack(spacing: 0) {
+                    ForEach(Array(model.results.enumerated()), id: \.element.id) { index, result in
+                        ResultRow(result: result, selected: index == model.selection)
+                            .id(result.id)
+                            .onTapGesture { model.selection = index; model.runSelected() }
+                    }
+                }
+            }
+            .onChange(of: model.selection) { _, index in
+                guard model.results.indices.contains(index) else { return }
+                withAnimation(.easeOut(duration: 0.12)) { proxy.scrollTo(model.results[index].id) }
+            }
+        }
+        .panelFadeBottom(14)
+    }
+
+    @ViewBuilder private var detail: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let result = shown {
+                if result.isAnswer {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text.panel(result.title, size: 32, weight: .semibold, mono: true).lineLimit(1).minimumScaleFactor(0.5)
+                        if let detail = result.detail { Text.panel(detail, size: 12, opacity: 0.6).lineLimit(1) }
+                    }
+                } else {
+                    HStack(spacing: 12) {
+                        ResultIcon(icon: result.icon, size: 44)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(verbatim: result.title).font(.system(size: 14, weight: .semibold)).lineLimit(2)
+                            Text(verbatim: result.subtitle).font(.system(size: 11)).foregroundStyle(PanelInk.secondary).lineLimit(1).truncationMode(.middle)
+                            if let detail = result.detail {
+                                Text(verbatim: detail).font(.system(size: 11)).foregroundStyle(PanelInk.secondary).lineLimit(1).truncationMode(.middle)
+                            }
+                        }
+                    }
+                }
+                PanelAction(title: result.verb, symbol: result.verbSymbol, key: "↵", style: .primary) { model.runSelected() }
+            }
+            if model.query.isEmpty { hint }
+        }
+        .padding(.top, 6)
+    }
+
     @ViewBuilder private var hint: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        Group {
             if let shortcut {
                 Text("Open this from anywhere with \(shortcut). Start with : to find emoji.")
             } else {
                 Text("Start with : to find emoji.")
             }
-            if !model.results.isEmpty {
-                Text("Frequently used").padding(.top, 4)
+        }
+        .font(.system(size: 11)).foregroundStyle(PanelInk.hint)
+    }
+}
+
+/// A result's picture in a square of `size`: an app's or file's icon, a symbol (in a disc when large), or an emoji.
+private struct ResultIcon: View {
+    let icon: SearchResult.Icon
+    let size: CGFloat
+    private var large: Bool { size > 24 }
+
+    var body: some View {
+        Group {
+            switch icon {
+            case .image(let image): Image(nsImage: image).resizable()
+            case .symbol(let name):
+                Image(systemName: name).font(.system(size: large ? 18 : 12)).foregroundStyle(.white.opacity(0.8))
+                    .frame(width: size, height: size).background(Circle().fill(.white.opacity(large ? 0.1 : 0)))
+            case .text(let text): Text(verbatim: text).font(.system(size: large ? 32 : 14))
             }
         }
-        .font(.system(size: 11)).foregroundStyle(.white.opacity(0.45))
-        .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 4).padding(.bottom, 2)
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
     }
 }
 
 private struct ResultRow: View {
     let result: SearchResult
     let selected: Bool
-    @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 10) {
-            Group {
-                switch result.icon {
-                case .image(let image): Image(nsImage: image).resizable()
-                case .symbol(let name): Image(systemName: name).font(.system(size: 14))
-                case .text(let text): Text(text).font(.system(size: 17))
-                }
+        LedgerRow(selected: selected) {
+            HStack(spacing: 8) {
+                ResultIcon(icon: result.icon, size: 18)
+                Text(verbatim: result.title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                Spacer(minLength: 0)
             }
-            .frame(width: 22, height: 22)
-            Text(result.title).font(.system(size: 13, weight: .medium)).lineLimit(1)
-            Spacer(minLength: 8)
-            Text(result.subtitle).font(.system(size: 10)).foregroundStyle(.white.opacity(0.45)).lineLimit(1).truncationMode(.head)
         }
-        .padding(.horizontal, 10).frame(height: 30)
-        .background(RoundedRectangle(cornerRadius: 8).fill(.white.opacity(selected ? 0.16 : hovering ? 0.08 : 0)))
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
     }
 }
 
