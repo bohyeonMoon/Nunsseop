@@ -598,7 +598,9 @@ struct MuxyBridgeExtensionTests {
     /// The extension's own scripts, run against stand-ins for Muxy's `muxy` object (Tests/muxy-bridge/bridge.test.cjs).
     @Test(.enabled(if: NodeTool.available, NodeTool.reason))
     func theBackgroundScriptAndTheHelperPageDoWhatTheProtocolSays() throws {
-        let tests = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("muxy-bridge")
+        // The file, not its folder: Node 24 loads a folder argument as a module.
+        let tests = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("muxy-bridge").appendingPathComponent("bridge.test.cjs")
         let process = Process()
         process.executableURL = try #require(NodeTool.url)
         process.arguments = ["--test", tests.path]
