@@ -134,10 +134,17 @@ let eventDeadline: TimeInterval = 120
 
 /// Waits for `condition`, stopping as soon as it holds; the cap only matters on a slow or busy machine.
 /// It runs on the caller's actor, so a condition may read what that actor owns.
-func eventually(isolation: isolated (any Actor)? = #isolation, _ condition: () -> Bool) async {
-    let deadline = Date.now.addingTimeInterval(eventDeadline)
+///
+/// A wake-up that is late is charged against the cap for a second at most. The main actor is busy with other tests for a minute and a half at
+/// a time on a loaded machine, and what a test waits for often needs that actor too (a timer of the code under test resumes on it): when the
+/// wait resumes after the cap with the event still to come, the event has had no turn yet, which says nothing of whether it comes.
+func eventually(within seconds: TimeInterval = eventDeadline, isolation: isolated (any Actor)? = #isolation, _ condition: () -> Bool) async {
+    var deadline = Date.now.addingTimeInterval(seconds)
     while !condition() && Date.now < deadline {
+        let asleep = Date.now
         try? await Task.sleep(for: .milliseconds(20))
+        let late = Date.now.timeIntervalSince(asleep) - 1
+        if late > 0 { deadline.addTimeInterval(late) }
     }
 }
 

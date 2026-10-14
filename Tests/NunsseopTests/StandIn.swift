@@ -225,3 +225,22 @@ struct RawClientTests {
         #expect(await !client.closes(within: 1))
     }
 }
+
+@MainActor
+struct EventuallyTests {
+    /// The main actor is kept from running for longer than the cap, as other tests keep it on a loaded machine, and what the wait is for happens
+    /// in a job that was queued after the wait's own timer fired: it runs right after the wait is first resumed, which is past the cap.
+    @Test func aWaitThatTheActorCouldNotResumeForLongerThanTheCapStillSeesWhatComesAfterwards() async {
+        var arrived = false
+        DispatchQueue.main.async { Thread.sleep(forTimeInterval: 3) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { arrived = true }
+        await eventually(within: 2) { arrived }
+        #expect(arrived)
+    }
+
+    @Test func aWaitForWhatNeverComesEndsAtTheCap() async {
+        let start = Date.now
+        await eventually(within: 0.5) { false }
+        #expect(Date.now.timeIntervalSince(start) >= 0.5)
+    }
+}
