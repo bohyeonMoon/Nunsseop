@@ -256,7 +256,10 @@ struct OpenCodePluginRunTests {
             response.end(`${"\(reply)" === "forged" ? "0".repeat(64) : good} ${decision}`)
           })
         })
-        await new Promise((resolve) => server.listen(\(port), "127.0.0.1", resolve))
+        await new Promise((resolve) => {
+          server.once("error", (error) => { out({ listenError: error.code }); process.exit(3) })
+          server.listen(\(port), "127.0.0.1", resolve)
+        })
 
         """
     }
@@ -265,15 +268,23 @@ struct OpenCodePluginRunTests {
     func theProofsAreTheOnesSwiftComputesAndAnswerWithoutAValidProofIsRefused() async throws {
         for (reply, expected) in [("allow", "allow"), ("deny", "deny"), ("bogus", "ask"), ("forged", "ask")] {
             let server = try await PermissionTestServer(token: String(repeating: "t", count: 40))
-            let port = freePort()
-            let (script, _, _) = try start(server, body: standIn(port: port, reply: reply) + Self.setUp + """
-                const output = { status: "ask" }
-                await plugin["permission.ask"]({ id: "per_c", type: "edit", pattern: ["a.txt"], sessionID: "ses_main1", metadata: {} }, output)
-                server.close()
-                out({ status: output.status, seen })
-                """, port: port)
-            let result = try #require(await script.finish())
-            #expect(result.lines.first?["status"] as? String == expected, "\(reply)")
+            // A port let go of is anyone's: another process can take this one before the stand-in listens on it, and then the stand-in
+            // says so and ends, and the test takes another.
+            var attempt = 0
+            var finished: (lines: [[String: Any]], status: Int32)?
+            repeat {
+                let port = freePort()
+                let (script, _, _) = try start(server, body: standIn(port: port, reply: reply) + Self.setUp + """
+                    const output = { status: "ask" }
+                    await plugin["permission.ask"]({ id: "per_c", type: "edit", pattern: ["a.txt"], sessionID: "ses_main1", metadata: {} }, output)
+                    server.close()
+                    out({ status: output.status, seen })
+                    """, port: port)
+                finished = await script.finish()
+                attempt += 1
+            } while finished?.lines.first?["listenError"] != nil && attempt < 10
+            let result = try #require(finished)
+            #expect(result.lines.first?["status"] as? String == expected, "\(reply): the script printed \(result.lines) and ended with \(result.status)")
             let seen = try #require((result.lines.first?["seen"] as? [[String: Any]])?.first)
             let key = try #require(seen["key"] as? String), nonce = try #require(seen["nonce"] as? String)
             let body = Data(try #require(seen["body"] as? String).utf8)
