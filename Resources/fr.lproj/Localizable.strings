@@ -525,3 +525,32 @@
 "Low" = "Faible";
 "Download" = "Téléchargement";
 "Upload" = "Envoi";
+
+/* Panels: tabs */
+"Mode" = "Mode";
+"Length" = "Durée";
+"Phase" = "Phase";
+"Reset" = "Réinitialiser";
+"Nothing to reset" = "Rien à réinitialiser";
+"Shorter" = "Plus court";
+"Longer" = "Plus long";
+"Focus" = "Concentration";
+"Break" = "Pause";
+"Stop" = "Arrêter";
+"Capture" = "Capture";
+"Near limit" = "Proche de la limite";
+"Emoticons" = "Émoticônes";
+"Pictographs" = "Pictogrammes";
+"Transport & map" = "Transports et cartes";
+"Supplemental" = "Supplémentaires";
+"Extended" = "Étendus";
+"Symbols" = "Symboles";
+"Dingbats" = "Dingbats";
+"No emoji found" = "Aucun emoji trouvé";
+"Emoji you copy show up here" = "Les emojis copiés apparaissent ici";
+"Access" = "Accès";
+"Allowed" = "Autorisé";
+"Not allowed" = "Non autorisé";
+"Not asked yet" = "Pas encore demandé";
+"Camera preview" = "Aperçu de la caméra";
+"Pick the camera in Settings › Services" = "Choisissez la caméra dans Réglages › Services";

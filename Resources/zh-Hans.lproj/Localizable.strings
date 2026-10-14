@@ -525,3 +525,32 @@
 "Low" = "电量低";
 "Download" = "下载";
 "Upload" = "上传";
+
+/* Panels: tabs */
+"Mode" = "模式";
+"Length" = "时长";
+"Phase" = "阶段";
+"Reset" = "重置";
+"Nothing to reset" = "没有可重置的内容";
+"Shorter" = "缩短";
+"Longer" = "延长";
+"Focus" = "专注";
+"Break" = "休息";
+"Stop" = "停止";
+"Capture" = "截取";
+"Near limit" = "接近上限";
+"Emoticons" = "表情";
+"Pictographs" = "图形符号";
+"Transport & map" = "交通与地图";
+"Supplemental" = "补充";
+"Extended" = "扩展";
+"Symbols" = "符号";
+"Dingbats" = "装饰符号";
+"No emoji found" = "未找到表情符号";
+"Emoji you copy show up here" = "复制过的表情符号会显示在这里";
+"Access" = "访问";
+"Allowed" = "已允许";
+"Not allowed" = "未允许";
+"Not asked yet" = "尚未询问";
+"Camera preview" = "相机预览";
+"Pick the camera in Settings › Services" = "在“设置 › 服务”中选择相机";

@@ -550,3 +550,32 @@
 "Low" = "부족";
 "Download" = "다운로드";
 "Upload" = "업로드";
+
+/* Panels: tabs */
+"Mode" = "모드";
+"Length" = "길이";
+"Phase" = "단계";
+"Reset" = "초기화";
+"Nothing to reset" = "초기화할 것이 없어요";
+"Shorter" = "더 짧게";
+"Longer" = "더 길게";
+"Focus" = "집중";
+"Break" = "휴식";
+"Stop" = "중지";
+"Capture" = "캡처";
+"Near limit" = "한도 근접";
+"Emoticons" = "이모티콘";
+"Pictographs" = "그림 문자";
+"Transport & map" = "교통·지도";
+"Supplemental" = "추가";
+"Extended" = "확장";
+"Symbols" = "기호";
+"Dingbats" = "장식 기호";
+"No emoji found" = "이모지를 찾을 수 없어요";
+"Emoji you copy show up here" = "복사한 이모지가 여기에 표시돼요";
+"Access" = "접근";
+"Allowed" = "허용됨";
+"Not allowed" = "허용 안 됨";
+"Not asked yet" = "아직 묻지 않음";
+"Camera preview" = "카메라 미리보기";
+"Pick the camera in Settings › Services" = "카메라는 설정 › 서비스에서 고를 수 있어요";
