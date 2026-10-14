@@ -179,3 +179,68 @@ struct HookProcessTests {
         #expect(result.stdout.utf8.count == 300_000 && result.status == 0)
     }
 }
+
+struct RawClientTests {
+    /// A client connected to a listener of this test, and the server's end of that connection, which a test closes in the way it needs.
+    private func connection() throws -> (client: RawClient, server: Int32, listener: Int32) {
+        let listener = socket(AF_INET, SOCK_STREAM, 0)
+        var address = sockaddr_in(sin_len: UInt8(MemoryLayout<sockaddr_in>.size), sin_family: sa_family_t(AF_INET), sin_port: 0,
+                                  sin_addr: in_addr(s_addr: inet_addr("127.0.0.1")), sin_zero: (0, 0, 0, 0, 0, 0, 0, 0))
+        var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+        let ready = withUnsafeMutablePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(listener, $0, length) == 0 && getsockname(listener, $0, &length) == 0 }
+        } && listen(listener, 1) == 0
+        guard ready else {
+            close(listener)
+            throw POSIXError(.EADDRNOTAVAIL)
+        }
+        let client = try RawClient(port: UInt16(bigEndian: address.sin_port))
+        return (client, accept(listener, nil, nil), listener)
+    }
+
+    @Test func aServerThatHangsUpIsSeenToCloseTheConnection() async throws {
+        let (client, server, listener) = try connection()
+        defer { close(listener) }
+        close(server)
+        #expect(await client.closes(within: 5))
+    }
+
+    /// The system resets a connection whose end of the stream nobody has read for a minute after the server closed it, so a test whose task is
+    /// resumed that late reads a reset where it would have read the end. The server has closed in both cases.
+    @Test func aServerThatResetsTheConnectionIsSeenToCloseIt() async throws {
+        let (client, server, listener) = try connection()
+        defer { close(listener) }
+        var linger = linger(l_onoff: 1, l_linger: 0)
+        setsockopt(server, SOL_SOCKET, SO_LINGER, &linger, socklen_t(MemoryLayout<linger>.size))
+        close(server)
+        #expect(await client.closes(within: 5))
+    }
+
+    @Test func aServerThatLeavesTheConnectionOpenAndSilentIsNotSeenToCloseIt() async throws {
+        let (client, server, listener) = try connection()
+        defer {
+            close(server)
+            close(listener)
+        }
+        #expect(await !client.closes(within: 1))
+    }
+}
+
+@MainActor
+struct EventuallyTests {
+    /// The main actor is kept from running for longer than the cap, as other tests keep it on a loaded machine, and what the wait is for happens
+    /// in a job that was queued after the wait's own timer fired: it runs right after the wait is first resumed, which is past the cap.
+    @Test func aWaitThatTheActorCouldNotResumeForLongerThanTheCapStillSeesWhatComesAfterwards() async {
+        var arrived = false
+        DispatchQueue.main.async { Thread.sleep(forTimeInterval: 3) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { arrived = true }
+        await eventually(within: 2) { arrived }
+        #expect(arrived)
+    }
+
+    @Test func aWaitForWhatNeverComesEndsAtTheCap() async {
+        let start = Date.now
+        await eventually(within: 0.5) { false }
+        #expect(Date.now.timeIntervalSince(start) >= 0.5)
+    }
+}
