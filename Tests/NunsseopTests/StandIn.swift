@@ -71,7 +71,7 @@ struct StandInTests {
         let line = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         shell.waitUntilExit()
         let pid = try #require(pid_t(line))
-        let deadline = Date.now.addingTimeInterval(20)
+        let deadline = Date.now.addingTimeInterval(eventDeadline)
         while kill(pid, 0) == 0 && Date.now < deadline { try await Task.sleep(for: .milliseconds(200)) }
         let ended = kill(pid, 0) != 0
         if !ended { kill(pid, SIGKILL) }

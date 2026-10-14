@@ -17,7 +17,7 @@ struct AgentFooterRenderTests {
     }
 
     private func settled(_ condition: () -> Bool) async -> Bool {
-        let deadline = Date().addingTimeInterval(30)
+        let deadline = Date().addingTimeInterval(eventDeadline)
         while !condition() {
             guard Date() < deadline else { return false }
             try? await Task.sleep(nanoseconds: 20_000_000)

@@ -95,7 +95,7 @@ struct ProcessEnvironmentParseTests {
         let expected = ["MUXY_SESSION_ID": "123", "KITTY_LISTEN_ON": "unix:/tmp/kitty-1", "TMUX": ""]
         // The child may not have exec'd yet, when it has no environment of its own to read.
         var raw: [String: String]?
-        let deadline = Date.now.addingTimeInterval(5)
+        let deadline = Date.now.addingTimeInterval(eventDeadline)
         repeat {
             raw = ProcessEnvironment.live.read(pid)
             if raw == expected { break }
