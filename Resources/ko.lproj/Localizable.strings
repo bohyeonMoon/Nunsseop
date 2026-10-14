@@ -332,7 +332,7 @@
 "App volume" = "앱별 볼륨";
 "Close" = "닫기";
 "Per-app volume (experimental)" = "앱별 볼륨 (실험 기능)";
-"Adds a volume slider for each app playing sound to the Output tile in the Tools tab. macOS asks for permission to record system audio the first time you turn an app down; Nunsseop only changes the level and records nothing. Needs macOS 14.2 or later." = "도구 탭의 출력 타일에서 소리를 내는 앱마다 볼륨을 따로 조절할 수 있습니다. 처음 앱 볼륨을 줄일 때 macOS가 시스템 오디오 녹음 권한을 묻습니다. Nunsseop은 소리 크기만 바꾸고 아무것도 녹음하지 않습니다. macOS 14.2 이상이 필요합니다.";
+"Adds a volume slider for each app playing sound to the Output panel in the Tools tab. macOS asks for permission to record system audio the first time you turn an app down; Nunsseop only changes the level and records nothing. Needs macOS 14.2 or later." = "도구 탭의 출력 패널에서 소리를 내는 앱마다 볼륨을 따로 조절할 수 있습니다. 처음 앱 볼륨을 줄일 때 macOS가 시스템 오디오 녹음 권한을 묻습니다. Nunsseop은 소리 크기만 바꾸고 아무것도 녹음하지 않습니다. macOS 14.2 이상이 필요합니다.";
 "Nunsseop needs permission to record system audio to change an app’s volume." = "앱 볼륨을 바꾸려면 Nunsseop에 시스템 오디오 녹음 권한이 필요합니다.";
 "No apps are playing sound" = "소리를 내는 앱이 없습니다";
 "No sound has come through yet. If the app is playing, Nunsseop may need permission to record system audio." = "아직 소리가 들어오지 않았습니다. 앱에서 소리가 나고 있다면 Nunsseop에 시스템 오디오 녹음 권한이 필요할 수 있습니다.";

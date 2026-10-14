@@ -307,7 +307,7 @@
 "App volume" = "应用音量";
 "Close" = "关闭";
 "Per-app volume (experimental)" = "按应用调节音量（实验性）";
-"Adds a volume slider for each app playing sound to the Output tile in the Tools tab. macOS asks for permission to record system audio the first time you turn an app down; Nunsseop only changes the level and records nothing. Needs macOS 14.2 or later." = "在“工具”标签页的“输出”卡片中，为每个正在发声的应用添加音量滑块。第一次调低某个应用的音量时，macOS 会请求录制系统音频的权限；Nunsseop 只调整音量，不会录制任何内容。需要 macOS 14.2 或更高版本。";
+"Adds a volume slider for each app playing sound to the Output panel in the Tools tab. macOS asks for permission to record system audio the first time you turn an app down; Nunsseop only changes the level and records nothing. Needs macOS 14.2 or later." = "在“工具”标签页的“输出”面板中，为每个正在发声的应用添加音量滑块。第一次调低某个应用的音量时，macOS 会请求录制系统音频的权限；Nunsseop 只调整音量，不会录制任何内容。需要 macOS 14.2 或更高版本。";
 "Nunsseop needs permission to record system audio to change an app’s volume." = "Nunsseop 需要录制系统音频的权限才能更改应用音量。";
 "No apps are playing sound" = "没有应用在播放声音";
 "No sound has come through yet. If the app is playing, Nunsseop may need permission to record system audio." = "尚未收到任何声音。如果该应用正在播放，Nunsseop 可能需要录制系统音频的权限。";

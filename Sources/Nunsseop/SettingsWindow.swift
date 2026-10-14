@@ -732,7 +732,7 @@ private struct ServicesPane: View {
             Section("App volume") {
                 Toggle("Per-app volume (experimental)", isOn: $settings.perAppVolume)
                     .disabled(!AppVolumeModel.isSupported && !settings.perAppVolume)
-                Text("Adds a volume slider for each app playing sound to the Output tile in the Tools tab. macOS asks for permission to record system audio the first time you turn an app down; Nunsseop only changes the level and records nothing. Needs macOS 14.2 or later.")
+                Text("Adds a volume slider for each app playing sound to the Output panel in the Tools tab. macOS asks for permission to record system audio the first time you turn an app down; Nunsseop only changes the level and records nothing. Needs macOS 14.2 or later.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("Mirror") {

@@ -307,7 +307,7 @@
 "App volume" = "アプリごとの音量";
 "Close" = "閉じる";
 "Per-app volume (experimental)" = "アプリごとの音量（実験的）";
-"Adds a volume slider for each app playing sound to the Output tile in the Tools tab. macOS asks for permission to record system audio the first time you turn an app down; Nunsseop only changes the level and records nothing. Needs macOS 14.2 or later." = "ツールタブの「出力」タイルに、音を鳴らしているアプリごとの音量スライダーを追加します。最初にアプリの音量を下げたときに、macOS がシステムオーディオの録音許可を求めます。Nunsseop は音量を変えるだけで、何も録音しません。macOS 14.2 以降が必要です。";
+"Adds a volume slider for each app playing sound to the Output panel in the Tools tab. macOS asks for permission to record system audio the first time you turn an app down; Nunsseop only changes the level and records nothing. Needs macOS 14.2 or later." = "ツールタブの「出力」パネルに、音を鳴らしているアプリごとの音量スライダーを追加します。最初にアプリの音量を下げたときに、macOS がシステムオーディオの録音許可を求めます。Nunsseop は音量を変えるだけで、何も録音しません。macOS 14.2 以降が必要です。";
 "Nunsseop needs permission to record system audio to change an app’s volume." = "アプリの音量を変えるには、Nunsseop にシステムオーディオの録音を許可する必要があります。";
 "No apps are playing sound" = "音を鳴らしているアプリはありません";
 "No sound has come through yet. If the app is playing, Nunsseop may need permission to record system audio." = "まだ音が届いていません。アプリが再生中なら、Nunsseop にシステムオーディオの録音を許可する必要があるかもしれません。";

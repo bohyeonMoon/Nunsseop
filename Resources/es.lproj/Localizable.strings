@@ -307,7 +307,7 @@
 "App volume" = "Volumen de apps";
 "Close" = "Cerrar";
 "Per-app volume (experimental)" = "Volumen por app (experimental)";
-"Adds a volume slider for each app playing sound to the Output tile in the Tools tab. macOS asks for permission to record system audio the first time you turn an app down; Nunsseop only changes the level and records nothing. Needs macOS 14.2 or later." = "Añade a la tarjeta Salida de la pestaña Herramientas un control de volumen para cada app que esté sonando. macOS pide permiso para grabar el audio del sistema la primera vez que bajas una app; Nunsseop solo cambia el nivel y no graba nada. Requiere macOS 14.2 o posterior.";
+"Adds a volume slider for each app playing sound to the Output panel in the Tools tab. macOS asks for permission to record system audio the first time you turn an app down; Nunsseop only changes the level and records nothing. Needs macOS 14.2 or later." = "Añade al panel Salida de la pestaña Herramientas un control de volumen para cada app que esté sonando. macOS pide permiso para grabar el audio del sistema la primera vez que bajas una app; Nunsseop solo cambia el nivel y no graba nada. Requiere macOS 14.2 o posterior.";
 "Nunsseop needs permission to record system audio to change an app’s volume." = "Nunsseop necesita permiso para grabar el audio del sistema para cambiar el volumen de una app.";
 "No apps are playing sound" = "Ninguna app está sonando";
 "No sound has come through yet. If the app is playing, Nunsseop may need permission to record system audio." = "Todavía no llega ningún sonido. Si la app está reproduciendo, puede que Nunsseop necesite permiso para grabar el audio del sistema.";
