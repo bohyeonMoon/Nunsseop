@@ -88,77 +88,122 @@ struct ClipboardTab: View {
     @ObservedObject var history: ClipboardHistory
     @State private var query = ""
     @State private var copiedID: UUID?
+    @State private var selection = DetailSelection<UUID>()
 
     private var filtered: [ClipboardHistory.Item] {
         query.isEmpty ? history.items : history.items.filter { $0.text.localizedCaseInsensitiveContains(query) }
     }
 
     var body: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 8) {
-                HStack(spacing: 6) {
-                    Image(systemName: "magnifyingglass").font(.system(size: 11)).foregroundStyle(.white.opacity(0.5))
-                    TextField("Search clipboard", text: $query)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 12))
-                }
-                .padding(.horizontal, 10).frame(height: 26)
-                .surface(Capsule(), opacity: 0.08)
-                Button("Clear") { history.clear() }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.white.opacity(history.items.isEmpty ? 0.3 : 0.7))
-                    .disabled(history.items.isEmpty)
-            }
-            if filtered.isEmpty {
-                Text(history.items.isEmpty ? String(localized: "Copied text shows up here") : String(localized: "No matches"))
-                    .font(.system(size: 12)).foregroundStyle(.white.opacity(0.45))
+        Group {
+            if history.items.isEmpty {
+                Text("Copied text shows up here")
+                    .font(.system(size: 12)).foregroundStyle(PanelInk.hint)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ScrollView(.vertical, showsIndicators: false) {
-                    LazyVStack(spacing: 4) {
-                        ForEach(filtered) { item in
-                            ClipRow(item: item, copied: copiedID == item.id) {
-                                history.copy(item)
-                                copiedID = item.id
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { if copiedID == item.id { copiedID = nil } }
-                            } onRemove: { history.remove(item) }
+                PanelSplit {
+                    VStack(spacing: 4) {
+                        searchField
+                        if filtered.isEmpty {
+                            Text("No matches")
+                                .font(.system(size: 12)).foregroundStyle(PanelInk.hint)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        } else {
+                            PanelList(items: filtered, selection: $selection) { item, selected in
+                                ClipRow(item: item, selected: selected, copied: copiedID == item.id) { copy(item) }
+                            }
                         }
                     }
+                } right: {
+                    detail
                 }
             }
         }
         .foregroundStyle(.white)
     }
+
+    private var searchField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass").font(.system(size: 11)).foregroundStyle(PanelInk.secondary).accessibilityHidden(true)
+            TextField("Search clipboard", text: $query, prompt: Text("Search clipboard").foregroundStyle(PanelInk.secondary))
+                .textFieldStyle(.plain)
+                .font(.system(size: 12))
+        }
+        .padding(.horizontal, 8).frame(height: 24)
+        .background(RoundedRectangle(cornerRadius: 8).fill(.white.opacity(0.08)))
+    }
+
+    @ViewBuilder private var detail: some View {
+        let shown = selection.current(in: filtered.map(\.id)).flatMap { id in filtered.first { $0.id == id } }
+        VStack(alignment: .leading, spacing: 8) {
+            if let shown {
+                HStack {
+                    PanelCaption(String(localized: "Copied \(shown.date.panelAgo)"))
+                    Spacer(minLength: 8)
+                    Text(verbatim: Self.count(shown.text.count)).font(.system(size: 11)).foregroundStyle(PanelInk.secondary).lineLimit(1)
+                }
+                Text(verbatim: shown.text).font(.system(size: 13)).lineLimit(4).frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+            Spacer(minLength: 0)
+            HStack(spacing: 6) {
+                if let shown {
+                    PanelAction(title: "Copy", symbol: "doc.on.doc", style: .primary) { copy(shown) }
+                    PanelAction(title: "Remove", symbol: "xmark") { history.remove(shown) }
+                }
+                Spacer(minLength: 0)
+                PanelAction(title: "Clear all") { history.clear() }
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    private func copy(_ item: ClipboardHistory.Item) {
+        history.copy(item)
+        // Copying moves the text to the top as a new entry, and that is the row that is ticked.
+        let ticked = history.items.first?.id
+        copiedID = ticked
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { if copiedID == ticked { copiedID = nil } }
+    }
+
+    private static func count(_ characters: Int) -> String {
+        characters == 1 ? String(localized: "1 character") : String(localized: "\(characters) characters")
+    }
+}
+
+/// How long ago, in the shortest form the language has: 30s, 2m, 1h, 3d.
+private enum ClipAge {
+    private static let formatter: DateComponentsFormatter = {
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = [.day, .hour, .minute, .second]
+        formatter.unitsStyle = .abbreviated
+        formatter.maximumUnitCount = 1
+        return formatter
+    }()
+
+    static func short(_ date: Date) -> String { formatter.string(from: max(0, Date.now.timeIntervalSince(date))) ?? "" }
 }
 
 private struct ClipRow: View {
     let item: ClipboardHistory.Item
+    let selected: Bool
     let copied: Bool
     let onCopy: () -> Void
-    let onRemove: () -> Void
-    @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 8) {
-            Text(item.text)
-                .font(.system(size: 12))
-                .lineLimit(2)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            if copied {
-                Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundStyle(.green)
-            } else if hovering {
-                Button(action: onRemove) { Image(systemName: "xmark").font(.system(size: 10, weight: .semibold)) }
-                    .buttonStyle(.plain).foregroundStyle(.white.opacity(0.6))
-            } else {
-                Text(item.date, style: .relative).font(.system(size: 9)).foregroundStyle(.white.opacity(0.35))
+        LedgerRow(selected: selected) {
+            HStack(spacing: 8) {
+                Text(verbatim: item.text.replacingOccurrences(of: "\n", with: " ")).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                Spacer(minLength: 4)
+                if copied {
+                    Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
+                } else {
+                    Text.panel(ClipAge.short(item.date), size: 11, opacity: 0.6, mono: true).lineLimit(1).fixedSize()
+                }
             }
         }
-        .padding(.horizontal, 10).padding(.vertical, 6)
-        .background(RoundedRectangle(cornerRadius: 9).fill(.white.opacity(hovering ? 0.12 : 0.05)))
-        .contentShape(Rectangle())
         .onTapGesture(perform: onCopy)
-        .onHover { hovering = $0 }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
         .help(Text("Click to copy"))
     }
 }

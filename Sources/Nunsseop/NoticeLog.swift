@@ -59,30 +59,22 @@ final class NoticeLog: ObservableObject {
 
 struct NoticesTab: View {
     @ObservedObject var log: NoticeLog
+    @State private var selection = DetailSelection<UUID>()
 
     var body: some View {
-        VStack(spacing: 8) {
-            HStack {
-                Text("Recent notifications").font(.system(size: 13, weight: .semibold))
-                Spacer()
-                Button("Clear") { log.clear() }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.white.opacity(log.entries.isEmpty ? 0.3 : 0.7))
-                    .disabled(log.entries.isEmpty)
-            }
+        Group {
             if log.entries.isEmpty {
                 Text("Notifications from agents, terminals and your calendar show up here")
-                    .font(.system(size: 12)).foregroundStyle(.white.opacity(0.45))
+                    .font(.system(size: 12)).foregroundStyle(PanelInk.hint)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ScrollView(.vertical, showsIndicators: false) {
-                    LazyVStack(spacing: 4) {
-                        ForEach(log.entries) { entry in
-                            NoticeRow(entry: entry) { log.remove(entry) }
-                        }
+                PanelSplit {
+                    PanelList(items: log.entries, selection: $selection) { entry, selected in
+                        NoticeRow(entry: entry, selected: selected)
                     }
+                } right: {
+                    detail
                 }
             }
         }
@@ -90,44 +82,57 @@ struct NoticesTab: View {
         .onAppear { log.isShowing = true }
         .onDisappear { log.isShowing = false }
     }
+
+    @ViewBuilder private var detail: some View {
+        let shown = selection.current(in: log.entries.map(\.id)).flatMap { id in log.entries.first { $0.id == id } }
+        VStack(alignment: .leading, spacing: 8) {
+            if let shown {
+                HStack(spacing: 10) {
+                    Image(systemName: shown.symbol).font(.system(size: 13, weight: .semibold)).frame(width: 28, height: 28)
+                        .overlay(Circle().strokeBorder(.white.opacity(0.35), lineWidth: 0.75)).accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(verbatim: shown.title).font(.system(size: 14, weight: .semibold)).lineLimit(1)
+                        Text(verbatim: Self.when(shown.date)).font(.system(size: 11)).foregroundStyle(PanelInk.secondary).lineLimit(1)
+                    }
+                }
+                if let detail = shown.detail, !detail.isEmpty {
+                    Text(verbatim: detail).font(.system(size: 13)).lineLimit(3).frame(maxWidth: .infinity, alignment: .topLeading)
+                }
+            }
+            Spacer(minLength: 0)
+            HStack(spacing: 6) {
+                if let shown {
+                    PanelAction(title: "Go to source", symbol: "arrow.uturn.right", style: .primary,
+                                reason: shown.action == nil ? String(localized: "This notification has no source to go to") : nil) { shown.action?() }
+                    PanelAction(title: "Remove", symbol: "xmark") { log.remove(shown) }
+                }
+                Spacer(minLength: 0)
+                PanelAction(title: "Clear all") { log.clear() }
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    /// "09:41 · 3 minutes ago", with the day too when it was not today.
+    private static func when(_ date: Date) -> String {
+        let clock = Calendar.current.isDateInToday(date)
+            ? date.formatted(.dateTime.hour().minute()) : date.formatted(.dateTime.month().day().hour().minute())
+        return "\(clock) · \(date.panelAgo)"
+    }
 }
 
 private struct NoticeRow: View {
     let entry: NoticeLog.Entry
-    let onRemove: () -> Void
-    @State private var hovering = false
+    let selected: Bool
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: entry.symbol)
-                .font(.system(size: 11, weight: .semibold))
-                .frame(width: 16, height: 16)
-                .foregroundStyle(.white.opacity(0.75))
-            VStack(alignment: .leading, spacing: 1) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(entry.title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
-                    Spacer(minLength: 4)
-                    Text(entry.date, format: .dateTime.hour().minute())
-                        .font(.system(size: 10).monospacedDigit()).foregroundStyle(.white.opacity(0.4))
-                }
-                if let detail = entry.detail, !detail.isEmpty {
-                    Text(detail).font(.system(size: 11)).foregroundStyle(.white.opacity(0.6)).lineLimit(2)
-                }
-            }
-            if hovering {
-                Button(action: onRemove) {
-                    Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundStyle(.white.opacity(0.5))
-                }
-                .buttonStyle(.plain)
-                .help(Text("Remove"))
-            }
+        LedgerRow(selected: selected) {
+            LedgerLine(symbol: entry.symbol, title: entry.title, trailing: entry.date.formatted(.dateTime.hour().minute()))
         }
-        .padding(.horizontal, 10).padding(.vertical, 6)
-        .surface(RoundedRectangle(cornerRadius: 10), opacity: hovering && entry.action != nil ? 0.14 : 0.08)
-        .contentShape(Rectangle())
         // A notice that leads somewhere goes there again; the others just stay readable.
         .onTapGesture { entry.action?() }
-        .onHover { hovering = $0 }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(entry.action == nil ? [] : .isButton)
         .help(entry.action == nil ? Text(verbatim: "") : Text("Go to where it came from"))
     }
 }

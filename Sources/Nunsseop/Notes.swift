@@ -45,20 +45,22 @@ struct NotesTab: View {
     @ObservedObject var notes: NotesModel
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            Color.clear.surface(RoundedRectangle(cornerRadius: 14), opacity: 0.05)
-            if notes.text.isEmpty {
-                Text("Jot something down…")
+        VStack(spacing: 0) {
+            PanelHLine()
+            ZStack(alignment: .topLeading) {
+                if notes.text.isEmpty {
+                    Text("Jot something down…")
+                        .font(.system(size: 13))
+                        .foregroundStyle(PanelInk.hint)
+                        .padding(.horizontal, 4).padding(.vertical, 8)
+                        .allowsHitTesting(false)
+                }
+                TextEditor(text: $notes.text)
                     .font(.system(size: 13))
-                    .foregroundStyle(.white.opacity(0.35))
-                    .padding(.horizontal, 14).padding(.vertical, 10)
-                    .allowsHitTesting(false)
+                    .scrollContentBackground(.hidden)
+                    .foregroundStyle(.white)
             }
-            TextEditor(text: $notes.text)
-                .font(.system(size: 13))
-                .scrollContentBackground(.hidden)
-                .foregroundStyle(.white)
-                .padding(.horizontal, 9).padding(.vertical, 8)
+            PanelHLine()
         }
     }
 }
