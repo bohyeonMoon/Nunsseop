@@ -81,7 +81,8 @@ struct NotchView: View {
                                     ToolsTab(tools: model.tools, recorder: model.recorder, recordAudio: model.settings.recordAudio,
                                              appVolume: model.settings.perAppVolume ? model.appVolume : nil)
                                 case .system:
-                                    SystemTab(stats: model.stats, peripherals: model.settings.peripheralBatteries ? model.peripherals : nil)
+                                    SystemTab(stats: model.stats, peripherals: model.settings.peripheralBatteries ? model.peripherals : nil,
+                                              power: model.settings.batteryInHeader ? model.hud.power : nil)
                                 case .apps:
                                     AppsTab(launcher: model.launcher)
                                 case .search:

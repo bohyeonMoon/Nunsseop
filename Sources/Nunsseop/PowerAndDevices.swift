@@ -5,6 +5,18 @@ struct PowerState: Equatable {
     var percent: Int
     var isCharging: Bool
     var onAC: Bool
+
+    /// At or below this, and not on the charger, the battery is low.
+    static let lowPercent = 20.0
+
+    var isLow: Bool { Double(percent) <= Self.lowPercent && !onAC }
+
+    /// What the Battery panel says under the figure.
+    var caption: String {
+        if isCharging { return String(localized: "Charging") }
+        if isLow { return String(localized: "Low") }
+        return onAC ? String(localized: "Plugged in") : String(localized: "On battery")
+    }
 }
 
 /// Internal battery state with a callback when the power source changes.

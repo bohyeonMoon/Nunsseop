@@ -12,6 +12,8 @@ struct PeripheralBattery: Identifiable, Equatable {
 
     enum Kind { case mouse, keyboard, trackpad, other }
 
+    var isLow: Bool { percent <= 15 }
+
     var symbol: String {
         switch kind {
         case .mouse: return "computermouse.fill"
@@ -25,7 +27,7 @@ struct PeripheralBattery: Identifiable, Equatable {
 /// Battery levels of connected mice, keyboards and trackpads.
 @MainActor
 final class PeripheralMonitor: ObservableObject {
-    @Published private(set) var devices: [PeripheralBattery] = []
+    @Published var devices: [PeripheralBattery] = []
     var onLow: ((PeripheralBattery) -> Void)?
 
     private var timer: Timer?
@@ -65,9 +67,9 @@ final class PeripheralMonitor: ObservableObject {
     /// The devices to warn about now, and the set of devices already warned about and still low.
     nonisolated static func lowBattery(found: [PeripheralBattery], warned: Set<String>)
         -> (toWarn: [PeripheralBattery], warned: Set<String>) {
-        let toWarn = found.filter { $0.percent <= 15 && !warned.contains($0.name) }
+        let toWarn = found.filter { $0.isLow && !warned.contains($0.name) }
         let still = warned.union(toWarn.map(\.name))
-        return (toWarn, still.filter { name in found.contains { $0.name == name && $0.percent <= 15 } })
+        return (toWarn, still.filter { name in found.contains { $0.name == name && $0.isLow } })
     }
 
     nonisolated static func kind(for name: String, type: String?) -> PeripheralBattery.Kind {

@@ -1,16 +1,16 @@
 import Darwin
 import SwiftUI
 
-/// CPU, memory, network and disk figures, sampled only while the System tab is visible.
+/// CPU, memory, network and disk figures, sampled only while the System tab is visible. The figures are settable so that a render can put its own in.
 @MainActor
 final class SystemStats: ObservableObject {
-    @Published private(set) var cpu: Double = 0
-    @Published private(set) var memoryUsed: UInt64 = 0
+    @Published var cpu: Double = 0
+    @Published var memoryUsed: UInt64 = 0
     let memoryTotal = ProcessInfo.processInfo.physicalMemory
-    @Published private(set) var downloadRate: Double = 0
-    @Published private(set) var uploadRate: Double = 0
-    @Published private(set) var diskFree: Int64 = 0
-    @Published private(set) var diskTotal: Int64 = 0
+    @Published var downloadRate: Double = 0
+    @Published var uploadRate: Double = 0
+    @Published var diskFree: Int64 = 0
+    @Published var diskTotal: Int64 = 0
 
     private var timer: Timer?
     private var lastTicks: (busy: UInt64, total: UInt64)?
@@ -112,47 +112,69 @@ final class SystemStats: ObservableObject {
 struct SystemTab: View {
     @ObservedObject var stats: SystemStats
     let peripherals: PeripheralMonitor?
+    /// The battery of this Mac; nil on a Mac without one, or when the Battery panel is turned off.
+    var power: PowerState?
+
+    private struct Figure {
+        let label: String
+        let fraction: Double
+        let caption: String
+        var symbol: String?
+        var tint: Color = .white.opacity(0.75)
+        var tick: Double?
+    }
+
+    private var figures: [Figure] {
+        var all = [
+            Figure(label: "CPU", fraction: stats.cpu, caption: String(localized: "\(ProcessInfo.processInfo.activeProcessorCount) cores")),
+            Figure(label: String(localized: "Memory"), fraction: stats.memoryTotal > 0 ? Double(stats.memoryUsed) / Double(stats.memoryTotal) : 0,
+                   caption: "\(Self.bytes(Int64(stats.memoryUsed))) / \(Self.bytes(Int64(stats.memoryTotal)))"),
+            Figure(label: String(localized: "Disk"), fraction: stats.diskTotal > 0 ? 1 - Double(stats.diskFree) / Double(stats.diskTotal) : 0,
+                   caption: String(localized: "\(Self.bytes(stats.diskFree)) free")),
+        ]
+        if let power {
+            all.append(Figure(label: String(localized: "Battery"), fraction: Double(power.percent) / 100, caption: power.caption,
+                              symbol: power.isCharging ? "bolt.fill" : nil, tint: power.isLow ? PanelInk.waiting : .white.opacity(0.75),
+                              tick: power.isLow ? PowerState.lowPercent / 100 : nil))
+        }
+        return all
+    }
 
     var body: some View {
-        // Narrower gauges leave the network card room on a narrow notch.
-        ViewThatFits(in: .horizontal) {
-            row(gaugeWidth: 112)
-            row(gaugeWidth: 96)
+        VStack(spacing: 0) {
+            PanelColumns(figures) { figure in
+                let percent = Int((min(1, max(0, figure.fraction)) * 100).rounded())
+                PanelMetric(label: figure.label, value: "\(percent)", unit: "%", caption: figure.caption, fraction: figure.fraction,
+                            captionSymbol: figure.symbol, tint: figure.tint, tick: figure.tick)
+            }
+            .padding(.top, 6)
+            .frame(height: 84, alignment: .top)
+            PanelHLine()
+            PanelColumns(peripherals == nil ? [0] : [0, 1]) { column in
+                if column == 0 { network } else if let peripherals { DeviceList(monitor: peripherals) }
+            }
+            .padding(.top, 2)
+            .frame(maxHeight: .infinity, alignment: .top)
         }
         .foregroundStyle(.white)
         .onAppear { stats.start() }
         .onDisappear { stats.stop() }
     }
 
-    private func row(gaugeWidth: CGFloat) -> some View {
-        HStack(spacing: 10) {
-            Gauge(title: "CPU", value: stats.cpu, caption: String(localized: "\(ProcessInfo.processInfo.activeProcessorCount) cores"), tint: .orange,
-                  width: gaugeWidth)
-            Gauge(title: String(localized: "Memory"),
-                  value: stats.memoryTotal > 0 ? Double(stats.memoryUsed) / Double(stats.memoryTotal) : 0,
-                  caption: "\(Self.bytes(Int64(stats.memoryUsed))) / \(Self.bytes(Int64(stats.memoryTotal)))", tint: .blue,
-                  width: gaugeWidth)
-            Gauge(title: String(localized: "Disk"),
-                  value: stats.diskTotal > 0 ? 1 - Double(stats.diskFree) / Double(stats.diskTotal) : 0,
-                  caption: String(localized: "\(Self.bytes(stats.diskFree)) free"), tint: .purple, width: gaugeWidth)
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Network").font(.system(size: 12, weight: .semibold))
-                HStack(spacing: 10) {
-                    Label(Self.bytes(Int64(stats.downloadRate)) + "/s", systemImage: "arrow.down")
-                    Label(Self.bytes(Int64(stats.uploadRate)) + "/s", systemImage: "arrow.up")
-                        .foregroundStyle(.white.opacity(0.7))
+    private var network: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            PanelCaption(String(localized: "Network")).frame(height: 22)
+            HStack(spacing: 22) {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.down").font(.system(size: 11, weight: .semibold)).accessibilityLabel(Text("Download"))
+                    Text.panel(Self.bytes(Int64(stats.downloadRate)) + "/s", size: 15, weight: .semibold, mono: true).lineLimit(1)
                 }
-                .font(.system(size: 11, weight: .medium).monospacedDigit())
-                .lineLimit(1).minimumScaleFactor(0.7)
-                if let peripherals {
-                    Divider().overlay(.white.opacity(0.15)).padding(.vertical, 2)
-                    DeviceList(monitor: peripherals)
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.up").font(.system(size: 11, weight: .semibold)).accessibilityLabel(Text("Upload"))
+                    Text.panel(Self.bytes(Int64(stats.uploadRate)) + "/s", size: 15, weight: .semibold, opacity: 0.8, mono: true).lineLimit(1)
                 }
             }
-            .padding(14)
-            // The ideal width is what the network rates need; the card still takes any spare room.
-            .frame(idealWidth: 160, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .surface(RoundedRectangle(cornerRadius: 14))
+            .frame(height: 26, alignment: .leading)
         }
     }
 
@@ -163,60 +185,41 @@ struct SystemTab: View {
     }
 }
 
+/// Batteries of the mouse, keyboard and trackpad: a bar each, orange with the word "Low" when one runs out.
 private struct DeviceList: View {
     @ObservedObject var monitor: PeripheralMonitor
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Devices").font(.system(size: 12, weight: .semibold))
+        VStack(alignment: .leading, spacing: 0) {
+            PanelCaption(String(localized: "Devices")).frame(height: 22)
             if monitor.devices.isEmpty {
-                Text("No battery devices connected").font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+                Text("No battery devices connected").font(.system(size: 11)).foregroundStyle(PanelInk.secondary).frame(height: 20)
             }
-            // Four or more devices scroll inside the card instead of running past the bottom of the notch.
+            // Three or more devices scroll instead of running past the bottom of the notch.
             ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 0) {
                     ForEach(monitor.devices) { device in
-                        HStack(spacing: 6) {
-                            Image(systemName: device.symbol).font(.system(size: 10)).frame(width: 14)
-                            Text(device.name).font(.system(size: 10)).lineLimit(1)
+                        let low = device.isLow
+                        HStack(spacing: 8) {
+                            Image(systemName: device.symbol).font(.system(size: 11)).foregroundStyle(.white.opacity(0.7)).frame(width: 16)
+                                .accessibilityHidden(true)
+                            Text(verbatim: device.name).font(.system(size: 12, weight: .medium)).lineLimit(1)
                             Spacer(minLength: 4)
-                            Text("\(device.percent)%").font(.system(size: 10, weight: .semibold).monospacedDigit())
-                                .foregroundStyle(device.percent <= 15 ? .red : .white)
+                            PanelMeter(fraction: Double(device.percent) / 100, tint: low ? PanelInk.waiting : .white.opacity(0.75)).frame(width: 64)
+                            Text.panel("\(device.percent)%", size: 11, weight: .semibold, opacity: low ? 1 : 0.8, mono: true)
+                                .foregroundStyle(low ? PanelInk.waiting : .white.opacity(0.8))
+                                .frame(width: 34, alignment: .trailing)
+                            Text("Low").font(.system(size: 11, weight: .medium)).foregroundStyle(PanelInk.waiting)
+                                .opacity(low ? 1 : 0).frame(width: 26, alignment: .leading)
                         }
+                        .frame(height: 20)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(Text(verbatim: device.name))
+                        .accessibilityValue(Text(verbatim: "\(device.percent)%" + (low ? " " + String(localized: "Low") : "")))
                     }
                 }
             }
         }
         .onAppear { monitor.refresh() }
-    }
-}
-
-private struct Gauge: View {
-    let title: String
-    let value: Double
-    let caption: String
-    let tint: Color
-    let width: CGFloat
-
-    var body: some View {
-        VStack(spacing: 8) {
-            ZStack {
-                Circle().stroke(.white.opacity(0.12), lineWidth: 7)
-                Circle()
-                    .trim(from: 0, to: min(1, max(0, value)))
-                    .stroke(tint, style: StrokeStyle(lineWidth: 7, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                    .animation(.easeOut(duration: 0.4), value: value)
-                Text("\(Int((min(1, max(0, value)) * 100).rounded()))%")
-                    .font(.system(size: 13, weight: .semibold).monospacedDigit())
-            }
-            .frame(width: 58, height: 58)
-            Text(title).font(.system(size: 12, weight: .semibold))
-            Text(caption).font(.system(size: 9).monospacedDigit()).foregroundStyle(.white.opacity(0.55)).lineLimit(1)
-        }
-        .padding(.vertical, 12).padding(.horizontal, 8)
-        .frame(width: width)
-        .frame(maxHeight: .infinity)
-        .surface(RoundedRectangle(cornerRadius: 14))
     }
 }

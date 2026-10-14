@@ -74,6 +74,19 @@ struct PanelKeysTests {
     }
 }
 
+struct PowerStateLowTests {
+    @Test func lowMeansTwentyPercentOrLessOnBattery() {
+        #expect(PowerState(percent: 20, isCharging: false, onAC: false).isLow)
+        #expect(!PowerState(percent: 21, isCharging: false, onAC: false).isLow)
+        #expect(!PowerState(percent: 5, isCharging: true, onAC: true).isLow)
+    }
+
+    @Test func aPeripheralIsLowAtFifteenPercent() {
+        #expect(PeripheralBattery(name: "Mouse", percent: 15, kind: .mouse).isLow)
+        #expect(!PeripheralBattery(name: "Mouse", percent: 16, kind: .mouse).isLow)
+    }
+}
+
 struct HomeColumnTests {
     @Test func theRightColumnShowsAWholeWeekWhereItHasRoom() {
         #expect(HomePanels.column(for: 556).days == 7)
