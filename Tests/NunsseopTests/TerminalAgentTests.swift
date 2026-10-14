@@ -390,7 +390,8 @@ struct TmuxWatcherTests {
         #!/bin/sh
         out=$(mktemp "\(requests.path)/req.XXXXXX")
         for arg; do printf '%s\\n' "$arg"; done > "$out.args"
-        cat > "$out.body"
+        cat > "$out.partial"
+        mv "$out.partial" "$out.body"
         rm "$out"
         """, to: curl)
 
