@@ -7,6 +7,14 @@ final class SettingsWindowController {
     static let shared = SettingsWindowController()
 
     private var window: NSWindow?
+    /// Set by the notch, which owns the tour.
+    var onReplayTour: (() -> Void)?
+
+    /// Closes Settings and starts the tour again from its first step.
+    func replayTour() {
+        window?.close()
+        onReplayTour?()
+    }
 
     func show() {
         if window == nil {
@@ -72,6 +80,7 @@ private struct GeneralPane: View {
                 if let error = launchAtLogin.lastError {
                     Text(error).font(.caption).foregroundStyle(.red)
                 }
+                Button(OnboardingText.showAgain) { SettingsWindowController.shared.replayTour() }
             }
             Section("Updates") {
                 Toggle("Check for updates automatically", isOn: $settings.checkForUpdates)
