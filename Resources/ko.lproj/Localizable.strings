@@ -538,3 +538,15 @@
 "Open at login" = "로그인할 때 열기";
 "On · change in Settings › General" = "켜져 있어요 · 설정 › 일반에서 바꿔요";
 "Off · change in Settings › General" = "꺼져 있어요 · 설정 › 일반에서 바꿔요";
+
+/* Panels */
+"Previous" = "이전";
+"Play" = "재생";
+"Pause" = "일시정지";
+"Playback position" = "재생 위치";
+"Charging" = "충전 중";
+"Plugged in" = "전원 연결됨";
+"On battery" = "배터리 사용 중";
+"Low" = "부족";
+"Download" = "다운로드";
+"Upload" = "업로드";

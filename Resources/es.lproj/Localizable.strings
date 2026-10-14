@@ -513,3 +513,15 @@
 "Open at login" = "Abrir al iniciar sesión";
 "On · change in Settings › General" = "Activado · en Ajustes › General";
 "Off · change in Settings › General" = "Desactivado · en Ajustes › General";
+
+/* Panels */
+"Previous" = "Anterior";
+"Play" = "Reproducir";
+"Pause" = "Pausar";
+"Playback position" = "Posición de reproducción";
+"Charging" = "Cargando";
+"Plugged in" = "Conectado a la corriente";
+"On battery" = "Con batería";
+"Low" = "Baja";
+"Download" = "Descarga";
+"Upload" = "Subida";

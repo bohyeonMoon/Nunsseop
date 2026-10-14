@@ -513,3 +513,15 @@
 "Open at login" = "ログイン時に開く";
 "On · change in Settings › General" = "オン · 設定 › 一般で変更できます";
 "Off · change in Settings › General" = "オフ · 設定 › 一般で変更できます";
+
+/* Panels */
+"Previous" = "前へ";
+"Play" = "再生";
+"Pause" = "一時停止";
+"Playback position" = "再生位置";
+"Charging" = "充電中";
+"Plugged in" = "電源に接続中";
+"On battery" = "バッテリー使用中";
+"Low" = "残りわずか";
+"Download" = "ダウンロード";
+"Upload" = "アップロード";

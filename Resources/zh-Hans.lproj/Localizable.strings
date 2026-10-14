@@ -513,3 +513,15 @@
 "Open at login" = "登录时打开";
 "On · change in Settings › General" = "已开启 · 可在“设置 › 通用”更改";
 "Off · change in Settings › General" = "已关闭 · 可在“设置 › 通用”更改";
+
+/* Panels */
+"Previous" = "上一首";
+"Play" = "播放";
+"Pause" = "暂停";
+"Playback position" = "播放位置";
+"Charging" = "正在充电";
+"Plugged in" = "已接通电源";
+"On battery" = "使用电池";
+"Low" = "电量低";
+"Download" = "下载";
+"Upload" = "上传";
