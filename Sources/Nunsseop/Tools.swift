@@ -30,6 +30,11 @@ final class ToolsModel: ObservableObject {
 
     private var assertionID: IOPMAssertionID = 0
     private var observers: [NSObjectProtocol] = []
+    private let mountedDrives: () -> [Drive]
+
+    init(mountedDrives: @escaping () -> [Drive] = ToolsModel.externalDrives) {
+        self.mountedDrives = mountedDrives
+    }
 
     func start() {
         refreshAudio()
@@ -276,9 +281,13 @@ final class ToolsModel: ObservableObject {
     // MARK: Drives
 
     func refreshDrives() {
+        drives = mountedDrives()
+    }
+
+    nonisolated static func externalDrives() -> [Drive] {
         let keys: [URLResourceKey] = [.volumeNameKey, .volumeIsEjectableKey, .volumeIsRemovableKey, .volumeIsInternalKey]
         let urls = FileManager.default.mountedVolumeURLs(includingResourceValuesForKeys: keys, options: [.skipHiddenVolumes]) ?? []
-        drives = urls.compactMap { url in
+        return urls.compactMap { url in
             guard let values = try? url.resourceValues(forKeys: Set(keys)),
                   values.volumeIsEjectable == true || (values.volumeIsRemovable == true && values.volumeIsInternal != true)
             else { return nil }
@@ -307,144 +316,183 @@ struct ToolsTab: View {
     let appVolume: AppVolumeModel?
 
     var body: some View {
-        HStack(spacing: 10) {
-            ToolTile(symbol: "hifispeaker.fill", title: String(localized: "Output"), active: false) {
-                Menu {
-                    ForEach(tools.outputs) { device in
-                        Button {
-                            tools.selectOutput(device)
-                        } label: {
-                            if device.id == tools.currentOutput { Label(device.name, systemImage: "checkmark") } else { Text(device.name) }
-                        }
-                    }
-                } label: {
-                    Text(tools.outputs.first { $0.id == tools.currentOutput }?.name ?? "—")
-                        .font(.system(size: 11)).lineLimit(1)
+        VStack(spacing: 0) {
+            PanelColumns([0, 1, 2]) { column in
+                switch column {
+                case 0: output
+                case 1: microphone
+                default: keepAwake
                 }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.visible)
-                .fixedSize(horizontal: false, vertical: true)
-            } action: { tools.refreshAudio() }
-            .overlay(alignment: .topTrailing) {
-                if let appVolume { AppVolumeButton(model: appVolume).padding(8) }
             }
-
-            ToolTile(symbol: tools.micMuted ? "mic.slash.fill" : "mic.fill", title: String(localized: "Microphone"),
-                     active: tools.micMuted) {
-                Text(tools.micMuted ? String(localized: "Muted") : String(localized: "On")).font(.system(size: 11))
-            } action: { tools.toggleMic() }
-
-            ToolTile(symbol: tools.keepAwake ? "cup.and.saucer.fill" : "moon.zzz.fill", title: String(localized: "Keep awake"),
-                     active: tools.keepAwake) {
-                Text(tools.keepAwake ? String(localized: "On") : String(localized: "Off")).font(.system(size: 11))
-            } action: { tools.toggleKeepAwake() }
-
-            ToolTile(symbol: recorder.isRecording ? "stop.circle.fill" : "record.circle", title: String(localized: "Record screen"),
-                     active: recorder.isRecording) {
-                if let started = recorder.startedAt {
-                    TimelineView(.periodic(from: .now, by: 1)) { context in
-                        Text(TimerModel.format(context.date.timeIntervalSince(started))).font(.system(size: 11).monospacedDigit())
-                    }
-                } else {
-                    Text(ScreenRecorder.hasPermission ? String(localized: "Start") : String(localized: "Needs permission"))
-                        .font(.system(size: 11))
+            .frame(maxHeight: .infinity, alignment: .top)
+            PanelHLine()
+            PanelColumns([0, 1, 2]) { column in
+                switch column {
+                case 0: record
+                case 1: capture
+                default: drives
                 }
-            } action: { recorder.toggle(withAudio: recordAudio) }
-
-            // The tiles narrow first so this column keeps room for both capture buttons.
-            VStack(spacing: 8) {
-                captureStrip
-                drivesCard
             }
+            .frame(maxHeight: .infinity, alignment: .top)
         }
         .overlay(alignment: .topLeading) {
             if let appVolume { AppVolumeOverlay(model: appVolume) }
         }
         .foregroundStyle(.white)
+        // The lists are read when the tab opens: a device or a drive that came after the app started is there too.
+        .onAppear {
+            tools.refreshAudio()
+            tools.refreshDrives()
+        }
+    }
+
+    private var output: some View {
+        ToolPanel(symbol: "hifispeaker.fill", title: String(localized: "Output")) {
+            if let appVolume { AppVolumeButton(model: appVolume) }
+        } content: {
+            Menu {
+                ForEach(tools.outputs) { device in
+                    Button {
+                        tools.selectOutput(device)
+                    } label: {
+                        if device.id == tools.currentOutput { Label(device.name, systemImage: "checkmark") } else { Text(device.name) }
+                    }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Text.panel(tools.outputs.first { $0.id == tools.currentOutput }?.name ?? "—", size: 14, weight: .semibold).lineLimit(1)
+                    Image(systemName: "chevron.up.chevron.down").font(.system(size: 9)).foregroundStyle(PanelInk.secondary)
+                        .accessibilityHidden(true)
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+        }
+    }
+
+    private var microphone: some View {
+        ToolPanel(symbol: tools.micMuted ? "mic.slash.fill" : "mic.fill", title: String(localized: "Microphone")) {
+            PanelOnOff(isOn: Binding(get: { !tools.micMuted }, set: { _ in tools.toggleMic() }), title: "Microphone")
+        }
+    }
+
+    private var keepAwake: some View {
+        ToolPanel(symbol: tools.keepAwake ? "cup.and.saucer.fill" : "moon.zzz.fill", title: String(localized: "Keep awake")) {
+            PanelOnOff(isOn: Binding(get: { tools.keepAwake }, set: { _ in tools.toggleKeepAwake() }), title: "Keep awake")
+        }
+    }
+
+    private var record: some View {
+        ToolPanel(symbol: recorder.isRecording ? "stop.circle.fill" : "record.circle", title: String(localized: "Record screen")) {
+            if let started = recorder.startedAt {
+                HStack(spacing: 8) {
+                    PanelAction(title: "Stop", symbol: "stop.fill", style: .primary) { recorder.toggle(withAudio: recordAudio) }
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        Text.panel(TimerModel.format(context.date.timeIntervalSince(started)), size: 14, weight: .semibold, mono: true)
+                    }
+                }
+            } else {
+                PanelAction(title: ScreenRecorder.hasPermission ? "Start" : "Needs permission", symbol: "record.circle") {
+                    recorder.toggle(withAudio: recordAudio)
+                }
+            }
+        }
     }
 
     /// Color picker and text capture, with the recently picked colors.
-    private var captureStrip: some View {
-        HStack(spacing: 6) {
-            pickColorButton
-            captureTextButton
-            Spacer(minLength: 0)
-            // Only as many swatches as fit, newest first.
-            ViewThatFits(in: .horizontal) {
-                ForEach((0...tools.pickedColors.count).reversed(), id: \.self) { count in
-                    HStack(spacing: 4) {
-                        ForEach(tools.pickedColors.prefix(count), id: \.self) { hex in
-                            Circle()
-                                .fill(Color(hex: hex))
-                                .overlay(Circle().strokeBorder(.white.opacity(0.35), lineWidth: 1))
-                                .frame(width: 14, height: 14)
-                                .contentShape(Circle())
-                                .onTapGesture { tools.copyColor(hex) }
+    private var capture: some View {
+        ToolPanel(symbol: "viewfinder", title: String(localized: "Capture")) {
+            HStack(spacing: 2) {
+                PanelIconButton(symbol: "eyedropper", title: String(localized: "Pick a color from the screen"), size: 13) { tools.pickColor() }
+                PanelIconButton(symbol: "text.viewfinder", title: String(localized: "Capture text from the screen"), size: 13,
+                                hot: tools.isCapturingText) { tools.captureText() }
+                // Only as many swatches as fit, newest first.
+                ViewThatFits(in: .horizontal) {
+                    ForEach((0...tools.pickedColors.count).reversed(), id: \.self) { count in
+                        HStack(spacing: 0) {
+                            if count > 0 { PanelVLine().frame(height: 14).padding(.horizontal, 4) }
+                            ForEach(tools.pickedColors.prefix(count), id: \.self) { hex in
+                                Button { tools.copyColor(hex) } label: {
+                                    Circle().fill(Color(hex: hex))
+                                        .overlay(Circle().strokeBorder(.white.opacity(0.45), lineWidth: 1))
+                                        .frame(width: 14, height: 14)
+                                        .frame(width: 24, height: 24)
+                                        .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
                                 .help(Text(hex))
+                                .accessibilityLabel(Text(hex))
+                            }
                         }
                     }
                 }
             }
         }
-        .padding(8)
-        .surface(RoundedRectangle(cornerRadius: 14))
     }
 
-    private var pickColorButton: some View {
-        CaptureButton(symbol: "eyedropper", help: String(localized: "Pick a color from the screen")) { tools.pickColor() }
-    }
-
-    private var captureTextButton: some View {
-        CaptureButton(symbol: "text.viewfinder", help: String(localized: "Capture text from the screen"),
-                      active: tools.isCapturingText) { tools.captureText() }
-    }
-
-    private var drivesCard: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label("Drives", systemImage: "externaldrive.fill").font(.system(size: 11, weight: .semibold))
+    private var drives: some View {
+        ToolPanel(symbol: "externaldrive.fill", title: String(localized: "Drives"), height: nil) {
             if tools.drives.isEmpty {
-                Text("No external drives").font(.system(size: 11)).foregroundStyle(.white.opacity(0.45))
-            }
-            // Many mounted volumes scroll inside the card instead of running past the notch.
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 6) {
-                    ForEach(tools.drives) { drive in
-                        HStack {
-                            Text(drive.name).font(.system(size: 11)).lineLimit(1)
-                            Spacer()
-                            Button { tools.eject(drive) } label: { Image(systemName: "eject.fill").font(.system(size: 10)) }
-                                .buttonStyle(.plain)
-                                .help(Text("Eject"))
+                Text("No external drives").font(.system(size: 12)).foregroundStyle(PanelInk.hint).frame(height: 26, alignment: .leading)
+            } else {
+                // Many mounted volumes scroll instead of running past the notch.
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(spacing: 0) {
+                        ForEach(tools.drives) { drive in
+                            HStack(spacing: 4) {
+                                Text.panel(drive.name, size: tools.drives.count == 1 ? 14 : 12, weight: .semibold).lineLimit(1)
+                                Spacer(minLength: 0)
+                                PanelIconButton(symbol: "eject.fill", title: String(localized: "Eject"), size: 11) { tools.eject(drive) }
+                            }
+                            .frame(height: 26)
                         }
                     }
                 }
+                .panelFadeBottom(tools.drives.count > 2 ? 12 : 0)
             }
             if let error = tools.ejectError {
-                Text(error).font(.system(size: 9)).foregroundStyle(.red.opacity(0.8)).lineLimit(2)
+                Text.panel(error, size: 10, opacity: 1).foregroundStyle(PanelInk.waiting).lineLimit(2)
             }
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .surface(RoundedRectangle(cornerRadius: 14))
     }
 }
 
-private struct CaptureButton: View {
+/// One cell of the grid: an icon and a label on top, what it shows or does under them, and `trailing` at the end of the label's line.
+private struct ToolPanel<Trailing: View, Content: View>: View {
     let symbol: String
-    let help: String
-    var active = false
-    let action: () -> Void
+    let title: String
+    /// The content's height; nil lets it take what the cell has left.
+    var height: CGFloat? = 26
+    @ViewBuilder var trailing: Trailing
+    @ViewBuilder var content: Content
+
+    init(symbol: String, title: String, height: CGFloat? = 26, @ViewBuilder trailing: () -> Trailing = { EmptyView() },
+         @ViewBuilder content: () -> Content) {
+        self.symbol = symbol
+        self.title = title
+        self.height = height
+        self.trailing = trailing()
+        self.content = content()
+    }
 
     var body: some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 12, weight: .semibold))
-                .frame(width: 26, height: 26)
-                .background(Circle().fill(active ? Color.accentColor : .white.opacity(0.12)))
-                .contentShape(Circle())
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 0) {
+                PanelCaption(title, symbol: symbol)
+                Spacer(minLength: 0)
+                trailing
+            }
+            .frame(height: 24)
+            if let height {
+                content.frame(height: height, alignment: .leading)
+            } else {
+                content.frame(maxHeight: .infinity, alignment: .topLeading)
+            }
         }
-        .buttonStyle(.plain)
-        .help(Text(help))
+        .frame(maxHeight: .infinity, alignment: .topLeading)
     }
 }
 
@@ -457,87 +505,44 @@ private extension Color {
     }
 }
 
-private struct ToolTile<Detail: View>: View {
-    let symbol: String
-    let title: String
-    let active: Bool
-    @ViewBuilder let detail: Detail
-    let action: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Image(systemName: symbol)
-                .font(.system(size: 16, weight: .semibold))
-                .frame(width: 34, height: 34)
-                .background(Circle().fill(active ? Color.accentColor : .white.opacity(0.12)))
-            Spacer(minLength: 0)
-            // A single word shrinks rather than breaking mid-word on a narrow tile.
-            Text(title).font(.system(size: 12, weight: .semibold))
-                .lineLimit(title.contains(" ") ? 2 : 1).minimumScaleFactor(0.75)
-            detail.foregroundStyle(.white.opacity(0.6))
-        }
-        .padding(12)
-        .frame(minWidth: 80, maxWidth: 98, alignment: .leading)
-        .frame(maxHeight: .infinity)
-        .surface(RoundedRectangle(cornerRadius: 14))
-        .contentShape(RoundedRectangle(cornerRadius: 14))
-        .onTapGesture(perform: action)
-        // Laid out before the capture column, which gets what is left but never less than it needs.
-        .layoutPriority(1)
-    }
-}
-
-/// Opens the app volume list from the Output tile.
+/// Opens the app volume list from the Output cell.
 private struct AppVolumeButton: View {
     @ObservedObject var model: AppVolumeModel
 
     var body: some View {
-        let turnedDown = model.apps.contains { $0.volume < 1 }
-        Button { model.isShowingList.toggle() } label: {
-            Image(systemName: "slider.horizontal.3")
-                .font(.system(size: 10, weight: .semibold))
-                .frame(width: 22, height: 22)
-                .background(Circle().fill(turnedDown ? Color.accentColor : .white.opacity(0.12)))
-                .contentShape(Circle())
+        PanelIconButton(symbol: "slider.horizontal.3", title: String(localized: "App volume"), hot: model.isShowingList || model.apps.contains { $0.volume < 1 }) {
+            model.isShowingList.toggle()
         }
-        .buttonStyle(.plain)
-        .help(Text("App volume"))
     }
 }
 
 /// The apps playing sound, each with a volume slider, laid over the left of the Tools tab.
 private struct AppVolumeOverlay: View {
     @ObservedObject var model: AppVolumeModel
-    private static let rowHeight: CGFloat = 20
-    private static let rowSpacing: CGFloat = 3
+    private static let rowHeight: CGFloat = 24
+    private static let rowSpacing: CGFloat = 0
 
     var body: some View {
         if model.isShowingList {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Label("App volume", systemImage: "slider.horizontal.3").font(.system(size: 11, weight: .semibold))
+                    PanelCaption(String(localized: "App volume"), symbol: "slider.horizontal.3")
                     Spacer()
-                    Button { model.isShowingList = false } label: {
-                        Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).frame(width: 18, height: 18)
-                            .background(Circle().fill(.white.opacity(0.12))).contentShape(Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .help(Text("Close"))
+                    PanelIconButton(symbol: "xmark", title: String(localized: "Close"), size: 10) { model.isShowingList = false }
                 }
                 if model.needsPermission {
                     Text("Nunsseop needs permission to record system audio to change an app’s volume.")
-                        .font(.system(size: 10)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
-                    Button("Open System Settings") {
+                        .font(.system(size: 11)).foregroundStyle(PanelInk.waiting).fixedSize(horizontal: false, vertical: true)
+                    PanelAction(title: "Open System Settings") {
                         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AudioCapture") {
                             NSWorkspace.shared.open(url)
                         }
                     }
-                    .controlSize(.small)
                 } else if model.mayNeedPermission {
                     Text("No sound has come through yet. If the app is playing, Nunsseop may need permission to record system audio.")
-                        .font(.system(size: 10)).foregroundStyle(.white.opacity(0.55)).fixedSize(horizontal: false, vertical: true)
+                        .font(.system(size: 11)).foregroundStyle(PanelInk.hint).fixedSize(horizontal: false, vertical: true)
                 } else if model.apps.isEmpty {
-                    Text("No apps are playing sound").font(.system(size: 11)).foregroundStyle(.white.opacity(0.45))
+                    Text("No apps are playing sound").font(.system(size: 12)).foregroundStyle(PanelInk.hint)
                 }
                 if !model.apps.isEmpty {
                     // Four rows show; more scroll.
@@ -555,21 +560,21 @@ private struct AppVolumeOverlay: View {
             .padding(8)
             .frame(width: 280, alignment: .topLeading)
             .frame(maxHeight: .infinity, alignment: .top)
-            .background(RoundedRectangle(cornerRadius: 14).fill(Color(white: 0.09)))
-            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.white.opacity(0.1), lineWidth: 1))
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color(white: 0.08)))
+            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(PanelInk.hair, lineWidth: 0.75))
         }
     }
 
     private func row(_ app: AppVolumeModel.App) -> some View {
         HStack(spacing: 6) {
-            Image(nsImage: app.icon).resizable().frame(width: 16, height: 16)
-            Text(app.name).font(.system(size: 11)).lineLimit(1).frame(width: 74, alignment: .leading)
+            Image(nsImage: app.icon).resizable().frame(width: 16, height: 16).accessibilityHidden(true)
+            Text.panel(app.name, size: 12).lineLimit(1).frame(width: 74, alignment: .leading)
             Slider(value: Binding(get: { app.volume }, set: { model.setVolume($0, for: app.id) }), in: 0...1) { editing in
                 if !editing { model.finishEditing(app.id) }
             }
             .controlSize(.mini)
-            Text("\(Int((app.volume * 100).rounded()))%")
-                .font(.system(size: 10).monospacedDigit()).foregroundStyle(.white.opacity(0.6))
+            .accessibilityLabel(Text(verbatim: app.name))
+            Text.panel("\(Int((app.volume * 100).rounded()))%", size: 11, opacity: 0.65, mono: true)
                 .frame(width: 32, alignment: .trailing)
         }
         .frame(height: Self.rowHeight)
