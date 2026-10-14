@@ -343,10 +343,15 @@ final class RawClient: @unchecked Sendable {
 }
 
 /// A shell command running, as Claude Code runs a hook: `sh -c`, the event JSON on stdin, a small environment.
+///
+/// What it prints goes to a file of its own, not to a pipe that a thread reads. A thread of the system's global queue that reads a pipe can
+/// wait a long time for its turn: other tests block threads of that queue for most of a minute (`RawClient.read`, waiting for the server),
+/// and on a busy runner a command that had ended came back with no output at all, after `finish` had waited its five seconds for the
+/// thread. A file is read once the command has ended, and has no such wait; one that a program left behind still writes to has no way to
+/// hold up the test either.
 final class HookProcess: @unchecked Sendable {
     let process = Process()
-    private let output = Pipe()
-    private var collected: Data?
+    private let outputFile = FileManager.default.temporaryDirectory.appendingPathComponent("nunsseop-hook-output-\(UUID().uuidString.prefix(8))")
     private var started: Date?
     private var ended: Date?
     private let lock = NSLock()
@@ -368,33 +373,28 @@ final class HookProcess: @unchecked Sendable {
         process.environment = ["HOME": home.path, "PATH": path].merging(environment) { $1 }
         let input = Pipe()
         process.standardInput = input
+        FileManager.default.createFile(atPath: outputFile.path, contents: nil)
+        let output = try FileHandle(forWritingTo: outputFile)
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice
         // The end is stamped by the process's own exit, on a dispatch thread, so it doesn't wait for the test's task to be resumed: on a
         // loaded runner the cooperative pool is held by long synchronous tests, and a task resumes a minute late.
         process.terminationHandler = { [self] _ in lock.withLock { ended = Date.now } }
         lock.withLock { started = Date.now }
+        defer { try? output.close() }
         try process.run()
-        let reader = output.fileHandleForReading
-        DispatchQueue.global().async { [self] in
-            let data = reader.readDataToEndOfFile()
-            lock.withLock { collected = data }
-        }
         // A hook that ends without reading its input closes the pipe; that must not take the test process with it.
         signal(SIGPIPE, SIG_IGN)
         try? input.fileHandleForWriting.write(contentsOf: stdin)
         try? input.fileHandleForWriting.close()
     }
 
-    /// Waits for the command to end; nil if it is still running after the cap.
+    /// Waits for the command to end; nil if it is still running after the cap. The output is what it had written when it ended.
     func finish() async -> (stdout: String, status: Int32)? {
         let deadline = Date.now.addingTimeInterval(eventDeadline)
         while process.isRunning && Date.now < deadline { try? await Task.sleep(for: .milliseconds(20)) }
         guard !process.isRunning else { return nil }
-        // A curl left behind would hold the output open; what was written by then is what counts.
-        let outputDeadline = Date.now.addingTimeInterval(5)
-        while lock.withLock({ collected == nil }) && Date.now < outputDeadline { try? await Task.sleep(for: .milliseconds(20)) }
-        return (lock.withLock { String(decoding: collected ?? Data(), as: UTF8.self) }, process.terminationStatus)
+        return (String(decoding: (try? Data(contentsOf: outputFile)) ?? Data(), as: UTF8.self), process.terminationStatus)
     }
 
     var isRunning: Bool { process.isRunning }
@@ -404,7 +404,10 @@ final class HookProcess: @unchecked Sendable {
 
     func terminate() { process.terminate() }
 
-    deinit { if process.isRunning { process.terminate() } }
+    deinit {
+        if process.isRunning { process.terminate() }
+        try? FileManager.default.removeItem(at: outputFile)
+    }
 }
 
 /// What CoreText draws `text` as in the card's code font: the font and glyph of each one that takes room. A selector may leave a

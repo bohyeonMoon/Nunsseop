@@ -1039,16 +1039,21 @@ struct PaseoLoopbackTests {
     }
 
     @Test func aDaemonThatIsNotThereIsWaitedForNotCrashedInto() async throws {
-        // A port nobody listens on: the listener is closed at once.
-        let daemon = StandInDaemon()
-        let port = try #require(await daemon.start())
-        daemon.stop()
+        // A port that refuses every connection and that no other listener can be given. A stand-in daemon that was started and stopped is
+        // not one: another test's daemon can be given its port, and a daemon that is stopped goes on accepting until its queue gets to the
+        // cancel, and a client that has hello answered there is ready.
+        let refusing = try RefusingPort()
         var timing = quickTiming
         timing.retry = [0.05]
-        let client = PaseoClient(endpoint: { URL(string: "ws://127.0.0.1:\(port)/ws") }, clientID: "nunsseop_loop", timing: timing)
+        var attempts = 0
+        let client = PaseoClient(endpoint: { attempts += 1; return URL(string: "ws://127.0.0.1:\(refusing.port)/ws") }, clientID: "nunsseop_loop",
+                                 timing: timing)
+        var wasReady = false
+        client.onState = { if $0 == .ready { wasReady = true } }
         client.start()
-        try await Task.sleep(nanoseconds: 400_000_000)
-        #expect(client.state != .ready && client.pendingAgents.isEmpty)
+        // Waited for by what it does, not by the clock: it has gone for the daemon and been refused three times, and went on waiting.
+        await eventually { attempts >= 3 }
+        #expect(attempts >= 3 && !wasReady && client.state != .ready && client.pendingAgents.isEmpty)
         client.stop()
     }
 }

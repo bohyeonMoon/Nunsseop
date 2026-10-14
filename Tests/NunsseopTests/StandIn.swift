@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Testing
 
@@ -34,6 +35,52 @@ enum StandIn {
         try process.run()
         return process
     }
+}
+
+/// A loopback port where no daemon is and none can come: it is taken by a listener that hangs up on every connection at once, so a client
+/// that goes there finds nothing to talk to, and no other listener can be given the port. A stand-in daemon that was started and stopped is
+/// not that: its port is let go of, and a stand-in of another test that runs beside this one can be answering there instead. (A port that
+/// is bound and not listened on is no better: the system ignores a connection to it for eight seconds before it fails.)
+final class RefusingPort: @unchecked Sendable {
+    let port: UInt16
+    private let stop = Stop()
+
+    private final class Stop: @unchecked Sendable {
+        private let lock = NSLock()
+        private var stopped = false
+        var isStopped: Bool { lock.withLock { stopped } }
+        func set() { lock.withLock { stopped = true } }
+    }
+
+    init() throws {
+        let descriptor = socket(AF_INET, SOCK_STREAM, 0)
+        guard descriptor >= 0 else { throw POSIXError(.EMFILE) }
+        var address = sockaddr_in(sin_len: UInt8(MemoryLayout<sockaddr_in>.size), sin_family: sa_family_t(AF_INET), sin_port: 0,
+                                  sin_addr: in_addr(s_addr: inet_addr("127.0.0.1")), sin_zero: (0, 0, 0, 0, 0, 0, 0, 0))
+        var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+        let ready = withUnsafeMutablePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(descriptor, $0, length) == 0 && getsockname(descriptor, $0, &length) == 0 }
+        } && listen(descriptor, 16) == 0
+        guard ready else {
+            close(descriptor)
+            throw POSIXError(.EADDRNOTAVAIL)
+        }
+        port = UInt16(bigEndian: address.sin_port)
+        // A thread of its own: a queue of the system's can be busy for a minute with the blocking reads of other tests.
+        let stop = stop
+        let thread = Thread {
+            while !stop.isStopped {
+                var poll = pollfd(fd: descriptor, events: Int16(POLLIN), revents: 0)
+                guard Darwin.poll(&poll, 1, 100) > 0 else { continue }
+                let client = accept(descriptor, nil, nil)
+                if client >= 0 { close(client) }
+            }
+            close(descriptor)
+        }
+        thread.start()
+    }
+
+    deinit { stop.set() }
 }
 
 struct StandInTests {
@@ -78,6 +125,27 @@ struct StandInTests {
         #expect(ended)
     }
 
+    @Test func aRefusingPortHangsUpOnEveryConnectionAndCannotBeBoundByAnother() async throws {
+        let held = try RefusingPort()
+        // Connected and hung up on, at once, however many times.
+        for _ in 0..<3 {
+            let client = try RawClient(port: held.port)
+            #expect(await client.closes(within: Int(eventDeadline)))
+        }
+        // And the port is taken, so no listener of another test can be given it.
+        let other = socket(AF_INET, SOCK_STREAM, 0)
+        defer { close(other) }
+        var address = sockaddr_in(sin_len: UInt8(MemoryLayout<sockaddr_in>.size), sin_family: sa_family_t(AF_INET), sin_port: held.port.bigEndian,
+                                  sin_addr: in_addr(s_addr: inet_addr("127.0.0.1")), sin_zero: (0, 0, 0, 0, 0, 0, 0, 0))
+        let (bound, error) = withExtendedLifetime(held) {
+            let bound = withUnsafeMutablePointer(to: &address) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(other, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+            }
+            return (bound, errno)
+        }
+        #expect(bound != 0 && error == EADDRINUSE)
+    }
+
     /// Every Python a test starts is started by `StandIn.python`, so none of them can keep the output of the run open.
     @Test func everyPythonStandInIsStartedByTheHelper() throws {
         let folder = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
@@ -87,5 +155,27 @@ struct StandInTests {
             if text.contains("\"/usr/bin/python3\"") && file.lastPathComponent != "StandIn.swift" { users.append(file.lastPathComponent) }
         }
         #expect(users.isEmpty, "start Python with StandIn.python: \(users)")
+    }
+}
+
+struct HookProcessTests {
+    /// What a command printed is whole once it has ended, whatever a program it started and left behind does with the output afterwards. (It
+    /// used to be read by a thread to the end of a pipe, which that program held open: `finish` gave up on it after five seconds and
+    /// answered with no output at all.)
+    @Test func theOutputOfACommandThatHasEndedIsWholeAndAProgramLeftBehindDoesNotHoldItUp() async throws {
+        let home = try ScratchHome()
+        let gate = home.url.appendingPathComponent("gate").path
+        let hook = try HookProcess(command: "echo first; (while [ ! -e '\(gate)' ]; do sleep 0.05; done; echo late) & echo second",
+                                   home: home.url, stdin: Data())
+        let result = try #require(await hook.finish())
+        FileManager.default.createFile(atPath: gate, contents: Data())
+        #expect(result.stdout == "first\nsecond\n" && result.status == 0)
+    }
+
+    @Test func moreOutputThanAPipeHoldsIsKept() async throws {
+        let home = try ScratchHome()
+        let hook = try HookProcess(command: "head -c 300000 /dev/zero | tr '\\0' x", home: home.url, stdin: Data())
+        let result = try #require(await hook.finish())
+        #expect(result.stdout.utf8.count == 300_000 && result.status == 0)
     }
 }

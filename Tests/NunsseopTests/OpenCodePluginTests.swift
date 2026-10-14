@@ -54,15 +54,25 @@ final class NoticeRecorder: @unchecked Sendable {
 struct OpenCodePluginRunTests {
     private static let imports = "import { NunsseopPlugin } from \"./nunsseop.mjs\"\n"
 
-    private func start(_ server: PermissionTestServer, body: String, port: UInt16? = nil, environment: [String: String] = [:]) throws
-        -> (script: NodeScript, events: AgentEventLog, notices: NoticeRecorder) {
+    private func start(_ server: PermissionTestServer, body: String, port: UInt16? = nil, environment: [String: String] = [:],
+                       files: [String: String] = [:]) throws -> (script: NodeScript, events: AgentEventLog, notices: NoticeRecorder) {
         let events = AgentEventLog(), notices = NoticeRecorder()
         server.server.onAgent = { events.add($0) }
         server.server.onNotify = { notices.add($0) }
-        let script = try NodeScript(files: ["nunsseop.mjs": OpenCodePlugin.source(port: port ?? server.port)],
-                                    main: Self.imports + NodeScript.prelude + body, home: server.home.url, environment: environment)
+        let script = try NodeScript(files: files.merging(["nunsseop.mjs": OpenCodePlugin.source(port: port ?? server.port)]) { $1 },
+                                    main: Self.imports + NodeScript.prelude + Self.patience + body, home: server.home.url, environment: environment)
         return (script, events, notices)
     }
+
+    /// The plugin gives up on a request to the server after a second (two for the notice), as it should when Nunsseop is stuck, and what it
+    /// gave up on is never sent again. That is the plugin's business, and no test here is about it; but on a busy machine the first `fetch` of
+    /// a node that has just started can take that long on its own, and the first event of a session (it was `opened`) never arrived. So in
+    /// these scripts the plugin's timers last as long as a test waits for anything (`eventDeadline`).
+    private static let patience = """
+        const giveUpAfter = AbortSignal.timeout.bind(AbortSignal)
+        AbortSignal.timeout = (ms) => giveUpAfter(Math.max(ms, \(Int(eventDeadline * 1000))))
+
+        """
 
     private static let setUp = """
         const replies = []
@@ -101,6 +111,31 @@ struct OpenCodePluginRunTests {
         #expect(events.events.allSatisfy { $0.session == "ses_main1" && $0.agent == .opencode && $0.app == "com.apple.Terminal" })
         #expect(events.events.allSatisfy { $0.pid == script.process.process.processIdentifier })
         #expect(notices.notices.map(\.title) == ["OpenCode"] && notices.notices.first?.message == "Finished")
+    }
+
+    /// A node whose first request takes longer than the plugin's own second, as on a busy machine, where the first `fetch` alone can: the
+    /// event is still sent, and the ones after it are not out of order or missing for it.
+    @Test(.enabled(if: NodeTool.available, NodeTool.reason))
+    func aFirstRequestSlowerThanThePluginsOwnWaitStillReachesTheServer() async throws {
+        let server = try await PermissionTestServer(token: String(repeating: "t", count: 40))
+        let (script, events, _) = try start(server, body: Self.setUp + """
+            await event("session.created", { info: { id: "ses_main1" } })
+            await event("session.status", { sessionID: "ses_main1", status: { type: "busy" } })
+            await sleep(300)
+            out({ done: true })
+            """, environment: ["NODE_OPTIONS": "--require ./slow-first-fetch.cjs"], files: ["slow-first-fetch.cjs": """
+            // The signal is made before fetch is called, so it has run for 1.3 seconds of its second when the request is begun.
+            const real = globalThis.fetch
+            let first = true
+            globalThis.fetch = async (...args) => {
+              if (first) { first = false; await new Promise((resolve) => setTimeout(resolve, 1300)) }
+              return real(...args)
+            }
+            """])
+        let result = try #require(await script.finish())
+        #expect(result.status == 0 && result.lines.count == 1)
+        await eventually { events.events.count >= 2 }
+        #expect(events.events.map(\.action) == [.opened, .working])
     }
 
     @Test(.enabled(if: NodeTool.available, NodeTool.reason))
