@@ -137,10 +137,13 @@ struct StandInTests {
         defer { close(other) }
         var address = sockaddr_in(sin_len: UInt8(MemoryLayout<sockaddr_in>.size), sin_family: sa_family_t(AF_INET), sin_port: held.port.bigEndian,
                                   sin_addr: in_addr(s_addr: inet_addr("127.0.0.1")), sin_zero: (0, 0, 0, 0, 0, 0, 0, 0))
-        let bound = withUnsafeMutablePointer(to: &address) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(other, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+        let (bound, error) = withExtendedLifetime(held) {
+            let bound = withUnsafeMutablePointer(to: &address) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(other, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+            }
+            return (bound, errno)
         }
-        #expect(bound != 0 && errno == EADDRINUSE)
+        #expect(bound != 0 && error == EADDRINUSE)
     }
 
     /// Every Python a test starts is started by `StandIn.python`, so none of them can keep the output of the run open.
