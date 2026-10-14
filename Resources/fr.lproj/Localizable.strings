@@ -525,3 +525,20 @@
 "Low" = "Faible";
 "Download" = "Téléchargement";
 "Upload" = "Envoi";
+
+/* Lists */
+"Open" = "Ouvrir";
+"Copy" = "Copier";
+"Run" = "Lancer";
+"Share" = "Partager";
+"Finder" = "Finder";
+"AirDrop" = "AirDrop";
+"Clear all" = "Tout effacer";
+"Go to source" = "Aller à la source";
+"This notification has no source to go to" = "Cette notification n’a pas de source à ouvrir";
+"More" = "Plus";
+"1 character" = "1 caractère";
+"%lld characters" = "%lld caractères";
+"1 app from your Dock" = "1 app du Dock";
+"%lld apps from your Dock" = "%lld apps du Dock";
+"Drag the file out of the shelf to move or copy it" = "Faites glisser le fichier hors de l’étagère pour le déplacer ou le copier";

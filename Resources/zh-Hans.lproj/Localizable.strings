@@ -525,3 +525,20 @@
 "Low" = "电量低";
 "Download" = "下载";
 "Upload" = "上传";
+
+/* Lists */
+"Open" = "打开";
+"Copy" = "拷贝";
+"Run" = "运行";
+"Share" = "共享";
+"Finder" = "访达";
+"AirDrop" = "隔空投送";
+"Clear all" = "全部清除";
+"Go to source" = "前往来源";
+"This notification has no source to go to" = "此通知没有可前往的来源";
+"More" = "更多";
+"1 character" = "1 个字符";
+"%lld characters" = "%lld 个字符";
+"1 app from your Dock" = "来自程序坞的 1 个 App";
+"%lld apps from your Dock" = "来自程序坞的 %lld 个 App";
+"Drag the file out of the shelf to move or copy it" = "将文件拖出架子即可移动或拷贝";

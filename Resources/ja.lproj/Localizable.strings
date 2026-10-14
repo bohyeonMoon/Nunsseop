@@ -525,3 +525,20 @@
 "Low" = "残りわずか";
 "Download" = "ダウンロード";
 "Upload" = "アップロード";
+
+/* Lists */
+"Open" = "開く";
+"Copy" = "コピー";
+"Run" = "実行";
+"Share" = "共有";
+"Finder" = "Finder";
+"AirDrop" = "AirDrop";
+"Clear all" = "すべて消去";
+"Go to source" = "元の場所へ移動";
+"This notification has no source to go to" = "この通知には移動先がありません";
+"More" = "その他";
+"1 character" = "1 文字";
+"%lld characters" = "%lld 文字";
+"1 app from your Dock" = "Dock のアプリ 1 個";
+"%lld apps from your Dock" = "Dock のアプリ %lld 個";
+"Drag the file out of the shelf to move or copy it" = "ファイルをシェルフの外へドラッグすると、移動またはコピーできます";

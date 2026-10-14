@@ -550,3 +550,20 @@
 "Low" = "부족";
 "Download" = "다운로드";
 "Upload" = "업로드";
+
+/* Lists */
+"Open" = "열기";
+"Copy" = "복사";
+"Run" = "실행";
+"Share" = "공유";
+"Finder" = "Finder";
+"AirDrop" = "AirDrop";
+"Clear all" = "모두 지우기";
+"Go to source" = "원래 위치로 이동";
+"This notification has no source to go to" = "이 알림은 이동할 원래 위치가 없어요";
+"More" = "더 보기";
+"1 character" = "1자";
+"%lld characters" = "%lld자";
+"1 app from your Dock" = "Dock의 앱 1개";
+"%lld apps from your Dock" = "Dock의 앱 %lld개";
+"Drag the file out of the shelf to move or copy it" = "파일을 선반 밖으로 끌어내면 이동하거나 복사해요";
