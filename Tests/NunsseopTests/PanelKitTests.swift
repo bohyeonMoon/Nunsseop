@@ -47,6 +47,25 @@ struct DetailSelectionTests {
         #expect(selection.current(in: ids) == "c")
     }
 
+    @Test func leavingTheRowThatIsShownKeepsItShownForTheButtonsBesideIt() {
+        var selection = DetailSelection<String>()
+        selection.hover("c", inside: true)
+        selection.leave("c", in: ids)
+        #expect(selection.current(in: ids) == "c")
+        selection.move(1, in: ids)
+        #expect(selection.current(in: ids) == "d")
+    }
+
+    @Test func leavingARowAfterAnotherWasEnteredLeavesTheNewOneShown() {
+        var selection = DetailSelection<String>()
+        selection.hover("b", inside: true)
+        selection.hover("c", inside: true)
+        selection.leave("b", in: ids)
+        #expect(selection.current(in: ids) == "c")
+        selection.leave("c", in: ids)
+        #expect(selection.current(in: ids) == "c")
+    }
+
     @Test func anItemThatLeftTheListIsNotShown() {
         var selection = DetailSelection<String>()
         selection.hover("c", inside: true)

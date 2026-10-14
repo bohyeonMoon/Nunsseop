@@ -437,3 +437,54 @@ struct PanelMetric: View {
         .accessibilityValue(Text(verbatim: "\(value)\(unit ?? "") \(caption)"))
     }
 }
+
+// MARK: - Lists
+
+extension DetailSelection {
+    /// The pointer leaves a row. A row that was on show stays on show: the pointer is most likely on its way to the buttons beside it,
+    /// and they must act on the item it was just over, not on the first one.
+    mutating func leave(_ id: ID, in ids: [ID]) {
+        if current(in: ids) == id { move(0, in: ids) }
+        hover(id, inside: false)
+    }
+}
+
+/// The scrolling list of a master-detail tab: the pointer or ↑↓ choose which row the detail pane shows, and a row the keys chose is
+/// scrolled into view. `row` gets the item and whether it is the one on show.
+struct PanelList<Item: Identifiable, Row: View>: View {
+    let items: [Item]
+    @Binding var selection: DetailSelection<Item.ID>
+    @ViewBuilder var row: (Item, Bool) -> Row
+
+    var body: some View {
+        let ids = items.map(\.id)
+        let shown = selection.current(in: ids)
+        ScrollViewReader { proxy in
+            ScrollView(.vertical, showsIndicators: false) {
+                LazyVStack(spacing: 0) {
+                    ForEach(items) { item in
+                        row(item, item.id == shown)
+                            .id(item.id)
+                            .onHover { inside in
+                                if inside { selection.hover(item.id, inside: true) } else { selection.leave(item.id, in: ids) }
+                            }
+                    }
+                }
+            }
+            .onChange(of: selection.chosen) { _, id in
+                if let id { proxy.scrollTo(id) }
+            }
+        }
+        .panelFadeBottom()
+        .panelArrowKeys($selection, ids: ids)
+    }
+}
+
+extension Date {
+    /// "3 minutes ago", "now" or "yesterday", in the display language.
+    var panelAgo: String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.dateTimeStyle = .named
+        return formatter.localizedString(for: self, relativeTo: max(.now, self))
+    }
+}
