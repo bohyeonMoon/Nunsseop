@@ -363,8 +363,9 @@ private struct LengthChip: View {
     @State private var hovering = false
 
     var body: some View {
-        Button(action: action) {
-            Text.panel(title, size: 11, weight: .semibold, opacity: selected ? 1 : (enabled ? 0.8 : 0.5), mono: true)
+        // Not `.disabled`: that dims the title to a third on top of its own opacity, until it can't be read.
+        Button(action: { if enabled { action() } }) {
+            Text.panel(title, size: 11, weight: .semibold, opacity: selected ? 1 : (enabled ? 0.8 : 0.55), mono: true)
                 .lineLimit(1).fixedSize()
                 .padding(.horizontal, 3).frame(minWidth: 42, minHeight: 24)
                 .background {
@@ -381,7 +382,7 @@ private struct LengthChip: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(!enabled)
+        .allowsHitTesting(enabled)
         .onHover { hovering = $0 }
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
