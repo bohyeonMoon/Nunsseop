@@ -49,7 +49,7 @@ brew install --cask namekun/tap/nunsseop
 | | |
 | :---: | :---: |
 | <img src="docs/images/tab-search.png" alt="搜索，显示一个应用、一条命令和一项设置"><br>**搜索。** 一个可以查找应用、文件、命令、剪贴板、表情符号和算式的启动器，快捷键随你定。 | <img src="docs/images/tab-ai.png" alt="Claude Code 和 Codex 的 AI 用量"><br>**AI 用量。** Claude Code 和 Codex 的用量上限，无需登录。 |
-| <img src="docs/images/shelf.png" alt="文件架子，带隔空投送卡片"><br>**架子。** 把文件暂放在刘海里，或直接拖到隔空投送上。 | <img src="docs/images/tab-timer.png" alt="计时器标签"><br>**计时器。** 倒计时、番茄钟和秒表，时长随意设置。 |
+| <img src="docs/images/shelf.png" alt="文件架子，显示所选文件的详情和隔空投送按钮"><br>**架子。** 把文件暂放在刘海里，或直接拖到隔空投送上。 | <img src="docs/images/tab-timer.png" alt="计时器标签"><br>**计时器。** 倒计时、番茄钟和秒表，时长随意设置。 |
 | <img src="docs/images/tab-tools.png" alt="工具标签"><br>**工具。** 音频输出、麦克风静音、保持唤醒、屏幕录制、取色器和文本提取。 | <img src="docs/images/tab-system.png" alt="系统标签，显示设备电量"><br>**系统。** CPU、内存、磁盘、网络和设备电量。 |
 | <img src="docs/images/tab-emoji.png" alt="带分类列表的表情符号选择器"><br>**表情符号。** 左侧是分类列表，所有表情符号都能搜索，点一下即可拷贝。 | <img src="docs/images/hud-headphones.png" alt="耳机电量 HUD"><br>**HUD。** 音量、亮度、AirPods 电量等等。 |
 | <img src="docs/images/collapsed-call.png" alt="Zoom 通话期间收起的刘海"><br>**通话。** 显示通话所用的应用和已通话的时长。 | <img src="docs/images/collapsed-idle.png" alt="收起的刘海，显示 Claude Code 剩余用量和天气"><br>**一目了然。** 自己选择收起的刘海两侧各显示什么。 |

@@ -49,7 +49,7 @@ Dock 아이콘은 없습니다. Nunsseop은 노치에 삽니다.
 | | |
 | :---: | :---: |
 | <img src="docs/images/tab-search.png" alt="앱, 명령, 설정이 보이는 검색"><br>**검색.** 앱, 파일, 명령, 클립보드, 이모지, 계산을 한 곳에서. 단축키는 원하는 대로. | <img src="docs/images/tab-ai.png" alt="Claude Code와 Codex 사용량"><br>**AI 사용량.** Claude Code와 Codex 한도. 로그인 필요 없음. |
-| <img src="docs/images/shelf.png" alt="AirDrop 칸이 있는 선반"><br>**선반.** 파일을 노치에 놓아 두거나 AirDrop으로 바로 보내기. | <img src="docs/images/tab-timer.png" alt="타이머 탭"><br>**타이머.** 카운트다운, 뽀모도로, 스톱워치. 길이는 원하는 대로. |
+| <img src="docs/images/shelf.png" alt="선택한 파일의 정보와 AirDrop 버튼이 있는 선반"><br>**선반.** 파일을 노치에 놓아 두거나 AirDrop으로 바로 보내기. | <img src="docs/images/tab-timer.png" alt="타이머 탭"><br>**타이머.** 카운트다운, 뽀모도로, 스톱워치. 길이는 원하는 대로. |
 | <img src="docs/images/tab-tools.png" alt="도구 탭"><br>**도구.** 오디오 출력, 마이크 음소거, 잠자기 방지, 화면 녹화, 색 찍기, 글자 복사. | <img src="docs/images/tab-system.png" alt="기기 배터리가 보이는 시스템 탭"><br>**시스템.** CPU, 메모리, 디스크, 네트워크, 기기 배터리. |
 | <img src="docs/images/tab-emoji.png" alt="카테고리 목록이 있는 이모지 선택기"><br>**이모지.** 왼쪽에 카테고리, 모든 이모지 검색, 클릭 한 번으로 복사. | <img src="docs/images/hud-headphones.png" alt="헤드폰 배터리 HUD"><br>**HUD.** 볼륨, 밝기, AirPods 배터리 등. |
 | <img src="docs/images/collapsed-call.png" alt="Zoom 통화 중인 접힌 노치"><br>**통화.** 통화 중인 앱과 통화 시간. | <img src="docs/images/collapsed-idle.png" alt="Claude Code 남은 양과 날씨가 보이는 접힌 노치"><br>**한눈에.** 닫힌 노치 양쪽에 보일 것을 직접 고르기. |

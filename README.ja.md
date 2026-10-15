@@ -49,7 +49,7 @@ Dock にアイコンは出ません。Nunsseop はノッチの中にいます。
 | | |
 | :---: | :---: |
 | <img src="docs/images/tab-search.png" alt="アプリ、コマンド、設定を表示した検索"><br>**検索。** アプリ、ファイル、コマンド、クリップボード、絵文字、計算に対応したランチャー。ショートカットは好きなキーに設定できます。 | <img src="docs/images/tab-ai.png" alt="Claude Code と Codex の AI 使用量"><br>**AI 使用量。** Claude Code と Codex の上限を、ログイン不要で確認できます。 |
-| <img src="docs/images/shelf.png" alt="AirDrop タイルのあるシェルフ"><br>**シェルフ。** ファイルをノッチに一時保管したり、AirDrop にドロップしたりできます。 | <img src="docs/images/tab-timer.png" alt="タイマータブ"><br>**タイマー。** カウントダウン、ポモドーロ、ストップウォッチ。時間は自由に設定できます。 |
+| <img src="docs/images/shelf.png" alt="選んだファイルの詳細と AirDrop ボタンのあるシェルフ"><br>**シェルフ。** ファイルをノッチに一時保管したり、AirDrop にドロップしたりできます。 | <img src="docs/images/tab-timer.png" alt="タイマータブ"><br>**タイマー。** カウントダウン、ポモドーロ、ストップウォッチ。時間は自由に設定できます。 |
 | <img src="docs/images/tab-tools.png" alt="ツールタブ"><br>**ツール。** オーディオ出力、マイクのミュート、スリープさせない、画面収録、カラーピッカー、テキストの取得。 | <img src="docs/images/tab-system.png" alt="デバイスのバッテリーを表示したシステムタブ"><br>**システム。** CPU、メモリ、ディスク、ネットワーク、デバイスのバッテリー。 |
 | <img src="docs/images/tab-emoji.png" alt="カテゴリ一覧つきの絵文字ピッカー"><br>**絵文字。** 左にカテゴリの一覧、すべての絵文字を検索でき、クリック 1 回でコピーできます。 | <img src="docs/images/hud-headphones.png" alt="ヘッドフォンのバッテリー HUD"><br>**HUD。** 音量、明るさ、AirPods のバッテリーなど。 |
 | <img src="docs/images/collapsed-call.png" alt="Zoom 通話中の閉じたノッチ"><br>**通話。** 通話中のアプリと、通話時間を表示します。 | <img src="docs/images/collapsed-idle.png" alt="Claude Code の残り使用量と天気を表示した閉じたノッチ"><br>**ひと目で確認。** 閉じたノッチの左右に何を表示するかを選べます。 |
