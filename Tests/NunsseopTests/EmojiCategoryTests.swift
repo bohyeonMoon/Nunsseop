@@ -45,6 +45,17 @@ struct EmojiCategoryTests {
         #expect(emojis.shown(in: .recent, query: "").map(\.character) == ["😀", "✅", "🔥"])
     }
 
+    @Test func recentGoesOnIntoEmoticonsButNoOtherCategoryOrSearchDoes() {
+        let (emojis, defaults) = model("following")
+        defer { defaults.remove() }
+        let emoticons = emojis.shown(in: .emoticons, query: "")
+        #expect(emojis.following(.recent, query: "") == emoticons)
+        emojis.copy(emoji("🔥"))
+        #expect(emojis.following(.recent, query: " ") == emoticons)
+        #expect(emojis.following(.recent, query: "fire").isEmpty)
+        for category in EmojiCategory.allCases where category != .recent { #expect(emojis.following(category, query: "").isEmpty, "\(category)") }
+    }
+
     @Test func aSearchLooksThroughEveryCategoryWhicheverIsChosen() {
         let (emojis, defaults) = model("search")
         defer { defaults.remove() }

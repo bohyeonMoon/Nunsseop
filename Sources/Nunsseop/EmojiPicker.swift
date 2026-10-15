@@ -85,6 +85,11 @@ final class EmojiModel: ObservableObject {
         return category == .recent ? recentEmoji : Self.byCategory[category] ?? []
     }
 
+    /// What goes on below the category's own: Emoticons after Recent, so a few recent ones don't leave the panel empty.
+    func following(_ category: EmojiCategory, query: String) -> [Emoji] {
+        category == .recent && query.trimmingCharacters(in: .whitespaces).isEmpty ? Self.byCategory[.emoticons] ?? [] : []
+    }
+
     private var recentEmoji: [Emoji] {
         recents.compactMap { r in Self.all.first { $0.character == r } }
     }
@@ -171,19 +176,36 @@ struct EmojiTab: View {
     @ViewBuilder
     private var grid: some View {
         let shown = model.shown(in: category, query: query)
-        if shown.isEmpty {
-            Text(searching ? String(localized: "No emoji found") : String(localized: "Emoji you copy show up here"))
+        let following = model.following(category, query: query)
+        if shown.isEmpty && searching {
+            Text("No emoji found")
                 .font(.system(size: 12)).foregroundStyle(PanelInk.hint)
                 .padding(.top, 8).padding(.leading, 4)
         } else {
             ScrollView(.vertical, showsIndicators: false) {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 28, maximum: 28), spacing: 2)], alignment: .leading, spacing: 2) {
-                    ForEach(shown) { emoji in
-                        EmojiCell(emoji: emoji, copied: model.copied == emoji.character) { model.copy(emoji) }
+                VStack(alignment: .leading, spacing: 6) {
+                    if shown.isEmpty {
+                        Text("Emoji you copy show up here")
+                            .font(.system(size: 12)).foregroundStyle(PanelInk.hint)
+                            .padding(.top, 4).padding(.leading, 4)
+                    } else {
+                        cells(shown)
+                    }
+                    if let first = following.first {
+                        Text.panel(first.category.title, size: 11, weight: .semibold, opacity: 0.6).padding(.leading, 4).padding(.top, 2)
+                        cells(following)
                     }
                 }
             }
             .panelFadeBottom(12)
+        }
+    }
+
+    private func cells(_ emoji: [EmojiModel.Emoji]) -> some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 28, maximum: 28), spacing: 2)], alignment: .leading, spacing: 2) {
+            ForEach(emoji) { emoji in
+                EmojiCell(emoji: emoji, copied: model.copied == emoji.character) { model.copy(emoji) }
+            }
         }
     }
 }
