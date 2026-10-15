@@ -17,7 +17,6 @@
 "Show volume changes in the notch" = "在刘海中显示音量变化";
 "Replace the system volume and brightness HUD" = "替换系统音量和亮度 HUD";
 "Allow Nunsseop in System Settings › Privacy & Security › Accessibility." = "请在“系统设置 › 隐私与安全性 › 辅助功能”中允许 Nunsseop。";
-"Show battery level in the header" = "在顶部显示电池电量";
 "Show when power is connected or disconnected" = "接通或断开电源时显示";
 "Show headphone battery when they connect" = "耳机连接时显示电池";
 "Sneak Peek" = "预览";
@@ -573,3 +572,7 @@
 "Not asked yet" = "尚未询问";
 "Camera preview" = "相机预览";
 "Pick the camera in Settings › Services" = "在“设置 › 服务”中选择相机";
+"<1m" = "<1分钟";
+"%lldm" = "%lld分钟";
+"%lldh" = "%lld小时";
+"%lldd" = "%lld天";

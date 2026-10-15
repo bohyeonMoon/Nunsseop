@@ -17,7 +17,6 @@
 "Show volume changes in the notch" = "Mostrar cambios de volumen en el notch";
 "Replace the system volume and brightness HUD" = "Sustituir el HUD de volumen y brillo del sistema";
 "Allow Nunsseop in System Settings › Privacy & Security › Accessibility." = "Permite Nunsseop en Ajustes del Sistema › Privacidad y seguridad › Accesibilidad.";
-"Show battery level in the header" = "Mostrar el nivel de batería en la cabecera";
 "Show when power is connected or disconnected" = "Mostrar al conectar o desconectar la alimentación";
 "Show headphone battery when they connect" = "Mostrar la batería de los auriculares al conectarlos";
 "Sneak Peek" = "Vista previa";
@@ -573,3 +572,7 @@
 "Not asked yet" = "Aún sin solicitar";
 "Camera preview" = "Vista previa de la cámara";
 "Pick the camera in Settings › Services" = "Elige la cámara en Ajustes › Servicios";
+"<1m" = "<1 min";
+"%lldm" = "%lld min";
+"%lldh" = "%lld h";
+"%lldd" = "%lld d";

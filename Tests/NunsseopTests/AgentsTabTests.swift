@@ -193,6 +193,13 @@ struct AgentsTabTests {
                 #expect((table[key] as? String)?.contains("%lld") == true, Comment(rawValue: "\(language): \(key)"))
             }
             #expect((table["Context %@ of %@"] as? String)?.components(separatedBy: "%@").count == 3, Comment(rawValue: language))
+            // The time since a change sits in a 40 pt column; the widest it can be is two digits and the unit.
+            let font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+            for key in ["<1m", "%lldm", "%lldh", "%lldd"] {
+                let text = (table[key] as? String ?? "").replacingOccurrences(of: "%lld", with: "59")
+                #expect(!text.isEmpty && !text.contains("%"), Comment(rawValue: "\(language): \(key)"))
+                #expect((text as NSString).size(withAttributes: [.font: font]).width <= 40, Comment(rawValue: "\(language): \(text)"))
+            }
         }
     }
 

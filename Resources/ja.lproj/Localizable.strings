@@ -17,7 +17,6 @@
 "Show volume changes in the notch" = "音量の変化をノッチに表示";
 "Replace the system volume and brightness HUD" = "システムの音量・明るさ HUD を置き換える";
 "Allow Nunsseop in System Settings › Privacy & Security › Accessibility." = "システム設定 › プライバシーとセキュリティ › アクセシビリティで Nunsseop を許可してください。";
-"Show battery level in the header" = "ヘッダにバッテリー残量を表示";
 "Show when power is connected or disconnected" = "電源の接続・切断を表示";
 "Show headphone battery when they connect" = "ヘッドフォン接続時にバッテリーを表示";
 "Sneak Peek" = "スニークピーク";
@@ -573,3 +572,7 @@
 "Not asked yet" = "未確認";
 "Camera preview" = "カメラのプレビュー";
 "Pick the camera in Settings › Services" = "カメラは設定 › サービスで選べます";
+"<1m" = "<1分";
+"%lldm" = "%lld分";
+"%lldh" = "%lld時間";
+"%lldd" = "%lld日";
