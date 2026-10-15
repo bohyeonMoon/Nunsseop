@@ -171,3 +171,14 @@ struct PickScreenTests {
         #expect(NotchGeometry.pick([], preferredName: "", lidClosed: false) == nil)
     }
 }
+
+struct FollowAfterCloseTests {
+    @Test func theNotchChangesScreensOnlyOnceItHasFinishedClosing() {
+        let closed = Date(timeIntervalSinceReferenceDate: 1000)
+        // Still shrinking: moved now, it would finish closing on the other screen.
+        #expect(!NotchWindowController.hasSettled(closedAt: closed, now: closed.addingTimeInterval(0.1)))
+        #expect(!NotchWindowController.hasSettled(closedAt: closed, now: closed.addingTimeInterval(NotchWindowController.closeSettle - 0.01)))
+        #expect(NotchWindowController.hasSettled(closedAt: closed, now: closed.addingTimeInterval(NotchWindowController.closeSettle)))
+        #expect(NotchWindowController.hasSettled(closedAt: .distantPast, now: closed))
+    }
+}

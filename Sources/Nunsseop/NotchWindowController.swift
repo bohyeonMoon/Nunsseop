@@ -108,6 +108,8 @@ final class NotchWindowController {
     private var screenObserver: NSObjectProtocol?
     private var wakeObservers: [NSObjectProtocol] = []
     private var settleWork: [DispatchWorkItem] = []
+    private var closedAt = Date.distantPast
+    private var followWork: DispatchWorkItem?
     private var displayObserver: AnyCancellable?
     private var browHideObserver: AnyCancellable?
     private var liftWork: DispatchWorkItem?
@@ -520,6 +522,15 @@ final class NotchWindowController {
             })
         }
         // App volume taps run whenever the setting is on; the list of apps refreshes only while the Tools tab shows.
+        // Once it has closed, the notch catches up with a pointer that went to another screen and stopped there.
+        settingsObservers.append(model.$isExpanded.removeDuplicates().dropFirst().filter { !$0 }.sink { [weak self] _ in
+            guard let self else { return }
+            closedAt = .now
+            followWork?.cancel()
+            let work = DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.followPointer(to: NSEvent.mouseLocation) } }
+            followWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.closeSettle, execute: work)
+        })
         settingsObservers.append(model.settings.$perAppVolume.combineLatest(model.$isExpanded, model.$tab)
             .sink { [weak self] enabled, expanded, tab in
                 self?.model.appVolume.update(enabled: enabled, listing: expanded && tab == .tools)
@@ -590,10 +601,16 @@ final class NotchWindowController {
     /// With no display chosen in Settings, the closed notch moves to the screen the pointer goes to. It stays put while it is
     /// open or shows a pop-up.
     private func followPointer(to point: NSPoint) {
-        guard model.settings.displayName.isEmpty, isIdle, !NotchGeometry.holdsPointer(model.geometry.screenFrame, point),
+        guard model.settings.displayName.isEmpty, isIdle, Self.hasSettled(closedAt: closedAt, now: .now),
+              !NotchGeometry.holdsPointer(model.geometry.screenFrame, point),
               NSScreen.screens.contains(where: { NotchGeometry.holdsPointer($0.frame, point) }) else { return }
         relayout()
     }
+
+    /// How long the closing notch takes to settle. Moved sooner, it would finish closing on the other screen.
+    nonisolated static let closeSettle: TimeInterval = 0.5
+
+    nonisolated static func hasSettled(closedAt: Date, now: Date) -> Bool { now.timeIntervalSince(closedAt) >= closeSettle }
 
     /// Closed with nothing showing, so the notch may change screens.
     private var isIdle: Bool { !model.isExpanded && model.hud.event == nil && model.approvals.current == nil }
