@@ -663,7 +663,7 @@ private struct TokenRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text.panel(title, size: 11, opacity: 0.6)
-            Text.panel("\(tokens.formatted(.number.notation(.compactName))) tokens", size: 12, weight: .semibold, mono: true)
+            Text.panel(String(localized: "\(tokens.formatted(.number.notation(.compactName))) tokens"), size: 12, weight: .semibold, mono: true)
                 .lineLimit(1).minimumScaleFactor(0.8)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
