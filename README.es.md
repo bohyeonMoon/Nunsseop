@@ -133,7 +133,7 @@ Haz clic derecho en el notch → Ajustes → Notch y desactiva lo que no necesit
 <details>
 <summary><b>Mi Mac no tiene notch.</b></summary>
 
-En una pantalla sin notch, como un monitor externo con la tapa cerrada, el notch plegado es una pequeña píldora que flota en la barra de menús, con la ceja, un trazo blanco de pincel, encima. La ceja se levanta cuando el puntero está encima y, al abrirla, el notch se une al borde superior con su tamaño habitual. Los HUDs, los avisos, las letras y la vista previa se muestran en una sola línea en lugar de alrededor de una cámara. Cuando no se usa, la ceja baja como un ojo que se cierra y la píldora se desvanece; puedes desactivarlo o cambiar el retraso en Ajustes. Con varias pantallas, el notch plegado se mueve a la pantalla donde está el puntero; elige allí una pantalla para que se quede en su sitio.
+En una pantalla sin notch, como un monitor externo con la tapa cerrada, el notch plegado es una pequeña píldora que flota en la barra de menús, con la ceja, un trazo blanco de pincel, encima. La ceja se levanta cuando el puntero está encima y, al abrirla, el notch se une al borde superior con su tamaño habitual. Los HUDs, los avisos, las letras y la vista previa se muestran en una sola línea en lugar de alrededor de una cámara. Cuando no se usa, la ceja baja como un ojo que se cierra y la píldora se desvanece; puedes desactivarlo o cambiar el retraso en Ajustes. Con varias pantallas, el notch plegado se mueve a la pantalla donde está el puntero una vez que termina de plegarse, y los HUDs, las aprobaciones y la vista previa también aparecen allí; elige una pantalla en Ajustes para que se quede en su sitio.
 </details>
 
 <details>

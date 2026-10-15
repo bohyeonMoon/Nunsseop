@@ -133,7 +133,7 @@ Faites un clic droit sur l’encoche → Réglages → Encoche, et désactivez c
 <details>
 <summary><b>Mon Mac n’a pas d’encoche.</b></summary>
 
-Sur un écran sans encoche, comme un moniteur externe avec le MacBook fermé, l’encoche fermée est une petite pastille flottant dans la barre des menus, avec le sourcil, un trait de pinceau blanc, posé dessus. Le sourcil se soulève quand le pointeur le survole, et l’ouvrir fixe l’encoche au bord supérieur, à sa taille habituelle. Les HUD, notifications, paroles et l’aperçu discret s’affichent sur une seule ligne, au lieu de contourner une caméra. Quand elle n’est pas utilisée, le sourcil s’abaisse comme un œil qui se ferme et la pastille s’efface ; désactivez cela ou changez le délai dans les Réglages. Avec plusieurs écrans, l’encoche fermée passe sur l’écran où se trouve le pointeur ; choisissez-y un écran pour qu’elle reste en place.
+Sur un écran sans encoche, comme un moniteur externe avec le MacBook fermé, l’encoche fermée est une petite pastille flottant dans la barre des menus, avec le sourcil, un trait de pinceau blanc, posé dessus. Le sourcil se soulève quand le pointeur le survole, et l’ouvrir fixe l’encoche au bord supérieur, à sa taille habituelle. Les HUD, notifications, paroles et l’aperçu discret s’affichent sur une seule ligne, au lieu de contourner une caméra. Quand elle n’est pas utilisée, le sourcil s’abaisse comme un œil qui se ferme et la pastille s’efface ; désactivez cela ou changez le délai dans les Réglages. Avec plusieurs écrans, l’encoche fermée passe sur l’écran où se trouve le pointeur une fois refermée, et les HUD, les autorisations et l’aperçu discret s’y affichent aussi ; choisissez un écran dans les Réglages pour qu’elle reste en place.
 </details>
 
 <details>

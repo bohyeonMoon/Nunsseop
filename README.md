@@ -133,7 +133,7 @@ Right-click the notch → Settings → Notch, and switch off what you don't need
 <details>
 <summary><b>My Mac has no notch.</b></summary>
 
-On a display without a notch, such as an external monitor with the lid closed, the closed notch is a small pill floating in the menu bar, with the eyebrow, a white brush stroke, on it. The eyebrow lifts when the pointer is over it, and opening it attaches the notch to the top edge at the usual size. HUDs, notices, lyrics and the sneak peek show on one line instead of around a camera. When unused, the eyebrow lowers like a closing eye and the pill fades out; turn that off or change the delay in Settings. With several displays, the closed notch moves to the display the pointer is on; pick one display there to keep it in place.
+On a display without a notch, such as an external monitor with the lid closed, the closed notch is a small pill floating in the menu bar, with the eyebrow, a white brush stroke, on it. The eyebrow lifts when the pointer is over it, and opening it attaches the notch to the top edge at the usual size. HUDs, notices, lyrics and the sneak peek show on one line instead of around a camera. When unused, the eyebrow lowers like a closing eye and the pill fades out; turn that off or change the delay in Settings. With several displays, the closed notch moves to the display the pointer is on once it has finished closing, and HUDs, approvals and the sneak peek show up there too; pick one display in Settings to keep it in place.
 </details>
 
 <details>
