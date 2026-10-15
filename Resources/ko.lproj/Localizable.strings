@@ -200,6 +200,9 @@
 "Header" = "헤더";
 "Date" = "날짜";
 "Weather" = "날씨";
+"Show weather on Home" = "홈에 날씨 표시";
+"Show the battery panel in System" = "시스템에서 배터리 패널 표시";
+"System tab" = "시스템 탭";
 "Collapsed notch" = "접힌 노치";
 "Nothing" = "없음";
 "Claude Code left" = "Claude Code 남은 양";
@@ -329,7 +332,7 @@
 "App volume" = "앱별 볼륨";
 "Close" = "닫기";
 "Per-app volume (experimental)" = "앱별 볼륨 (실험 기능)";
-"Adds a volume slider for each app playing sound to the Output tile in the Tools tab. macOS asks for permission to record system audio the first time you turn an app down; Nunsseop only changes the level and records nothing. Needs macOS 14.2 or later." = "도구 탭의 출력 타일에서 소리를 내는 앱마다 볼륨을 따로 조절할 수 있습니다. 처음 앱 볼륨을 줄일 때 macOS가 시스템 오디오 녹음 권한을 묻습니다. Nunsseop은 소리 크기만 바꾸고 아무것도 녹음하지 않습니다. macOS 14.2 이상이 필요합니다.";
+"Adds a volume slider for each app playing sound to the Output panel in the Tools tab. macOS asks for permission to record system audio the first time you turn an app down; Nunsseop only changes the level and records nothing. Needs macOS 14.2 or later." = "도구 탭의 출력 패널에서 소리를 내는 앱마다 볼륨을 따로 조절할 수 있습니다. 처음 앱 볼륨을 줄일 때 macOS가 시스템 오디오 녹음 권한을 묻습니다. Nunsseop은 소리 크기만 바꾸고 아무것도 녹음하지 않습니다. macOS 14.2 이상이 필요합니다.";
 "Nunsseop needs permission to record system audio to change an app’s volume." = "앱 볼륨을 바꾸려면 Nunsseop에 시스템 오디오 녹음 권한이 필요합니다.";
 "No apps are playing sound" = "소리를 내는 앱이 없습니다";
 "No sound has come through yet. If the app is playing, Nunsseop may need permission to record system audio." = "아직 소리가 들어오지 않았습니다. 앱에서 소리가 나고 있다면 Nunsseop에 시스템 오디오 녹음 권한이 필요할 수 있습니다.";
@@ -538,3 +541,60 @@
 "Open at login" = "로그인할 때 열기";
 "On · change in Settings › General" = "켜져 있어요 · 설정 › 일반에서 바꿔요";
 "Off · change in Settings › General" = "꺼져 있어요 · 설정 › 일반에서 바꿔요";
+
+/* Panels */
+"Previous" = "이전";
+"Play" = "재생";
+"Pause" = "일시정지";
+"Playback position" = "재생 위치";
+"Charging" = "충전 중";
+"Plugged in" = "전원 연결됨";
+"On battery" = "배터리 사용 중";
+"Low" = "부족";
+"Download" = "다운로드";
+"Upload" = "업로드";
+
+/* Lists */
+"Open" = "열기";
+"Copy" = "복사";
+"Run" = "실행";
+"Share" = "공유";
+"Finder" = "Finder";
+"AirDrop" = "AirDrop";
+"Clear all" = "모두 지우기";
+"Go to source" = "원래 위치로 이동";
+"This notification has no source to go to" = "이 알림은 이동할 원래 위치가 없어요";
+"More" = "더 보기";
+"1 character" = "1자";
+"%lld characters" = "%lld자";
+"1 app from your Dock" = "Dock의 앱 1개";
+"%lld apps from your Dock" = "Dock의 앱 %lld개";
+"Drag the file out of the shelf to move or copy it" = "파일을 선반 밖으로 끌어내면 이동하거나 복사해요";
+/* Panels: tabs */
+"Mode" = "모드";
+"Length" = "길이";
+"Phase" = "단계";
+"Reset" = "초기화";
+"Nothing to reset" = "초기화할 것이 없어요";
+"Shorter" = "더 짧게";
+"Longer" = "더 길게";
+"Focus" = "집중";
+"Break" = "휴식";
+"Stop" = "중지";
+"Capture" = "캡처";
+"Near limit" = "한도 근접";
+"Emoticons" = "이모티콘";
+"Pictographs" = "그림 문자";
+"Transport & map" = "교통·지도";
+"Supplemental" = "추가";
+"Extended" = "확장";
+"Symbols" = "기호";
+"Dingbats" = "장식 기호";
+"No emoji found" = "이모지를 찾을 수 없어요";
+"Emoji you copy show up here" = "복사한 이모지가 여기에 표시돼요";
+"Access" = "접근";
+"Allowed" = "허용됨";
+"Not allowed" = "허용 안 됨";
+"Not asked yet" = "아직 묻지 않음";
+"Camera preview" = "카메라 미리보기";
+"Pick the camera in Settings › Services" = "카메라는 설정 › 서비스에서 고를 수 있어요";

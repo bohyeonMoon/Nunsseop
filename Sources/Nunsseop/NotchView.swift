@@ -63,15 +63,10 @@ struct NotchView: View {
                                         if let call = model.calls.call, let controls = model.callControls.state {
                                             CallRow(call: call, state: controls) { model.callControls.toggle($0) }
                                         }
-                                        HStack(spacing: 16) {
-                                            HomeTab(nowPlaying: nowPlaying, lyrics: model.settings.lyricsEnabled ? model.lyrics : nil)
-                                            if model.settings.calendarEnabled {
-                                                // A wide notch gives the calendar room for the whole week in large digits.
-                                                let wide = model.expandedSize.width >= 700
-                                                CalendarPanel(calendar: model.calendar, showsReminders: model.settings.remindersEnabled, wide: wide)
-                                                    .frame(width: wide ? 220 : 168)
-                                            }
-                                        }
+                                        HomePanels(nowPlaying: nowPlaying, lyrics: model.settings.lyricsEnabled ? model.lyrics : nil,
+                                                   calendar: model.settings.calendarEnabled ? model.calendar : nil,
+                                                   showsReminders: model.settings.remindersEnabled,
+                                                   weather: model.settings.headerWeather ? model.weather : nil)
                                     }
                                 case .shelf:
                                     ShelfView(shelf: model.shelf, isDropTargeted: isDropTargeted && !isAirDropTargeted,
@@ -86,7 +81,8 @@ struct NotchView: View {
                                     ToolsTab(tools: model.tools, recorder: model.recorder, recordAudio: model.settings.recordAudio,
                                              appVolume: model.settings.perAppVolume ? model.appVolume : nil)
                                 case .system:
-                                    SystemTab(stats: model.stats, peripherals: model.settings.peripheralBatteries ? model.peripherals : nil)
+                                    SystemTab(stats: model.stats, peripherals: model.settings.peripheralBatteries ? model.peripherals : nil,
+                                              power: model.settings.batteryInHeader ? model.hud.power : nil)
                                 case .apps:
                                     AppsTab(launcher: model.launcher)
                                 case .search:
@@ -293,7 +289,7 @@ private struct NotchMotion {
 }
 
 extension NotchView {
-    /// Where ShelfView's AirDrop tile sits inside the expanded shape.
+    /// Where ShelfView's right side, the one a drop sends to AirDrop, sits inside the expanded shape.
     func airDropRect(in size: CGSize) -> CGRect {
         Self.airDropRect(in: size, collapsedHeight: model.geometry.collapsedSize.height)
     }
@@ -301,8 +297,8 @@ extension NotchView {
     static func airDropRect(in size: CGSize, collapsedHeight: CGFloat) -> CGRect {
         let inset: CGFloat = 18 + 14
         let top = max(collapsedHeight, 24) + 8
-        return CGRect(x: size.width - inset - ShelfView.airDropWidth, y: top,
-                      width: ShelfView.airDropWidth, height: size.height - top - 16)
+        let split = inset + (size.width - 2 * inset) * ShelfView.listFraction
+        return CGRect(x: split, y: top, width: size.width - inset - split, height: size.height - top - 16)
     }
 }
 

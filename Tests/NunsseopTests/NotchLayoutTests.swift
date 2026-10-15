@@ -3,19 +3,26 @@ import Testing
 @testable import Nunsseop
 
 struct TabSplitTests {
-    @Test func twelveTabsWithAllStatusIcons() {
+    @Test func twelveTabsWithAWideStatusArea() {
         // A status area as wide as Settings, Quit and the battery and weather in an older layout.
         let split = NotchViewModel.tabSplit(count: 12, status: 180)
-        // 9 left: 9 × 36 − 6 + 2 = 320; 3 right: 3 × 36 − 6 + 2 + 180 = 284. 8 left ties at 320, and ties keep more on the left.
+        // 9 left: 9 × 28 − 2 + 2 = 252; 3 right: 3 × 28 − 2 + 2 + 180 = 264. 10 left is 282 and 8 left is 292.
         #expect(split.left == 9)
-        #expect(split.side == 320)
+        #expect(split.side == 264)
     }
 
     @Test func twelveTabsWithSettingsAndQuitOnly() {
         let split = NotchViewModel.tabSplit(count: 12, status: 64)
-        // 7 left: 248; 5 right: 174 + 2 + 64 = 240.
+        // 7 left: 196; 5 right: 138 + 2 + 64 = 204. 8 left is 224, 6 left 168 against 166 + 2 + 64 = 232.
         #expect(split.left == 7)
-        #expect(split.side == 248)
+        #expect(split.side == 204)
+    }
+
+    @Test func theCurrentTabsTitleIsReservedOnEverySideThatHoldsTabs() {
+        let split = NotchViewModel.tabSplit(count: 12, status: 64, label: 96)
+        // 7 left: 196 + 96 = 292; 5 right: 204 + 96 = 300.
+        #expect(split.left == 7)
+        #expect(split.side == 300)
     }
 
     @Test func homeAloneStaysLeft() {

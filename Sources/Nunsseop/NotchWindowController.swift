@@ -446,7 +446,9 @@ final class NotchWindowController {
         if let keys = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { [weak self] event in
             guard let self else { return event }
             if MainActor.assumeIsolated({ self.handlesTourKey(event) }) { return nil }
-            guard event.keyCode == 53 else { return MainActor.assumeIsolated { self.handlesAgentKey(event) } ? nil : event }
+            guard event.keyCode == 53 else {
+                return MainActor.assumeIsolated { self.handlesAgentKey(event) || self.handlesPanelKey(event) } ? nil : event
+            }
             MainActor.assumeIsolated {
                 // Escape closes the message field first, and the notch only the next time.
                 if self.model.agentList.composing != nil { self.model.agentList.cancelCompose(); return }
@@ -676,6 +678,17 @@ final class NotchWindowController {
               model.agentList.composing == nil, !(panel.firstResponder is NSText),
               let key = AgentKey(keyCode: event.keyCode, characters: event.charactersIgnoringModifiers, modifiers: event.modifierFlags) else { return false }
         return model.agentList.perform(key)
+    }
+
+    /// ↑↓ for the tab that lists items (see `PanelKeys`), under the same conditions as the Agents tab's keys. True when the tab used the key.
+    private func handlesPanelKey(_ event: NSEvent) -> Bool {
+        guard event.window === panel, model.isExpanded, model.approvals.current == nil, model.tab != .agents,
+              event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty, !(panel.firstResponder is NSText) else { return false }
+        switch event.keyCode {
+        case 125: return PanelKeys.move(1)
+        case 126: return PanelKeys.move(-1)
+        default: return false
+        }
     }
 
     /// A faded eyebrow comes back when the pointer arrives and raises, then opens, only if the pointer stays.

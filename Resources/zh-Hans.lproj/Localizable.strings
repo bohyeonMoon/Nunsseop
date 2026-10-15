@@ -175,6 +175,9 @@
 "Header" = "顶部栏";
 "Date" = "日期";
 "Weather" = "天气";
+"Show weather on Home" = "在主页显示天气";
+"Show the battery panel in System" = "在系统中显示电池面板";
+"System tab" = "系统标签";
 "Collapsed notch" = "收起时的刘海";
 "Nothing" = "无";
 "Claude Code left" = "Claude Code 剩余";
@@ -304,7 +307,7 @@
 "App volume" = "应用音量";
 "Close" = "关闭";
 "Per-app volume (experimental)" = "按应用调节音量（实验性）";
-"Adds a volume slider for each app playing sound to the Output tile in the Tools tab. macOS asks for permission to record system audio the first time you turn an app down; Nunsseop only changes the level and records nothing. Needs macOS 14.2 or later." = "在“工具”标签页的“输出”卡片中，为每个正在发声的应用添加音量滑块。第一次调低某个应用的音量时，macOS 会请求录制系统音频的权限；Nunsseop 只调整音量，不会录制任何内容。需要 macOS 14.2 或更高版本。";
+"Adds a volume slider for each app playing sound to the Output panel in the Tools tab. macOS asks for permission to record system audio the first time you turn an app down; Nunsseop only changes the level and records nothing. Needs macOS 14.2 or later." = "在“工具”标签页的“输出”面板中，为每个正在发声的应用添加音量滑块。第一次调低某个应用的音量时，macOS 会请求录制系统音频的权限；Nunsseop 只调整音量，不会录制任何内容。需要 macOS 14.2 或更高版本。";
 "Nunsseop needs permission to record system audio to change an app’s volume." = "Nunsseop 需要录制系统音频的权限才能更改应用音量。";
 "No apps are playing sound" = "没有应用在播放声音";
 "No sound has come through yet. If the app is playing, Nunsseop may need permission to record system audio." = "尚未收到任何声音。如果该应用正在播放，Nunsseop 可能需要录制系统音频的权限。";
@@ -513,3 +516,60 @@
 "Open at login" = "登录时打开";
 "On · change in Settings › General" = "已开启 · 可在“设置 › 通用”更改";
 "Off · change in Settings › General" = "已关闭 · 可在“设置 › 通用”更改";
+
+/* Panels */
+"Previous" = "上一首";
+"Play" = "播放";
+"Pause" = "暂停";
+"Playback position" = "播放位置";
+"Charging" = "正在充电";
+"Plugged in" = "已接通电源";
+"On battery" = "使用电池";
+"Low" = "电量低";
+"Download" = "下载";
+"Upload" = "上传";
+
+/* Lists */
+"Open" = "打开";
+"Copy" = "拷贝";
+"Run" = "运行";
+"Share" = "共享";
+"Finder" = "访达";
+"AirDrop" = "隔空投送";
+"Clear all" = "全部清除";
+"Go to source" = "前往来源";
+"This notification has no source to go to" = "此通知没有可前往的来源";
+"More" = "更多";
+"1 character" = "1 个字符";
+"%lld characters" = "%lld 个字符";
+"1 app from your Dock" = "来自程序坞的 1 个 App";
+"%lld apps from your Dock" = "来自程序坞的 %lld 个 App";
+"Drag the file out of the shelf to move or copy it" = "将文件拖出架子即可移动或拷贝";
+/* Panels: tabs */
+"Mode" = "模式";
+"Length" = "时长";
+"Phase" = "阶段";
+"Reset" = "重置";
+"Nothing to reset" = "没有可重置的内容";
+"Shorter" = "缩短";
+"Longer" = "延长";
+"Focus" = "专注";
+"Break" = "休息";
+"Stop" = "停止";
+"Capture" = "截取";
+"Near limit" = "接近上限";
+"Emoticons" = "表情";
+"Pictographs" = "图形符号";
+"Transport & map" = "交通与地图";
+"Supplemental" = "补充";
+"Extended" = "扩展";
+"Symbols" = "符号";
+"Dingbats" = "装饰符号";
+"No emoji found" = "未找到表情符号";
+"Emoji you copy show up here" = "复制过的表情符号会显示在这里";
+"Access" = "访问";
+"Allowed" = "已允许";
+"Not allowed" = "未允许";
+"Not asked yet" = "尚未询问";
+"Camera preview" = "相机预览";
+"Pick the camera in Settings › Services" = "在“设置 › 服务”中选择相机";

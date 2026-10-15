@@ -175,6 +175,9 @@
 "Header" = "Cabecera";
 "Date" = "Fecha";
 "Weather" = "Tiempo";
+"Show weather on Home" = "Mostrar el tiempo en Inicio";
+"Show the battery panel in System" = "Mostrar el panel de batería en Sistema";
+"System tab" = "Pestaña Sistema";
 "Collapsed notch" = "Notch plegado";
 "Nothing" = "Nada";
 "Claude Code left" = "Claude Code restante";
@@ -304,7 +307,7 @@
 "App volume" = "Volumen de apps";
 "Close" = "Cerrar";
 "Per-app volume (experimental)" = "Volumen por app (experimental)";
-"Adds a volume slider for each app playing sound to the Output tile in the Tools tab. macOS asks for permission to record system audio the first time you turn an app down; Nunsseop only changes the level and records nothing. Needs macOS 14.2 or later." = "Añade a la tarjeta Salida de la pestaña Herramientas un control de volumen para cada app que esté sonando. macOS pide permiso para grabar el audio del sistema la primera vez que bajas una app; Nunsseop solo cambia el nivel y no graba nada. Requiere macOS 14.2 o posterior.";
+"Adds a volume slider for each app playing sound to the Output panel in the Tools tab. macOS asks for permission to record system audio the first time you turn an app down; Nunsseop only changes the level and records nothing. Needs macOS 14.2 or later." = "Añade al panel Salida de la pestaña Herramientas un control de volumen para cada app que esté sonando. macOS pide permiso para grabar el audio del sistema la primera vez que bajas una app; Nunsseop solo cambia el nivel y no graba nada. Requiere macOS 14.2 o posterior.";
 "Nunsseop needs permission to record system audio to change an app’s volume." = "Nunsseop necesita permiso para grabar el audio del sistema para cambiar el volumen de una app.";
 "No apps are playing sound" = "Ninguna app está sonando";
 "No sound has come through yet. If the app is playing, Nunsseop may need permission to record system audio." = "Todavía no llega ningún sonido. Si la app está reproduciendo, puede que Nunsseop necesite permiso para grabar el audio del sistema.";
@@ -513,3 +516,60 @@
 "Open at login" = "Abrir al iniciar sesión";
 "On · change in Settings › General" = "Activado · en Ajustes › General";
 "Off · change in Settings › General" = "Desactivado · en Ajustes › General";
+
+/* Panels */
+"Previous" = "Anterior";
+"Play" = "Reproducir";
+"Pause" = "Pausar";
+"Playback position" = "Posición de reproducción";
+"Charging" = "Cargando";
+"Plugged in" = "Conectado a la corriente";
+"On battery" = "Con batería";
+"Low" = "Baja";
+"Download" = "Descarga";
+"Upload" = "Subida";
+
+/* Lists */
+"Open" = "Abrir";
+"Copy" = "Copiar";
+"Run" = "Ejecutar";
+"Share" = "Compartir";
+"Finder" = "Finder";
+"AirDrop" = "AirDrop";
+"Clear all" = "Borrar todo";
+"Go to source" = "Ir al origen";
+"This notification has no source to go to" = "Esta notificación no tiene origen al que ir";
+"More" = "Más";
+"1 character" = "1 carácter";
+"%lld characters" = "%lld caracteres";
+"1 app from your Dock" = "1 app del Dock";
+"%lld apps from your Dock" = "%lld apps del Dock";
+"Drag the file out of the shelf to move or copy it" = "Arrastra el archivo fuera del estante para moverlo o copiarlo";
+/* Panels: tabs */
+"Mode" = "Modo";
+"Length" = "Duración";
+"Phase" = "Fase";
+"Reset" = "Restablecer";
+"Nothing to reset" = "Nada que restablecer";
+"Shorter" = "Más corto";
+"Longer" = "Más largo";
+"Focus" = "Enfoque";
+"Break" = "Descanso";
+"Stop" = "Detener";
+"Capture" = "Captura";
+"Near limit" = "Cerca del límite";
+"Emoticons" = "Emoticonos";
+"Pictographs" = "Pictogramas";
+"Transport & map" = "Transporte y mapas";
+"Supplemental" = "Suplementarios";
+"Extended" = "Ampliados";
+"Symbols" = "Símbolos";
+"Dingbats" = "Dingbats";
+"No emoji found" = "No se encontraron emojis";
+"Emoji you copy show up here" = "Los emojis que copies aparecerán aquí";
+"Access" = "Acceso";
+"Allowed" = "Permitido";
+"Not allowed" = "No permitido";
+"Not asked yet" = "Aún sin solicitar";
+"Camera preview" = "Vista previa de la cámara";
+"Pick the camera in Settings › Services" = "Elige la cámara en Ajustes › Servicios";

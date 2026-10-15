@@ -513,63 +513,10 @@ struct AIUsageTab: View {
     @ObservedObject var settings = AppSettings.shared
 
     var body: some View {
-        HStack(spacing: 10) {
-            if !settings.claudeLimitsAsked && !settings.claudeLimitsFromAnthropic {
-                LiveLimitsPrompt(settings: settings) { usage.refresh(includeTokens: false) }
-            }
-            if usage.providers.isEmpty {
-                VStack(spacing: 6) {
-                    Image(systemName: "sparkles").font(.system(size: 22)).foregroundStyle(.white.opacity(0.4))
-                    Text(usage.loading ? String(localized: "Loading…") : String(localized: "No AI usage found"))
-                        .font(.system(size: 13, weight: .semibold))
-                    if !usage.loading {
-                        Text("Usage appears here once you have used Claude Code or Codex on this Mac.")
-                            .font(.system(size: 11)).foregroundStyle(.white.opacity(0.5)).multilineTextAlignment(.center)
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-            ForEach(usage.providers) { provider in
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text(provider.name).font(.system(size: 13, weight: .semibold))
-                        if let plan = provider.plan {
-                            Text(verbatim: plan.uppercased())
-                                .font(.system(size: 9, weight: .bold)).foregroundStyle(.white.opacity(0.7))
-                                .padding(.horizontal, 5).padding(.vertical, 1)
-                                .background(Capsule().fill(.white.opacity(0.12)))
-                        }
-                        // The tools whose logs are counted, e.g. "Claude Code · gjc".
-                        Text(verbatim: provider.tools.joined(separator: " · "))
-                            .font(.system(size: 10)).foregroundStyle(.white.opacity(0.4)).lineLimit(1)
-                        Spacer(minLength: 0)
-                        if let updated = provider.updatedAt {
-                            let text = String(localized: "Updated \(updated.formatted(.relative(presentation: .named)))")
-                            Text(verbatim: provider.limitsSource.map { "\(text) · \($0)" } ?? text)
-                                .font(.system(size: 10)).foregroundStyle(.white.opacity(0.4)).lineLimit(1)
-                                .layoutPriority(1)
-                        }
-                    }
-                    UsageBars(provider: provider)
-                    if let session = provider.sessionTokens, let weekly = provider.weeklyTokens {
-                        HStack(spacing: 12) {
-                            TokenRow(title: String(localized: "Last 5 hours"), tokens: session)
-                            TokenRow(title: String(localized: "Last 7 days"), tokens: weekly)
-                        }
-                    } else if usage.countingTokens {
-                        HStack(spacing: 12) {
-                            TokenRowSkeleton()
-                            TokenRowSkeleton()
-                        }
-                    }
-                    Spacer(minLength: 0)
-                }
-                .padding(.horizontal, 12).padding(.vertical, 10)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .surface(RoundedRectangle(cornerRadius: 14))
-            }
+        AIUsagePanels(providers: usage.providers, loading: usage.loading, countingTokens: usage.countingTokens,
+                      asksForLiveLimits: !settings.claudeLimitsAsked && !settings.claudeLimitsFromAnthropic, settings: settings) {
+            usage.refresh(includeTokens: false)
         }
-        .foregroundStyle(.white)
         .task {
             // Limits are cheap to read, so they refresh often; the token totals scan logs and refresh every 2 minutes.
             var tick = 0
@@ -579,6 +526,50 @@ struct AIUsageTab: View {
                 try? await Task.sleep(for: .seconds(20))
             }
         }
+    }
+}
+
+/// What the tab shows, from values: each provider as a panel with a hairline between, and the question about live limits first
+/// when it has not been answered.
+struct AIUsagePanels: View {
+    let providers: [AIUsageModel.Provider]
+    let loading: Bool
+    let countingTokens: Bool
+    let asksForLiveLimits: Bool
+    let settings: AppSettings
+    let turnedOnLiveLimits: () -> Void
+
+    var body: some View {
+        HStack(spacing: 0) {
+            if asksForLiveLimits {
+                LiveLimitsPrompt(settings: settings, turnedOn: turnedOnLiveLimits)
+                    .padding(.trailing, providers.isEmpty ? 0 : 14)
+                if !providers.isEmpty { PanelVLine().padding(.vertical, 2) }
+            }
+            if providers.isEmpty {
+                if !asksForLiveLimits {
+                    VStack(spacing: 6) {
+                        Image(systemName: "sparkles").font(.system(size: 22)).foregroundStyle(.white.opacity(0.5)).accessibilityHidden(true)
+                        Text(loading ? String(localized: "Loading…") : String(localized: "No AI usage found"))
+                            .font(.system(size: 13, weight: .semibold))
+                        if !loading {
+                            Text("Usage appears here once you have used Claude Code or Codex on this Mac.")
+                                .font(.system(size: 11)).foregroundStyle(PanelInk.hint).multilineTextAlignment(.center)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    Spacer(minLength: 0)
+                }
+            }
+            ForEach(Array(providers.enumerated()), id: \.element.id) { index, provider in
+                if index > 0 { PanelVLine().padding(.vertical, 2) }
+                ProviderPanel(provider: provider, countingTokens: countingTokens)
+                    .padding(.leading, index > 0 || asksForLiveLimits ? 14 : 0)
+                    .padding(.trailing, index < providers.count - 1 ? 14 : 0)
+            }
+        }
+        .foregroundStyle(.white)
     }
 }
 
@@ -592,29 +583,76 @@ private struct LiveLimitsPrompt: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Live Claude limits?").font(.system(size: 13, weight: .semibold))
             Text("Nunsseop can read the sign-in Claude Code keeps in the Keychain and ask Anthropic directly for your 5-hour and weekly limits, about once an hour, so they update without Claude Code running.")
-                .font(.system(size: 10)).foregroundStyle(.white.opacity(0.6))
+                .font(.system(size: 10)).foregroundStyle(PanelInk.hint)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
             HStack(spacing: 6) {
-                Button("Turn On") {
+                PanelAction(title: "Turn On", style: .primary) {
                     settings.claudeLimitsFromAnthropic = true
                     settings.claudeLimitsAsked = true
                     turnedOn()
                 }
-                .buttonStyle(.plain)
-                .font(.system(size: 11, weight: .semibold))
-                .padding(.horizontal, 10).padding(.vertical, 4)
-                .background(Capsule().fill(Color.accentColor.opacity(0.8)))
-                Button("No Thanks") { settings.claudeLimitsAsked = true }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 11, weight: .semibold))
-                    .padding(.horizontal, 10).padding(.vertical, 4)
-                    .background(Capsule().fill(.white.opacity(0.15)))
+                PanelAction(title: "No Thanks") { settings.claudeLimitsAsked = true }
             }
         }
-        .padding(.horizontal, 12).padding(.vertical, 10)
         .frame(maxWidth: 230, maxHeight: .infinity, alignment: .topLeading)
-        .surface(RoundedRectangle(cornerRadius: 14))
+    }
+}
+
+/// One provider: its name, plan and sources, the limit bars, and the token totals under a hairline.
+private struct ProviderPanel: View {
+    let provider: AIUsageModel.Provider
+    let countingTokens: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text.panel(provider.name, size: 13, weight: .semibold).lineLimit(1).fixedSize().layoutPriority(1)
+                if let plan = provider.plan {
+                    Text.panel(plan.uppercased(), size: 10, weight: .bold, opacity: 0.75).lineLimit(1).fixedSize()
+                        .padding(.horizontal, 5).padding(.vertical, 1)
+                        .background(Capsule().strokeBorder(.white.opacity(0.4), lineWidth: 0.75))
+                        .layoutPriority(1)
+                }
+                Spacer(minLength: 4)
+                if let updated = provider.updatedAt {
+                    let text = String(localized: "Updated \(updated.formatted(.relative(presentation: .named)))")
+                    Text.panel(provider.limitsSource.map { "\(text) · \($0)" } ?? text, size: 11, opacity: 0.6).lineLimit(1)
+                }
+            }
+            .frame(height: 18)
+            // The tools whose logs are counted, e.g. "Claude Code · gjc"; the sign-in problem takes the line when there is one.
+            Group {
+                if provider.anthropic == .signedOut {
+                    HStack(spacing: 4) {
+                        Image(systemName: "exclamationmark").font(.system(size: 9, weight: .bold)).accessibilityHidden(true)
+                        Text("Sign in to Claude Code again to update the limits.").lineLimit(1).minimumScaleFactor(0.8)
+                    }
+                    .font(.system(size: 11)).foregroundStyle(PanelInk.waiting)
+                    .help(Text("Sign in to Claude Code again to update the limits."))
+                } else {
+                    Text.panel(provider.tools.joined(separator: " · "), size: 11, opacity: 0.6).lineLimit(1)
+                }
+            }
+            .frame(height: 13, alignment: .leading)
+            UsageBars(provider: provider).padding(.top, 2)
+            Spacer(minLength: 0)
+            PanelHLine().padding(.bottom, 4)
+            if let session = provider.sessionTokens, let weekly = provider.weeklyTokens {
+                HStack(spacing: 12) {
+                    TokenRow(title: String(localized: "Last 5 hours"), tokens: session)
+                    TokenRow(title: String(localized: "Last 7 days"), tokens: weekly)
+                }
+            } else if countingTokens {
+                HStack(spacing: 12) {
+                    TokenRowSkeleton()
+                    TokenRowSkeleton()
+                }
+            } else {
+                Color.clear.frame(height: 26)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 
@@ -623,18 +661,17 @@ private struct TokenRow: View {
     let tokens: Int
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(title).font(.system(size: 10)).foregroundStyle(.white.opacity(0.5))
-            Text("\(tokens.formatted(.number.notation(.compactName))) tokens")
-                .font(.system(size: 12, weight: .semibold).monospacedDigit())
+        VStack(alignment: .leading, spacing: 0) {
+            Text.panel(title, size: 11, opacity: 0.6)
+            Text.panel(String(localized: "\(tokens.formatted(.number.notation(.compactName))) tokens"), size: 12, weight: .semibold, mono: true)
                 .lineLimit(1).minimumScaleFactor(0.8)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
-/// The 5-hour and weekly limits, then each model's weekly limit. Past two bars they share rows two by two,
-/// so a model's limit doesn't push the token totals out of the card.
+/// The 5-hour and weekly limits, then each model's weekly limit. Past three bars they share rows two by two, without the
+/// reset time (still in the tooltip), so a model's limit doesn't push the token totals out of the panel.
 private struct UsageBars: View {
     let provider: AIUsageModel.Provider
 
@@ -650,33 +687,31 @@ private struct UsageBars: View {
 
     var body: some View {
         let bars = bars
-        if bars.isEmpty && provider.anthropic == .waiting {
-            UsageBarSkeleton()
-            UsageBarSkeleton()
-        } else if bars.count > 2 {
-            Grid(horizontalSpacing: 16, verticalSpacing: 6) {
-                ForEach(Array(stride(from: 0, to: bars.count, by: 2)), id: \.self) { start in
-                    GridRow {
-                        UsageBar(title: bars[start].title, window: bars[start].window)
-                        if start + 1 < bars.count {
-                            UsageBar(title: bars[start + 1].title, window: bars[start + 1].window)
-                        } else {
-                            Color.clear.gridCellUnsizedAxes(.vertical)
+        VStack(spacing: 0) {
+            if bars.isEmpty && provider.anthropic == .waiting {
+                UsageBarSkeleton()
+                UsageBarSkeleton()
+            } else if bars.count > 3 {
+                Grid(horizontalSpacing: 16, verticalSpacing: 0) {
+                    ForEach(Array(stride(from: 0, to: bars.count, by: 2)), id: \.self) { start in
+                        GridRow {
+                            UsageLine(title: bars[start].title, window: bars[start].window, showsReset: false)
+                            if start + 1 < bars.count {
+                                UsageLine(title: bars[start + 1].title, window: bars[start + 1].window, showsReset: false)
+                            } else {
+                                Color.clear.gridCellUnsizedAxes(.vertical)
+                            }
                         }
                     }
                 }
+            } else {
+                ForEach(bars, id: \.title) { bar in UsageLine(title: bar.title, window: bar.window, showsReset: true) }
             }
-        } else {
-            ForEach(bars, id: \.title) { bar in UsageBar(title: bar.title, window: bar.window) }
-        }
-        if provider.anthropic == .signedOut {
-            Text("Sign in to Claude Code again to update the limits.")
-                .font(.system(size: 10)).foregroundStyle(.orange.opacity(0.9)).lineLimit(1)
         }
     }
 }
 
-/// Where a limit bar goes while a request to Anthropic is out, laid out like `UsageBar`.
+/// Where a limit bar goes while a request to Anthropic is out, laid out like `UsageLine`.
 private struct UsageBarSkeleton: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -685,9 +720,10 @@ private struct UsageBarSkeleton: View {
                 Spacer()
                 Capsule().frame(width: 26, height: 9)
             }
-            .frame(height: 13)
-            Capsule().frame(height: 6)
+            .frame(height: 14)
+            Capsule().frame(height: 3)
         }
+        .frame(height: 23, alignment: .top)
         .modifier(SkeletonPulse())
     }
 }
@@ -697,7 +733,7 @@ private struct TokenRowSkeleton: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
             Capsule().frame(width: 64, height: 8).frame(height: 12)
-            Capsule().frame(width: 88, height: 10).frame(height: 15)
+            Capsule().frame(width: 88, height: 10).frame(height: 14)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .modifier(SkeletonPulse())
@@ -717,32 +753,35 @@ private struct SkeletonPulse: ViewModifier {
     }
 }
 
-private struct UsageBar: View {
+/// A limit: its name, when it resets, the percent used and a 3 pt bar with a tick at 70 %. From 70 % the percent and the bar are
+/// orange and a "!" comes before the number, so it reads without colour.
+private struct UsageLine: View {
+    static let warnFrom = 70
     let title: String
     let window: AIUsageModel.Window
-
-    private var tint: Color {
-        window.percent >= 90 ? .red : window.percent >= 70 ? .orange : .green
-    }
+    let showsReset: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        let percent = Int(window.percent.rounded())
+        let high = percent >= Self.warnFrom
+        let reset = window.resetsAt.map { String(localized: "Resets \($0.formatted(.relative(presentation: .named)))") }
+        VStack(spacing: 2) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(title).font(.system(size: 11, weight: .medium))
-                if let reset = window.resetsAt {
-                    Text("Resets \(reset, format: .relative(presentation: .named))")
-                        .font(.system(size: 10)).foregroundStyle(.white.opacity(0.45)).lineLimit(1)
+                Text.panel(title, size: 11, weight: .medium).lineLimit(1)
+                if showsReset, let reset { Text.panel(reset, size: 11, opacity: 0.6).lineLimit(1) }
+                Spacer(minLength: 0)
+                HStack(spacing: 3) {
+                    if high { Image(systemName: "exclamationmark").font(.system(size: 9, weight: .bold)).accessibilityHidden(true) }
+                    Text(verbatim: "\(percent)%").font(.system(size: 12, weight: .semibold).monospacedDigit())
                 }
-                Spacer()
-                Text("\(Int(window.percent.rounded()))%").font(.system(size: 11, weight: .semibold).monospacedDigit())
+                .foregroundStyle(high ? PanelInk.waiting : .white)
             }
-            GeometryReader { proxy in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(.white.opacity(0.12))
-                    Capsule().fill(tint).frame(width: proxy.size.width * min(1, max(0, window.percent / 100)))
-                }
-            }
-            .frame(height: 6)
+            PanelMeter(fraction: window.percent / 100, tint: high ? PanelInk.waiting : .white.opacity(0.75), tick: Double(Self.warnFrom) / 100)
         }
+        .frame(height: 23)
+        .help(showsReset ? "" : [title, reset].compactMap { $0 }.joined(separator: " · "))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: title))
+        .accessibilityValue(Text(verbatim: high ? "\(percent)%, \(String(localized: "Near limit"))" : "\(percent)%"))
     }
 }

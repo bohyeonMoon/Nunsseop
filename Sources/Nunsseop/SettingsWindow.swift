@@ -16,14 +16,26 @@ final class SettingsWindowController {
         onReplayTour?()
     }
 
+    /// Settings' window: the sidebar runs up under a transparent title bar, as in System Settings.
+    static func makeWindow<Content: View>(_ content: Content) -> NSWindow {
+        let window = NSWindow(contentRect: NSRect(origin: .zero, size: SettingsView.size),
+                              styleMask: [.titled, .closable, .fullSizeContentView],
+                              backing: .buffered, defer: false)
+        window.title = String(localized: "Nunsseop Settings")
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.isReleasedWhenClosed = false
+        // The content runs under the title bar, so the window is as tall as the content; it must not grow by the title bar's height.
+        let host = NSHostingView(rootView: content)
+        host.sizingOptions = []
+        window.contentView = host
+        window.setFrame(NSRect(origin: .zero, size: SettingsView.size), display: false)
+        return window
+    }
+
     func show() {
         if window == nil {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 600),
-                                  styleMask: [.titled, .closable],
-                                  backing: .buffered, defer: false)
-            window.title = String(localized: "Nunsseop Settings")
-            window.isReleasedWhenClosed = false
-            window.contentView = NSHostingView(rootView: SettingsView(settings: .shared))
+            let window = Self.makeWindow(SettingsView(settings: .shared))
             window.center()
             self.window = window
         }
@@ -32,27 +44,93 @@ final class SettingsWindowController {
     }
 }
 
+private enum SettingsPane: String, CaseIterable, Identifiable {
+    // The raw values are what @AppStorage("settingsPane") has stored since the tabs had these names.
+    case general, layout, alerts, services
+
+    var id: String { rawValue }
+
+    var title: LocalizedStringKey {
+        switch self {
+        case .general: "General"
+        case .layout: "Notch"
+        case .alerts: "Alerts"
+        case .services: "Services"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .general: "gearshape"
+        case .layout: "rectangle.topthird.inset.filled"
+        case .alerts: "bell.badge"
+        case .services: "puzzlepiece.extension"
+        }
+    }
+}
+
+/// The four panes in a sidebar and the chosen one beside it, laid out like macOS System Settings.
 struct SettingsView: View {
+    static let size = CGSize(width: 720, height: 600)
+    private static let sidebarWidth: CGFloat = 200
+
     @ObservedObject var settings: AppSettings
     /// Reopens on the pane used last.
-    @AppStorage("settingsPane") private var pane = "general"
+    @AppStorage("settingsPane") private var pane = SettingsPane.general.rawValue
 
     var body: some View {
-        TabView(selection: $pane) {
-            GeneralPane(settings: settings)
-                .tabItem { Label("General", systemImage: "gearshape") }
-                .tag("general")
-            LayoutPane(settings: settings)
-                .tabItem { Label("Notch", systemImage: "rectangle.topthird.inset.filled") }
-                .tag("layout")
-            AlertsPane(settings: settings)
-                .tabItem { Label("Alerts", systemImage: "bell.badge") }
-                .tag("alerts")
-            ServicesPane(settings: settings)
-                .tabItem { Label("Services", systemImage: "puzzlepiece.extension") }
-                .tag("services")
+        let current = SettingsPane(rawValue: pane) ?? .general
+        HStack(spacing: 0) {
+            sidebar(current)
+                .frame(width: Self.sidebarWidth)
+                .background(Color.primary.opacity(0.04))
+            Divider()
+            VStack(alignment: .leading, spacing: 0) {
+                Text(current.title)
+                    .font(.system(size: 22, weight: .bold))
+                    .accessibilityAddTraits(.isHeader)
+                    .padding(.horizontal, 24)
+                    .frame(height: 56, alignment: .bottomLeading)
+                switch current {
+                case .general: GeneralPane(settings: settings)
+                case .layout: LayoutPane(settings: settings)
+                case .alerts: AlertsPane(settings: settings)
+                case .services: ServicesPane(settings: settings)
+                }
+            }
+            .frame(maxWidth: .infinity)
         }
-        .frame(width: 500, height: 600)
+        .frame(width: Self.size.width, height: Self.size.height)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .ignoresSafeArea()
+    }
+
+    private func sidebar(_ current: SettingsPane) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(SettingsPane.allCases) { item in
+                let selected = item == current
+                Button { pane = item.rawValue } label: {
+                    HStack(spacing: 9) {
+                        Image(systemName: item.symbol)
+                            .font(.system(size: 12, weight: .medium))
+                            .frame(width: 24, height: 24)
+                            .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.12)))
+                            .accessibilityHidden(true)
+                        Text(item.title).fontWeight(selected ? .semibold : .regular)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 8)
+                    .frame(height: 34)
+                    .background { if selected { RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.1)) } }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(selected ? .isSelected : [])
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 10)
+        .padding(.top, 56)
     }
 }
 
@@ -80,7 +158,7 @@ private struct GeneralPane: View {
                 if let error = launchAtLogin.lastError {
                     Text(error).font(.caption).foregroundStyle(.red)
                 }
-                Button(OnboardingText.showAgain) { SettingsWindowController.shared.replayTour() }
+                ChevronRow(title: Text(OnboardingText.showAgain)) { SettingsWindowController.shared.replayTour() }
             }
             Section("Updates") {
                 Toggle("Check for updates automatically", isOn: $settings.checkForUpdates)
@@ -152,7 +230,10 @@ private struct GeneralPane: View {
                 SliderRow(title: "Expanded height", value: $settings.expandedHeight,
                           range: AppSettings.expandedHeightRange, unit: "pt")
                 Toggle("Compact artwork and visualizer while playing", isOn: $settings.compactLiveActivity)
-                Button("Reset sizes") { settings.resetSizes() }
+                HStack {
+                    Spacer()
+                    Button("Reset sizes") { settings.resetSizes() }
+                }
             }
             Section("Behavior") {
                 SliderRow(title: "Delay before opening on hover", value: $settings.openDelay,
@@ -172,7 +253,6 @@ private struct LayoutPane: View {
     var body: some View {
         Form {
             Section {
-                TabRow(tab: .home, settings: settings)
                 TabOrderList(settings: settings)
             } header: {
                 Text("Tabs")
@@ -184,14 +264,16 @@ private struct LayoutPane: View {
                 Toggle("Calendar", isOn: $settings.calendarEnabled)
                 Toggle("Reminders", isOn: $settings.remindersEnabled)
                     .disabled(!settings.calendarEnabled)
+                Toggle("Show weather on Home", isOn: $settings.headerWeather)
             }
             if settings.calendarEnabled {
                 CalendarChoices(settings: settings)
             }
             Section("Header") {
                 Toggle("Date", isOn: $settings.headerDate)
-                Toggle("Weather", isOn: $settings.headerWeather)
-                Toggle("Battery", isOn: $settings.batteryInHeader)
+            }
+            Section("System tab") {
+                Toggle("Show the battery panel in System", isOn: $settings.batteryInHeader)
             }
             Section("Collapsed notch") {
                 Toggle("Artwork and visualizer while music plays", isOn: $settings.collapsedMusic)
@@ -223,14 +305,24 @@ private struct LayoutPane: View {
     }
 }
 
-/// Where a dragged row lands, and how far the rows it passes step aside, in rows.
+/// Where a dragged tab lands in the grid of tabs (two to a row, in reading order) and how far the tabs it passes step aside, in slots.
 enum TabReorder {
-    /// The index a row dragged from `from` by `offset` points lands on: the slot its middle is over.
-    static func target(from: Int, offset: CGFloat, rowHeight: CGFloat, count: Int) -> Int {
-        min(max(from + Int((offset / rowHeight).rounded()), 0), count - 1)
+    /// The slot a tab dragged from slot `from` by `offset` points lands on: the cell its middle is over. Slots before `first` are fixed
+    /// (Home), and the last row may be short.
+    static func target(from: Int, offset: CGSize, cell: CGSize, columns: Int = 2, first: Int = 1, count: Int) -> Int {
+        let rows = (count + columns - 1) / columns
+        let column = min(max(from % columns + Int((offset.width / cell.width).rounded()), 0), columns - 1)
+        let row = min(max(from / columns + Int((offset.height / cell.height).rounded()), 0), rows - 1)
+        return min(max(row * columns + column, first), count - 1)
     }
 
-    /// -1, 0 or 1 for the row at `index` while the row at `from` is over `target`.
+    /// The arguments for `AppSettings.moveTabs` when the tab in grid slot `from` is dropped on slot `to`: the grid has Home in front of the
+    /// tabs that `moveTabs` orders.
+    static func move(from: Int, to: Int) -> (source: IndexSet, destination: Int) {
+        ([from - 1], to > from ? to : to - 1)
+    }
+
+    /// -1, 0 or 1 for the tab at `index` while the tab at `from` is over `target`.
     static func shift(_ index: Int, from: Int?, target: Int?) -> Int {
         guard let from, let target, index != from else { return 0 }
         if from < target, index > from, index <= target { return -1 }
@@ -239,72 +331,83 @@ enum TabReorder {
     }
 }
 
-/// The tabs after Home. A row is dragged where it should go: it follows the pointer and the rows it passes step
-/// aside. A Form's rows don't take onMove, so the list is one row of its own with the separators drawn in place.
+/// Every tab, Home first, two to a row. A tab is dragged where it should go: it follows the pointer and the tabs it passes step aside.
+/// A Form's rows don't take onMove, so the grid is one row of its own with the separators drawn in place.
 private struct TabOrderList: View {
     @ObservedObject var settings: AppSettings
     @State private var dragging: NotchTab?
-    @State private var offset: CGFloat = 0
+    @State private var offset: CGSize = .zero
+    private static let columns = 2
     private static let rowHeight: CGFloat = 36
 
     var body: some View {
-        let tabs = settings.orderedTabs
-        let from = dragging.flatMap { tabs.firstIndex(of: $0) }
-        let target = from.map { TabReorder.target(from: $0, offset: offset, rowHeight: Self.rowHeight, count: tabs.count) }
-        ZStack(alignment: .top) {
-            VStack(spacing: 0) {
-                ForEach(1..<max(tabs.count, 1), id: \.self) { _ in
-                    Divider().padding(.top, Self.rowHeight - 1)
+        let tabs = [NotchTab.home] + settings.orderedTabs
+        let rows = (tabs.count + Self.columns - 1) / Self.columns
+        GeometryReader { geometry in
+            let cell = CGSize(width: geometry.size.width / CGFloat(Self.columns), height: Self.rowHeight)
+            let from = dragging.flatMap { tabs.firstIndex(of: $0) }
+            let target = from.map { TabReorder.target(from: $0, offset: offset, cell: cell, columns: Self.columns, count: tabs.count) }
+            ZStack(alignment: .topLeading) {
+                ForEach(1..<max(rows, 2), id: \.self) { row in
+                    Rectangle().fill(Color(nsColor: .separatorColor)).frame(height: 0.5).offset(y: CGFloat(row) * cell.height)
+                }
+                Rectangle().fill(Color(nsColor: .separatorColor)).frame(width: 0.5, height: CGFloat(rows) * cell.height).offset(x: cell.width)
+                ForEach(Array(tabs.enumerated()), id: \.element) { index, tab in
+                    let lifted = tab == dragging
+                    let slot = index + (lifted ? 0 : TabReorder.shift(index, from: from, target: target))
+                    TabRow(tab: tab, settings: settings)
+                        .padding(.horizontal, 8)
+                        .frame(width: cell.width, height: cell.height)
+                        .background {
+                            if lifted {
+                                RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .controlBackgroundColor))
+                                    .shadow(color: .black.opacity(0.25), radius: 6, y: 2)
+                            }
+                        }
+                        .contentShape(Rectangle())
+                        .offset(x: CGFloat(slot % Self.columns) * cell.width + (lifted ? clamped(offset, from: index, cell: cell, rows: rows).width : 0),
+                                y: CGFloat(slot / Self.columns) * cell.height + (lifted ? clamped(offset, from: index, cell: cell, rows: rows).height : 0))
+                        .zIndex(lifted ? 1 : 0)
+                        .animation(lifted ? nil : .easeOut(duration: 0.15), value: target)
+                        .gesture(drag(tab, at: index, cell: cell, count: tabs.count), including: tab == .home ? .none : .all)
                 }
             }
-            ForEach(Array(tabs.enumerated()), id: \.element) { index, tab in
-                let lifted = tab == dragging
-                TabRow(tab: tab, settings: settings)
-                    .frame(height: Self.rowHeight)
-                    .background {
-                        if lifted {
-                            RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .controlBackgroundColor))
-                                .shadow(color: .black.opacity(0.25), radius: 6, y: 2).padding(.horizontal, -6)
-                        }
-                    }
-                    .contentShape(Rectangle())
-                    .offset(y: CGFloat(index) * Self.rowHeight
-                            + (lifted ? clamped(offset, from: index, count: tabs.count)
-                                      : CGFloat(TabReorder.shift(index, from: from, target: target)) * Self.rowHeight))
-                    .zIndex(lifted ? 1 : 0)
-                    .animation(lifted ? nil : .easeOut(duration: 0.15), value: target)
-                    .gesture(drag(tab, at: index, count: tabs.count))
-            }
+            .coordinateSpace(name: "tabOrder")
         }
-        .frame(height: CGFloat(tabs.count) * Self.rowHeight, alignment: .top)
-        .coordinateSpace(name: "tabOrder")
+        .frame(height: CGFloat(rows) * Self.rowHeight)
     }
 
-    /// Keeps a dragged row within the list.
-    private func clamped(_ offset: CGFloat, from index: Int, count: Int) -> CGFloat {
-        min(max(offset, -CGFloat(index) * Self.rowHeight), CGFloat(count - 1 - index) * Self.rowHeight)
+    /// Keeps a dragged tab within the grid.
+    private func clamped(_ offset: CGSize, from index: Int, cell: CGSize, rows: Int) -> CGSize {
+        let column = index % Self.columns, row = index / Self.columns
+        return CGSize(width: min(max(offset.width, -CGFloat(column) * cell.width), CGFloat(Self.columns - 1 - column) * cell.width),
+                      height: min(max(offset.height, -CGFloat(row) * cell.height), CGFloat(rows - 1 - row) * cell.height))
     }
 
-    private func drag(_ tab: NotchTab, at index: Int, count: Int) -> some Gesture {
+    private func drag(_ tab: NotchTab, at index: Int, cell: CGSize, count: Int) -> some Gesture {
         DragGesture(minimumDistance: 3, coordinateSpace: .named("tabOrder"))
             .onChanged { value in
                 guard dragging == nil || dragging == tab else { return }
                 dragging = tab
-                offset = value.translation.height
+                offset = value.translation
             }
             .onEnded { _ in
                 guard dragging == tab else { return }
-                let to = TabReorder.target(from: index, offset: offset, rowHeight: Self.rowHeight, count: count)
+                let to = TabReorder.target(from: index, offset: offset, cell: cell, columns: Self.columns, count: count)
                 // Settle into the slot, then reorder in place so nothing jumps.
                 withAnimation(.easeOut(duration: 0.12)) {
-                    offset = CGFloat(to - index) * Self.rowHeight
+                    offset = CGSize(width: CGFloat(to % Self.columns - index % Self.columns) * cell.width,
+                                    height: CGFloat(to / Self.columns - index / Self.columns) * cell.height)
                 } completion: {
                     var still = Transaction()
                     still.disablesAnimations = true
                     withTransaction(still) {
-                        if to != index { settings.moveTabs(from: [index], to: to > index ? to + 1 : to) }
+                        if to != index {
+                            let move = TabReorder.move(from: index, to: to)
+                            settings.moveTabs(from: move.source, to: move.destination)
+                        }
                         dragging = nil
-                        offset = 0
+                        offset = .zero
                     }
                 }
             }
@@ -316,16 +419,18 @@ private struct TabRow: View {
     @ObservedObject var settings: AppSettings
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: tab.symbol).frame(width: 20).foregroundStyle(.secondary)
-            Text(tab.title)
-            Spacer()
+        HStack(spacing: 8) {
             // Home stays first; the others are dragged into order.
-            if tab != .home {
-                Image(systemName: "line.3.horizontal").foregroundStyle(.tertiary)
+            if tab == .home {
+                Color.clear.frame(width: 14, height: 1)
+            } else {
+                Image(systemName: "line.3.horizontal").foregroundStyle(.tertiary).frame(width: 14)
                     .help(Text("Drag to reorder"))
                     .onHover { $0 ? NSCursor.openHand.push() : NSCursor.pop() }
             }
+            Image(systemName: tab.symbol).frame(width: 20).foregroundStyle(.secondary)
+            Text(tab.title).lineLimit(1)
+            Spacer(minLength: 4)
             Toggle("", isOn: Binding(get: { settings.isVisible(tab) }, set: { settings.setVisible(tab, $0) }))
                 .labelsHidden()
                 .toggleStyle(.switch)
@@ -627,7 +732,7 @@ private struct ServicesPane: View {
             Section("App volume") {
                 Toggle("Per-app volume (experimental)", isOn: $settings.perAppVolume)
                     .disabled(!AppVolumeModel.isSupported && !settings.perAppVolume)
-                Text("Adds a volume slider for each app playing sound to the Output tile in the Tools tab. macOS asks for permission to record system audio the first time you turn an app down; Nunsseop only changes the level and records nothing. Needs macOS 14.2 or later.")
+                Text("Adds a volume slider for each app playing sound to the Output panel in the Tools tab. macOS asks for permission to record system audio the first time you turn an app down; Nunsseop only changes the level and records nothing. Needs macOS 14.2 or later.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("Mirror") {
@@ -706,7 +811,7 @@ private struct CalendarChoices: View {
                     }
                 }
             }
-            Button("Add an Account…") {
+            ChevronRow(title: Text("Add an Account…")) {
                 NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Internet-Accounts-Settings.extension")!)
             }
         } header: {
@@ -753,14 +858,35 @@ private struct SliderRow: View {
     var format = "%.0f"
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(title)
-                Spacer()
-                Text(String(format: format, value) + " " + unit).monospacedDigit().foregroundStyle(.secondary)
-            }
+        HStack(spacing: 10) {
+            Text(title)
+            Spacer(minLength: 8)
             Slider(value: $value, in: range)
+                .frame(width: 150)
+                .accessibilityLabel(Text(title))
+            Text(String(format: format, value) + " " + unit)
+                .monospacedDigit().foregroundStyle(.secondary)
+                .frame(width: 64, alignment: .trailing)
         }
+    }
+}
+
+/// A row that does something when clicked, marked with a chevron like the rows of System Settings that open a page.
+private struct ChevronRow: View {
+    let title: Text
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack {
+                title
+                Spacer()
+                Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 

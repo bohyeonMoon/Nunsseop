@@ -175,6 +175,9 @@
 "Header" = "Kopfzeile";
 "Date" = "Datum";
 "Weather" = "Wetter";
+"Show weather on Home" = "Wetter im Start-Tab zeigen";
+"Show the battery panel in System" = "Akku-Feld im System-Tab zeigen";
+"System tab" = "System-Tab";
 "Collapsed notch" = "Eingeklappte Notch";
 "Nothing" = "Nichts";
 "Claude Code left" = "Claude Code übrig";
@@ -304,7 +307,7 @@
 "App volume" = "App-Lautstärke";
 "Close" = "Schließen";
 "Per-app volume (experimental)" = "Lautstärke pro App (experimentell)";
-"Adds a volume slider for each app playing sound to the Output tile in the Tools tab. macOS asks for permission to record system audio the first time you turn an app down; Nunsseop only changes the level and records nothing. Needs macOS 14.2 or later." = "Fügt der Kachel „Ausgabe“ im Tab „Werkzeuge“ einen Lautstärkeregler für jede App hinzu, die gerade Ton abspielt. macOS fragt beim ersten Leiserstellen einer App nach der Erlaubnis, Systemaudio aufzunehmen; Nunsseop ändert nur die Lautstärke und nimmt nichts auf. Erfordert macOS 14.2 oder neuer.";
+"Adds a volume slider for each app playing sound to the Output panel in the Tools tab. macOS asks for permission to record system audio the first time you turn an app down; Nunsseop only changes the level and records nothing. Needs macOS 14.2 or later." = "Fügt dem Bereich „Ausgabe“ im Tab „Werkzeuge“ einen Lautstärkeregler für jede App hinzu, die gerade Ton abspielt. macOS fragt beim ersten Leiserstellen einer App nach der Erlaubnis, Systemaudio aufzunehmen; Nunsseop ändert nur die Lautstärke und nimmt nichts auf. Erfordert macOS 14.2 oder neuer.";
 "Nunsseop needs permission to record system audio to change an app’s volume." = "Nunsseop braucht die Erlaubnis, Systemaudio aufzunehmen, um die Lautstärke einer App zu ändern.";
 "No apps are playing sound" = "Keine App spielt gerade Ton ab";
 "No sound has come through yet. If the app is playing, Nunsseop may need permission to record system audio." = "Bisher kommt kein Ton an. Wenn die App etwas abspielt, braucht Nunsseop vielleicht die Erlaubnis, Systemaudio aufzunehmen.";
@@ -513,3 +516,60 @@
 "Open at login" = "Bei Anmeldung öffnen";
 "On · change in Settings › General" = "An · Einstellungen › Allgemein";
 "Off · change in Settings › General" = "Aus · Einstellungen › Allgemein";
+
+/* Panels */
+"Previous" = "Zurück";
+"Play" = "Wiedergabe";
+"Pause" = "Pause";
+"Playback position" = "Wiedergabeposition";
+"Charging" = "Lädt";
+"Plugged in" = "Am Netz";
+"On battery" = "Akkubetrieb";
+"Low" = "Niedrig";
+"Download" = "Download";
+"Upload" = "Upload";
+
+/* Lists */
+"Open" = "Öffnen";
+"Copy" = "Kopieren";
+"Run" = "Ausführen";
+"Share" = "Teilen";
+"Finder" = "Finder";
+"AirDrop" = "AirDrop";
+"Clear all" = "Alle löschen";
+"Go to source" = "Zur Quelle";
+"This notification has no source to go to" = "Diese Mitteilung hat keine Quelle, zu der man wechseln kann";
+"More" = "Mehr";
+"1 character" = "1 Zeichen";
+"%lld characters" = "%lld Zeichen";
+"1 app from your Dock" = "1 App aus dem Dock";
+"%lld apps from your Dock" = "%lld Apps aus dem Dock";
+"Drag the file out of the shelf to move or copy it" = "Ziehe die Datei aus der Ablage, um sie zu bewegen oder zu kopieren";
+/* Panels: tabs */
+"Mode" = "Modus";
+"Length" = "Dauer";
+"Phase" = "Phase";
+"Reset" = "Zurücksetzen";
+"Nothing to reset" = "Nichts zurückzusetzen";
+"Shorter" = "Kürzer";
+"Longer" = "Länger";
+"Focus" = "Fokus";
+"Break" = "Pause";
+"Stop" = "Stoppen";
+"Capture" = "Aufnahme";
+"Near limit" = "Nahe am Limit";
+"Emoticons" = "Emoticons";
+"Pictographs" = "Piktogramme";
+"Transport & map" = "Verkehr & Karte";
+"Supplemental" = "Ergänzung";
+"Extended" = "Erweitert";
+"Symbols" = "Symbole";
+"Dingbats" = "Dingbats";
+"No emoji found" = "Keine Emojis gefunden";
+"Emoji you copy show up here" = "Kopierte Emojis erscheinen hier";
+"Access" = "Zugriff";
+"Allowed" = "Erlaubt";
+"Not allowed" = "Nicht erlaubt";
+"Not asked yet" = "Noch nicht angefragt";
+"Camera preview" = "Kameravorschau";
+"Pick the camera in Settings › Services" = "Die Kamera wählst du unter Einstellungen › Dienste";

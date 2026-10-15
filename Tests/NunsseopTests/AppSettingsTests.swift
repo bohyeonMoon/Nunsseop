@@ -131,23 +131,49 @@ struct AppSettingsTabOrderTests {
 }
 
 @Suite struct TabReorderTests {
-    @Test func aRowLandsOnTheSlotItsMiddleIsOver() {
-        #expect(TabReorder.target(from: 2, offset: 0, rowHeight: 36, count: 8) == 2)
-        #expect(TabReorder.target(from: 2, offset: 17, rowHeight: 36, count: 8) == 2)
-        #expect(TabReorder.target(from: 2, offset: 19, rowHeight: 36, count: 8) == 3)
-        #expect(TabReorder.target(from: 2, offset: -60, rowHeight: 36, count: 8) == 0)
+    /// The grid of the Settings window: two tabs to a row, 14 tabs.
+    private let cell = CGSize(width: 170, height: 36)
+
+    private func target(from: Int, _ dx: CGFloat, _ dy: CGFloat) -> Int {
+        TabReorder.target(from: from, offset: CGSize(width: dx, height: dy), cell: cell, count: 14)
     }
 
-    @Test func aRowDraggedPastEitherEndStaysInTheList() {
-        #expect(TabReorder.target(from: 1, offset: -500, rowHeight: 36, count: 8) == 0)
-        #expect(TabReorder.target(from: 6, offset: 500, rowHeight: 36, count: 8) == 7)
+    @Test func aTabLandsOnTheCellItsMiddleIsOver() {
+        #expect(target(from: 3, 0, 0) == 3)
+        #expect(target(from: 3, 80, 17) == 3)
+        // A little more than half a row down: the cell below, in the same column.
+        #expect(target(from: 3, 0, 19) == 5)
+        // Across to the other column, and across and down.
+        #expect(target(from: 2, 100, 0) == 3)
+        #expect(target(from: 2, 100, 40) == 5)
+        #expect(target(from: 5, -100, -40) == 2)
     }
 
-    @Test func theRowsPassedStepAsideTowardsWhereItCameFrom() {
-        // Dragged down from 1 to 3: rows 2 and 3 move up one.
+    @Test func aTabDraggedPastTheEdgesStaysInTheGridAndHomeStaysFirst() {
+        #expect(target(from: 2, -500, -500) == 1)
+        #expect(target(from: 3, -500, -500) == 1)
+        #expect(target(from: 4, 500, 500) == 13)
+        // With an odd number of tabs the last row has one cell: its right-hand slot does not exist.
+        #expect(TabReorder.target(from: 10, offset: CGSize(width: 500, height: 500), cell: cell, count: 13) == 12)
+    }
+
+    @Test func theTabsPassedStepAsideTowardsWhereItCameFrom() {
+        // Dragged on from slot 1 to 3: slots 2 and 3 move back one.
         #expect((0..<6).map { TabReorder.shift($0, from: 1, target: 3) } == [0, 0, -1, -1, 0, 0])
-        // Dragged up from 4 to 2: rows 2 and 3 move down one.
+        // Dragged back from 4 to 2: slots 2 and 3 move on one.
         #expect((0..<6).map { TabReorder.shift($0, from: 4, target: 2) } == [0, 0, 1, 1, 0, 0])
         #expect((0..<6).map { TabReorder.shift($0, from: nil, target: nil) } == [0, 0, 0, 0, 0, 0])
+    }
+
+    @Test func aDropReordersTheTabsAfterHome() {
+        let order = AppSettings.orderedTabs(saved: [])
+        func dropped(_ from: Int, on to: Int) -> [NotchTab] {
+            let move = TabReorder.move(from: from, to: to)
+            return AppSettings.moved(from: move.source, to: move.destination, in: order)
+        }
+        // Grid slot 3 holds the third tab after Home; dropped on slot 5 it ends up there, and the two it passed move back a slot.
+        #expect(dropped(3, on: 5) == [order[0], order[1], order[3], order[4], order[2]] + order[5...])
+        #expect(dropped(5, on: 2) == [order[0], order[4], order[1], order[2], order[3]] + order[5...])
+        #expect(dropped(4, on: 4) == order)
     }
 }

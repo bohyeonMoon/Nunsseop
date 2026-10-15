@@ -19,7 +19,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/home.png" width="720" alt="Expanded notch with now playing and calendar">
+  <img src="docs/images/home.png" width="720" alt="Expanded notch with now playing, calendar and weather">
 </p>
 
 *Nunsseop* (눈썹) is Korean for *eyebrow*, the little arch above your screen. It's free, open source, and has no account, subscription or tracking.
@@ -49,9 +49,9 @@ On a fresh install the notch also opens by itself after a second and walks you t
 | | |
 | :---: | :---: |
 | <img src="docs/images/tab-search.png" alt="Search showing an app, a command and a setting"><br>**Search.** A launcher for apps, files, commands, clipboard, emoji and sums, on any shortcut you like. | <img src="docs/images/tab-ai.png" alt="AI usage for Claude Code and Codex"><br>**AI usage.** Claude Code and Codex limits, no login needed. |
-| <img src="docs/images/shelf.png" alt="File shelf with AirDrop tile"><br>**Shelf.** Park files in the notch, or drop them on AirDrop. | <img src="docs/images/tab-timer.png" alt="Timer tab"><br>**Timer.** Countdown, Pomodoro and stopwatch, any length you like. |
+| <img src="docs/images/shelf.png" alt="File shelf with the selected file’s details and AirDrop"><br>**Shelf.** Park files in the notch, or drop them on AirDrop. | <img src="docs/images/tab-timer.png" alt="Timer tab"><br>**Timer.** Countdown, Pomodoro and stopwatch, any length you like. |
 | <img src="docs/images/tab-tools.png" alt="Tools tab"><br>**Tools.** Audio output, mic mute, keep awake, screen recording, color picker and text capture. | <img src="docs/images/tab-system.png" alt="System tab with device batteries"><br>**System.** CPU, memory, disk, network and device batteries. |
-| <img src="docs/images/tab-emoji.png" alt="Emoji picker"><br>**Emoji.** Every emoji, searchable, one click to copy. | <img src="docs/images/hud-headphones.png" alt="Headphone battery HUD"><br>**HUDs.** Volume, brightness, AirPods battery and more. |
+| <img src="docs/images/tab-emoji.png" alt="Emoji picker with a list of categories"><br>**Emoji.** Categories on the left, every emoji searchable, one click to copy. | <img src="docs/images/hud-headphones.png" alt="Headphone battery HUD"><br>**HUDs.** Volume, brightness, AirPods battery and more. |
 | <img src="docs/images/collapsed-call.png" alt="Collapsed notch during a Zoom call"><br>**Calls.** The call app and how long you've been talking. | <img src="docs/images/collapsed-idle.png" alt="Collapsed notch showing Claude Code usage left and weather"><br>**At a glance.** Pick what each side of the closed notch shows. |
 
 ## Everything it does
@@ -69,13 +69,14 @@ On a fresh install the notch also opens by itself after a second and walks you t
 - **Search that can replace Spotlight.** Apps (even ones outside Applications), files, system commands and settings, clipboard history, emoji (start with `:`) and sums like `12*(3+4)`, ranked by what you open most. Initials work: `vsc` finds Visual Studio Code. Arrow keys pick, Return opens.
 - **Your shortcut.** <kbd>⇧⌘Space</kbd> by default, or record any combination in Settings. Nunsseop tells you when macOS or another app already uses it.
 - **Timer, clipboard history, notes and an emoji picker.** Clipboard history stays in memory and skips anything a password manager marks as secret. Tracking parameters like `utm_` and `fbclid` are stripped from links you copy.
+- **A detail beside the list.** Shelf, Clipboard, Apps, Search and Notifications show the item under the pointer (or picked with ↑ ↓) on the right, with its actions. A click on a row still copies, opens or goes to the source at once.
 
 **💻 Your Mac**
 - **System HUDs.** Volume, brightness (including DDC external displays), keyboard backlight, charging, Caps Lock and AirPods battery appear in the notch. It can take over the volume and brightness keys so the system HUD stays away.
-- **System stats and batteries.** CPU, memory, disk, network, plus your mouse, keyboard and trackpad, with a warning when one runs low.
+- **System stats and batteries.** CPU, memory, disk, network and this Mac's battery as panels, plus your mouse, keyboard and trackpad, with a warning when one runs low.
 - **Camera and mic indicator.** A dot on the notch while any app uses them.
 - **Tools.** Switch audio output, set each app's volume (experimental, macOS 14.2+), mute the mic, keep the Mac awake, record the screen, eject drives, pick a color from anywhere on screen, and copy the text out of any part of the screen.
-- **Weather, downloads, mirror and Dock apps**, one hover away.
+- **Weather, downloads, mirror and Dock apps**, one hover away. Weather is a row at the bottom of Home.
 
 **📞 Even when it's closed**
 - **Calls.** During a call in Zoom, FaceTime, Teams, Slack, Discord, WhatsApp or Google Meet, the closed notch shows the app and how long you've been talking. It goes by which app uses the microphone, so showing the call of a desktop app needs no permission (in a browser, Meet or Zoom and Teams on the web need Automation for that browser). For Zoom, FaceTime and Meet you can mute the mic from the notch (and turn the camera off in Zoom and Meet), without switching to the call; Zoom and FaceTime need Accessibility for that, and Meet needs *Allow JavaScript from Apple Events* in a Chromium browser.
@@ -84,7 +85,7 @@ On a fresh install the notch also opens by itself after a second and walks you t
 - **Downloads.** How far along a Safari or Chrome download is, in percent, from the same progress the Finder shows on the file. Nothing polls for it.
 
 **🤖 For developers**
-- **AI usage.** Claude and Codex limits with reset times, and token use over the last 5 hours and 7 days, counted across Claude Code, Codex, gjc, omo and OpenCode. Read from files those tools already keep on your Mac, so there's nothing to sign in to.
+- **AI usage.** Claude and Codex limits with reset times, and token use over the last 5 hours and 7 days, counted across Claude Code, Codex, gjc, omo and OpenCode. Read from files those tools already keep on your Mac, so there's nothing to sign in to. A limit turns orange with a "!" from 70%.
 - **Claude limits from Claude Code.** In Settings › Services › AI usage, connect Claude Code's status line. Claude Code hands it your 5-hour and weekly limits with every answer, so the AI tab stays current while you work, without Nunsseop asking Anthropic for anything. The status line you already had keeps showing as before, and Disconnect puts it back. If your previous command can't be restored, Settings says so.
 - **Live Claude limits (opt-in).** For when you use Claude elsewhere, the AI tab asks once whether to fetch your 5-hour and weekly Claude limits from Anthropic, about once an hour, with the sign-in Claude Code keeps in the Keychain. Off until you say yes; change it later in Settings › Services. Whichever source is most recent wins, and the plan and per-model bars stay when it doesn't carry them.
 - **Notifications from agents and terminals.** Claude Code, Codex, Gemini CLI and OpenCode hooks, omp, omo and pi extensions, agents in Muxy 2, cmux, herdr and Paseo, and bells from tmux and WezTerm show in the notch. Click a notice to bring its terminal, pane or tab to the front ([setup below](#agent-and-terminal-notifications)).
@@ -95,7 +96,8 @@ On a fresh install the notch also opens by itself after a second and walks you t
 - **Message a session, drop files on it.** Press a row's Message button (or ⌘M): the bottom line becomes a "To <session>" field, Return types the text into the session and presses Return there, and Esc cancels. Drop files from the Shelf or Finder on a row and their paths are typed in without Return; when dragging from the Shelf, hold the pointer over the Agents tab button to switch to it. This works for sessions in Ghostty, Terminal, iTerm2, WezTerm, kitty, cmux, herdr, Muxy 2 and Orca (Terminal takes messages but not files), and for Paseo agents that aren't working, messages only (table below, "What works where"). Nothing is sent while a permission prompt or question may be open, to a session inside tmux, zellij or screen, or when Nunsseop can't confirm which terminal the session is in.
 
 **🧩 Make it yours**
-- Pick your tabs and drag them into order, what the header and collapsed notch show, and which pop-ups you get. **Anything you turn off stops running.**
+- Every tab fits in one row in the header, and the current tab shows its name in a capsule. Home, Timer, Tools, System and AI usage are panels with large figures and thin bars. Settings has a sidebar, and the tab list in the Notch pane is a two-column grid you can drag to reorder.
+- Pick your tabs and drag them into order, whether the header shows the date, what the collapsed notch shows, and which pop-ups you get. **Anything you turn off stops running.**
 - On macOS 26 the expanded notch and its cards use Liquid Glass, so what's behind shows through softly. You can set how dark the glass is, all the way to 100% for a solid black notch, or switch the glass off.
 - On displays without a notch, the closed notch is a small pill in the menu bar, in glass if you like, with the eyebrow, a white brush stroke, on it. The eyebrow lifts when the pointer is over it. After it sits unused (3 to 60 seconds, or never) it lowers like a closing eye and fades out, and it comes back when the pointer reaches it; rest there for half a second and it opens, attached to the top edge. There, HUDs, notices, lyrics and the sneak peek are one line, with the symbol right beside the level bar, percent or text. The idle values grow the pill just enough for each one, right beside the eyebrow, and the eyebrow stays over the camera.
 - Choose the display, size and hover delay, launch at login, and hide the notch while the lid is closed.

@@ -175,6 +175,9 @@
 "Header" = "ヘッダ";
 "Date" = "日付";
 "Weather" = "天気";
+"Show weather on Home" = "ホームに天気を表示";
+"Show the battery panel in System" = "システムにバッテリーパネルを表示";
+"System tab" = "システムタブ";
 "Collapsed notch" = "折りたたみ時のノッチ";
 "Nothing" = "なし";
 "Claude Code left" = "Claude Code の残り";
@@ -304,7 +307,7 @@
 "App volume" = "アプリごとの音量";
 "Close" = "閉じる";
 "Per-app volume (experimental)" = "アプリごとの音量（実験的）";
-"Adds a volume slider for each app playing sound to the Output tile in the Tools tab. macOS asks for permission to record system audio the first time you turn an app down; Nunsseop only changes the level and records nothing. Needs macOS 14.2 or later." = "ツールタブの「出力」タイルに、音を鳴らしているアプリごとの音量スライダーを追加します。最初にアプリの音量を下げたときに、macOS がシステムオーディオの録音許可を求めます。Nunsseop は音量を変えるだけで、何も録音しません。macOS 14.2 以降が必要です。";
+"Adds a volume slider for each app playing sound to the Output panel in the Tools tab. macOS asks for permission to record system audio the first time you turn an app down; Nunsseop only changes the level and records nothing. Needs macOS 14.2 or later." = "ツールタブの「出力」パネルに、音を鳴らしているアプリごとの音量スライダーを追加します。最初にアプリの音量を下げたときに、macOS がシステムオーディオの録音許可を求めます。Nunsseop は音量を変えるだけで、何も録音しません。macOS 14.2 以降が必要です。";
 "Nunsseop needs permission to record system audio to change an app’s volume." = "アプリの音量を変えるには、Nunsseop にシステムオーディオの録音を許可する必要があります。";
 "No apps are playing sound" = "音を鳴らしているアプリはありません";
 "No sound has come through yet. If the app is playing, Nunsseop may need permission to record system audio." = "まだ音が届いていません。アプリが再生中なら、Nunsseop にシステムオーディオの録音を許可する必要があるかもしれません。";
@@ -513,3 +516,60 @@
 "Open at login" = "ログイン時に開く";
 "On · change in Settings › General" = "オン · 設定 › 一般で変更できます";
 "Off · change in Settings › General" = "オフ · 設定 › 一般で変更できます";
+
+/* Panels */
+"Previous" = "前へ";
+"Play" = "再生";
+"Pause" = "一時停止";
+"Playback position" = "再生位置";
+"Charging" = "充電中";
+"Plugged in" = "電源に接続中";
+"On battery" = "バッテリー使用中";
+"Low" = "残りわずか";
+"Download" = "ダウンロード";
+"Upload" = "アップロード";
+
+/* Lists */
+"Open" = "開く";
+"Copy" = "コピー";
+"Run" = "実行";
+"Share" = "共有";
+"Finder" = "Finder";
+"AirDrop" = "AirDrop";
+"Clear all" = "すべて消去";
+"Go to source" = "元の場所へ移動";
+"This notification has no source to go to" = "この通知には移動先がありません";
+"More" = "その他";
+"1 character" = "1 文字";
+"%lld characters" = "%lld 文字";
+"1 app from your Dock" = "Dock のアプリ 1 個";
+"%lld apps from your Dock" = "Dock のアプリ %lld 個";
+"Drag the file out of the shelf to move or copy it" = "ファイルをシェルフの外へドラッグすると、移動またはコピーできます";
+/* Panels: tabs */
+"Mode" = "モード";
+"Length" = "長さ";
+"Phase" = "フェーズ";
+"Reset" = "リセット";
+"Nothing to reset" = "リセットするものはありません";
+"Shorter" = "短くする";
+"Longer" = "長くする";
+"Focus" = "集中";
+"Break" = "休憩";
+"Stop" = "停止";
+"Capture" = "キャプチャ";
+"Near limit" = "上限に近い";
+"Emoticons" = "顔文字";
+"Pictographs" = "絵文字";
+"Transport & map" = "交通と地図";
+"Supplemental" = "補助";
+"Extended" = "拡張";
+"Symbols" = "記号";
+"Dingbats" = "装飾記号";
+"No emoji found" = "絵文字が見つかりません";
+"Emoji you copy show up here" = "コピーした絵文字がここに表示されます";
+"Access" = "アクセス";
+"Allowed" = "許可済み";
+"Not allowed" = "許可されていません";
+"Not asked yet" = "未確認";
+"Camera preview" = "カメラのプレビュー";
+"Pick the camera in Settings › Services" = "カメラは設定 › サービスで選べます";

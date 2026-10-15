@@ -175,6 +175,9 @@
 "Header" = "En-tête";
 "Date" = "Date";
 "Weather" = "Météo";
+"Show weather on Home" = "Afficher la météo dans Accueil";
+"Show the battery panel in System" = "Afficher le panneau batterie dans Système";
+"System tab" = "Onglet Système";
 "Collapsed notch" = "Encoche repliée";
 "Nothing" = "Rien";
 "Claude Code left" = "Claude Code restant";
@@ -304,7 +307,7 @@
 "App volume" = "Volume des apps";
 "Close" = "Fermer";
 "Per-app volume (experimental)" = "Volume par app (expérimental)";
-"Adds a volume slider for each app playing sound to the Output tile in the Tools tab. macOS asks for permission to record system audio the first time you turn an app down; Nunsseop only changes the level and records nothing. Needs macOS 14.2 or later." = "Ajoute à la tuile Sortie de l’onglet Outils un curseur de volume pour chaque app qui émet du son. macOS demande l’autorisation d’enregistrer l’audio du système la première fois que vous baissez une app ; Nunsseop ne change que le niveau et n’enregistre rien. Nécessite macOS 14.2 ou version ultérieure.";
+"Adds a volume slider for each app playing sound to the Output panel in the Tools tab. macOS asks for permission to record system audio the first time you turn an app down; Nunsseop only changes the level and records nothing. Needs macOS 14.2 or later." = "Ajoute au panneau Sortie de l’onglet Outils un curseur de volume pour chaque app qui émet du son. macOS demande l’autorisation d’enregistrer l’audio du système la première fois que vous baissez une app ; Nunsseop ne change que le niveau et n’enregistre rien. Nécessite macOS 14.2 ou version ultérieure.";
 "Nunsseop needs permission to record system audio to change an app’s volume." = "Nunsseop a besoin de l’autorisation d’enregistrer l’audio du système pour changer le volume d’une app.";
 "No apps are playing sound" = "Aucune app n’émet de son";
 "No sound has come through yet. If the app is playing, Nunsseop may need permission to record system audio." = "Aucun son ne passe pour l’instant. Si l’app joue quelque chose, Nunsseop a peut-être besoin de l’autorisation d’enregistrer l’audio du système.";
@@ -513,3 +516,60 @@
 "Open at login" = "Ouvrir à la connexion";
 "On · change in Settings › General" = "Activé · Réglages › Général";
 "Off · change in Settings › General" = "Désactivé · Réglages › Général";
+
+/* Panels */
+"Previous" = "Précédent";
+"Play" = "Lecture";
+"Pause" = "Pause";
+"Playback position" = "Position de lecture";
+"Charging" = "En charge";
+"Plugged in" = "Branché";
+"On battery" = "Sur batterie";
+"Low" = "Faible";
+"Download" = "Téléchargement";
+"Upload" = "Envoi";
+
+/* Lists */
+"Open" = "Ouvrir";
+"Copy" = "Copier";
+"Run" = "Lancer";
+"Share" = "Partager";
+"Finder" = "Finder";
+"AirDrop" = "AirDrop";
+"Clear all" = "Tout effacer";
+"Go to source" = "Aller à la source";
+"This notification has no source to go to" = "Cette notification n’a pas de source à ouvrir";
+"More" = "Plus";
+"1 character" = "1 caractère";
+"%lld characters" = "%lld caractères";
+"1 app from your Dock" = "1 app du Dock";
+"%lld apps from your Dock" = "%lld apps du Dock";
+"Drag the file out of the shelf to move or copy it" = "Faites glisser le fichier hors de l’étagère pour le déplacer ou le copier";
+/* Panels: tabs */
+"Mode" = "Mode";
+"Length" = "Durée";
+"Phase" = "Phase";
+"Reset" = "Réinitialiser";
+"Nothing to reset" = "Rien à réinitialiser";
+"Shorter" = "Plus court";
+"Longer" = "Plus long";
+"Focus" = "Concentration";
+"Break" = "Pause";
+"Stop" = "Arrêter";
+"Capture" = "Capture";
+"Near limit" = "Proche de la limite";
+"Emoticons" = "Émoticônes";
+"Pictographs" = "Pictogrammes";
+"Transport & map" = "Transports et cartes";
+"Supplemental" = "Supplémentaires";
+"Extended" = "Étendus";
+"Symbols" = "Symboles";
+"Dingbats" = "Dingbats";
+"No emoji found" = "Aucun emoji trouvé";
+"Emoji you copy show up here" = "Les emojis copiés apparaissent ici";
+"Access" = "Accès";
+"Allowed" = "Autorisé";
+"Not allowed" = "Non autorisé";
+"Not asked yet" = "Pas encore demandé";
+"Camera preview" = "Aperçu de la caméra";
+"Pick the camera in Settings › Services" = "Choisissez la caméra dans Réglages › Services";

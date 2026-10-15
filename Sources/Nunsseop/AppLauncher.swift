@@ -34,49 +34,67 @@ final class AppLauncher: ObservableObject {
 
 struct AppsTab: View {
     @ObservedObject var launcher: AppLauncher
+    @State private var selection = DetailSelection<URL>()
 
     var body: some View {
         Group {
             if launcher.apps.isEmpty {
                 Text("Apps in your Dock show up here")
-                    .font(.system(size: 12)).foregroundStyle(.white.opacity(0.45))
+                    .font(.system(size: 12)).foregroundStyle(PanelInk.hint)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ScrollView(.vertical, showsIndicators: false) {
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 9), spacing: 8) {
-                        ForEach(launcher.apps) { app in
-                            AppIcon(app: app) { launcher.open(app) }
-                        }
+                PanelSplit {
+                    PanelList(items: launcher.apps, selection: $selection) { app, selected in
+                        AppRow(app: app, selected: selected) { launcher.open(app) }
                     }
-                    .padding(.vertical, 2)
+                } right: {
+                    detail
                 }
             }
         }
         .foregroundStyle(.white)
         .onAppear { launcher.reload() }
     }
+
+    @ViewBuilder private var detail: some View {
+        let shown = selection.current(in: launcher.apps.map(\.id)).flatMap { id in launcher.apps.first { $0.id == id } }
+        if let shown {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 14) {
+                    Image(nsImage: InstalledApps.icon(at: shown.url)).resizable().frame(width: 60, height: 60).accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(verbatim: shown.name).font(.system(size: 15, weight: .semibold)).lineLimit(1)
+                        Text("Application").font(.system(size: 11)).foregroundStyle(PanelInk.secondary)
+                        Text(verbatim: shown.url.path).font(.system(size: 11)).foregroundStyle(PanelInk.secondary).lineLimit(1).truncationMode(.middle)
+                    }
+                }
+                HStack(spacing: 8) {
+                    PanelAction(title: "Open", symbol: "arrow.up.forward.app", style: .primary) { launcher.open(shown) }
+                    Text(launcher.apps.count == 1 ? String(localized: "1 app from your Dock") : String(localized: "\(launcher.apps.count) apps from your Dock"))
+                        .font(.system(size: 11)).foregroundStyle(PanelInk.hint).lineLimit(1)
+                }
+            }
+            .padding(.top, 14)
+        }
+    }
 }
 
-private struct AppIcon: View {
+private struct AppRow: View {
     let app: AppLauncher.App
+    let selected: Bool
     let action: () -> Void
-    @State private var hovering = false
 
     var body: some View {
-        Button(action: action) {
-            VStack(spacing: 3) {
-                Image(nsImage: NSWorkspace.shared.icon(forFile: app.url.path))
-                    .resizable()
-                    .frame(width: 40, height: 40)
-                    .scaleEffect(hovering ? 1.1 : 1)
-                    .animation(.spring(response: 0.25, dampingFraction: 0.6), value: hovering)
-                Text(app.name).font(.system(size: 9)).lineLimit(1).foregroundStyle(.white.opacity(0.75))
+        LedgerRow(selected: selected) {
+            HStack(spacing: 8) {
+                Image(nsImage: InstalledApps.icon(at: app.url)).resizable().frame(width: 18, height: 18).accessibilityHidden(true)
+                Text(verbatim: app.name).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                Spacer(minLength: 0)
             }
-            .frame(maxWidth: .infinity)
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
+        .onTapGesture(perform: action)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
         .help(app.name)
     }
 }

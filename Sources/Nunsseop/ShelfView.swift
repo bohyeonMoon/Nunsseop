@@ -2,109 +2,137 @@ import QuickLookThumbnailing
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// The shelf: the files on it as a list on the left, the one under the pointer on the right. Files dropped over the list go on the
+/// shelf; dropped over the right side they go straight to AirDrop (see `NotchView.airDropRect`).
 struct ShelfView: View {
     @ObservedObject var shelf: ShelfStore
     let isDropTargeted: Bool
     let isAirDropTargeted: Bool
+    @State private var selection = DetailSelection<UUID>()
 
-    static let airDropWidth: CGFloat = 76
-
-    /// A tile's thumbnail for a shelf this tall: as large as leaves room for its two-line name and some air, so a
-    /// few files don't sit small in an empty shelf.
-    static func iconSize(forHeight height: CGFloat) -> CGFloat {
-        min(max(height - 64, 40), maxIcon)
-    }
-
-    static let maxIcon: CGFloat = 84
+    /// The list's share of the width; the rest is where a drop goes to AirDrop.
+    static let listFraction: CGFloat = 0.4
 
     var body: some View {
-        HStack(spacing: 8) {
-            shelfArea
-            AirDropTile(shelf: shelf, targeted: isAirDropTargeted)
-                .frame(width: Self.airDropWidth)
+        PanelSplit(leftFraction: Self.listFraction) {
+            if shelf.items.isEmpty { dropBox } else { list }
+        } right: {
+            if shelf.items.isEmpty || isAirDropTargeted {
+                airDrop
+            } else if let shown = selection.current(in: shelf.items.map(\.id)).flatMap({ id in shelf.items.first { $0.id == id } }) {
+                ShelfDetail(item: shown) { shelf.remove(shown) }
+            }
         }
+        .foregroundStyle(.white)
     }
 
-    private var shelfArea: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 14)
-                .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
-                .foregroundStyle(.white.opacity(isDropTargeted ? 0.9 : 0.25))
-                .background(RoundedRectangle(cornerRadius: 14).fill(.white.opacity(isDropTargeted ? 0.12 : 0.04)))
+    private var dropOutline: some View {
+        RoundedRectangle(cornerRadius: 10)
+            .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+            .foregroundStyle(.white.opacity(isDropTargeted ? 0.9 : 0.35))
+            .background(RoundedRectangle(cornerRadius: 10).fill(.white.opacity(isDropTargeted ? 0.12 : 0)))
+    }
 
-            if shelf.items.isEmpty {
-                VStack(spacing: 4) {
-                    Image(systemName: "tray.and.arrow.down").font(.system(size: 18))
-                    Text("Drop files here").font(.system(size: 11))
-                }
-                .foregroundStyle(.white.opacity(0.55))
-            } else {
-                GeometryReader { geometry in
-                    let icon = Self.iconSize(forHeight: geometry.size.height)
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 6) {
-                            ForEach(shelf.items) { item in
-                                ShelfTile(item: item, icon: icon) { shelf.remove(item) }
-                            }
-                        }
-                        .padding(.horizontal, 8)
-                        .frame(minHeight: geometry.size.height)
-                    }
-                }
+    private var dropBox: some View {
+        ZStack {
+            dropOutline
+            VStack(spacing: 4) {
+                Image(systemName: "tray.and.arrow.down").font(.system(size: 20)).accessibilityHidden(true)
+                Text("Drop files here").font(.system(size: 12))
             }
+            .foregroundStyle(.white.opacity(0.7))
         }
-        .contextMenu {
-            if !shelf.items.isEmpty {
-                Button("AirDrop All") { ShelfSharing.airDrop(shelf.items.map(\.url)) }
-                ShareLink(items: shelf.items.map(\.url)) { Text("Share All…") }
-                Button("Clear Shelf") { shelf.removeAll() }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contextMenu { Button("Quit Nunsseop") { NSApp.terminate(nil) } }
+    }
+
+    private var list: some View {
+        VStack(spacing: 0) {
+            PanelList(items: shelf.items, selection: $selection) { item, selected in
+                ShelfRow(item: item, selected: selected) { shelf.remove(item) }
             }
+            PanelHLine()
+            HStack(spacing: 2) {
+                Image(systemName: "tray.and.arrow.down").font(.system(size: 11)).foregroundStyle(PanelInk.hint)
+                    .padding(.leading, 8).accessibilityHidden(true)
+                Text("Drop files here").font(.system(size: 11)).foregroundStyle(PanelInk.hint).padding(.leading, 4)
+                Spacer(minLength: 0)
+                PanelIconButton(symbol: "dot.radiowaves.left.and.right", title: String(localized: "AirDrop All")) {
+                    ShelfSharing.airDrop(shelf.items.map(\.url))
+                }
+                Menu {
+                    ShareLink(items: shelf.items.map(\.url)) { Text("Share All…") }
+                    Button("Clear Shelf") { shelf.removeAll() }
+                } label: {
+                    Image(systemName: "ellipsis").font(.system(size: 12)).foregroundStyle(.white.opacity(0.65)).frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                .help(Text("More")).accessibilityLabel(Text("More"))
+            }
+            .frame(height: 27)
+        }
+        .overlay { if isDropTargeted { dropOutline.allowsHitTesting(false) } }
+        .contextMenu {
+            Button("AirDrop All") { ShelfSharing.airDrop(shelf.items.map(\.url)) }
+            ShareLink(items: shelf.items.map(\.url)) { Text("Share All…") }
+            Button("Clear Shelf") { shelf.removeAll() }
             Button("Quit Nunsseop") { NSApp.terminate(nil) }
         }
     }
+
+    /// What dropping on this side does; clicking it sends everything on the shelf.
+    private var airDrop: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "dot.radiowaves.left.and.right").font(.system(size: 20)).frame(width: 40, height: 40)
+                .background(Circle().fill(.white.opacity(0.1))).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("AirDrop").font(.system(size: 13, weight: .semibold))
+                Text("Drop files to send with AirDrop, or click to send everything on the shelf")
+                    .font(.system(size: 11)).foregroundStyle(PanelInk.secondary).lineLimit(3)
+            }
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background {
+            if isAirDropTargeted {
+                RoundedRectangle(cornerRadius: 10).fill(.white.opacity(0.12))
+                RoundedRectangle(cornerRadius: 10).strokeBorder(.white.opacity(0.9), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { ShelfSharing.airDrop(shelf.items.map(\.url)) }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .help(Text("Drop files to send with AirDrop, or click to send everything on the shelf"))
+    }
 }
 
-private struct ShelfTile: View {
+/// What the shelf shows about a file without opening it: its kind, and its size unless it is a folder.
+private struct ShelfFacts {
+    var kind: String?
+    var size: String?
+
+    static func read(_ url: URL) -> ShelfFacts {
+        let values = try? url.resourceValues(forKeys: [.localizedTypeDescriptionKey, .fileSizeKey, .isDirectoryKey])
+        let size = values?.isDirectory == true ? nil : values?.fileSize.map { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) }
+        return ShelfFacts(kind: values?.localizedTypeDescription, size: size)
+    }
+}
+
+private struct ShelfRow: View {
     let item: ShelfItem
-    let icon: CGFloat
+    let selected: Bool
     let onRemove: () -> Void
-    @State private var hovering = false
-    @State private var thumbnail: NSImage?
+    @State private var size: String?
 
     var body: some View {
-        VStack(spacing: 3) {
-            Group {
-                if let thumbnail {
-                    Image(nsImage: thumbnail)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
-                } else {
-                    Image(nsImage: NSWorkspace.shared.icon(forFile: item.url.path))
-                        .resizable()
-                }
-            }
-            .frame(width: icon, height: icon)
-            .task(id: item.url) { thumbnail = await Self.thumbnail(for: item.url) }
-            Text(item.url.lastPathComponent)
-                .font(.system(size: 10))
-                .lineLimit(2)
-                .multilineTextAlignment(.center)
-                .frame(width: max(64, icon + 16))
-        }
-        .padding(4)
-        .background(RoundedRectangle(cornerRadius: 8).fill(.white.opacity(hovering ? 0.12 : 0)))
-        .overlay(alignment: .topTrailing) {
-            if hovering {
-                Button(action: onRemove) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.white, .gray)
-                }
-                .buttonStyle(.plain)
+        LedgerRow(selected: selected) {
+            LedgerLine(title: item.url.lastPathComponent, trailing: size, truncation: .middle) {
+                Image(nsImage: NSWorkspace.shared.icon(forFile: item.url.path)).resizable().frame(width: 16, height: 16).accessibilityHidden(true)
             }
         }
-        .onHover { hovering = $0 }
+        .task(id: item.url) { size = ShelfFacts.read(item.url).size }
         .onDrag { NSItemProvider(contentsOf: item.url) ?? NSItemProvider() }
         .contextMenu {
             Button("AirDrop") { ShelfSharing.airDrop([item.url]) }
@@ -113,7 +141,91 @@ private struct ShelfTile: View {
             Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([item.url]) }
             Button("Remove from Shelf", action: onRemove)
         }
+        .accessibilityElement(children: .combine)
         .help(item.url.path)
+    }
+}
+
+private struct ShelfDetail: View {
+    let item: ShelfItem
+    let onRemove: () -> Void
+    @State private var thumbnail: NSImage?
+    @State private var facts = ShelfFacts()
+
+    private static let previewSize = CGSize(width: 118, height: 78)
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 12) {
+                preview
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(verbatim: item.url.lastPathComponent).font(.system(size: 13, weight: .semibold)).lineLimit(2).truncationMode(.middle)
+                    let summary = [facts.kind, facts.size].compactMap { $0 }.joined(separator: " · ")
+                    if !summary.isEmpty { quiet(summary) }
+                    quiet((item.url.deletingLastPathComponent().path as NSString).abbreviatingWithTildeInPath)
+                }
+            }
+            HStack(spacing: 6) {
+                PanelAction(title: "AirDrop", symbol: "dot.radiowaves.left.and.right", style: .primary) { ShelfSharing.airDrop([item.url]) }
+                ShareAction(url: item.url)
+                PanelAction(title: "Finder", symbol: "folder") { NSWorkspace.shared.activateFileViewerSelecting([item.url]) }
+                PanelAction(title: "Remove", symbol: "xmark", action: onRemove)
+            }
+            Text("Drag the file out of the shelf to move or copy it").font(.system(size: 11)).foregroundStyle(PanelInk.secondary).lineLimit(1)
+        }
+        .task(id: item.url) {
+            thumbnail = nil
+            facts = ShelfFacts.read(item.url)
+            thumbnail = await Self.thumbnail(for: item.url)
+        }
+    }
+
+    private func quiet(_ text: String) -> some View {
+        Text(verbatim: text).font(.system(size: 11)).foregroundStyle(PanelInk.secondary).lineLimit(1).truncationMode(.middle)
+    }
+
+    private var preview: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 6).fill(Color(white: 0.13))
+            if let thumbnail {
+                Image(nsImage: thumbnail).resizable().aspectRatio(contentMode: .fit).clipShape(RoundedRectangle(cornerRadius: 6))
+            } else {
+                Image(nsImage: NSWorkspace.shared.icon(forFile: item.url.path)).resizable().frame(width: 44, height: 44)
+            }
+            RoundedRectangle(cornerRadius: 6).stroke(.white.opacity(0.22), lineWidth: 0.75)
+        }
+        .frame(width: Self.previewSize.width, height: Self.previewSize.height)
+        .accessibilityHidden(true)
+    }
+
+    /// A Quick Look preview of the file (screenshots, images, PDFs, videos), or nil to fall back to its icon.
+    private static func thumbnail(for url: URL) async -> NSImage? {
+        let request = QLThumbnailGenerator.Request(fileAt: url, size: previewSize, scale: NSScreen.main?.backingScaleFactor ?? 2,
+                                                   representationTypes: .thumbnail)
+        return try? await QLThumbnailGenerator.shared.generateBestRepresentation(for: request).nsImage
+    }
+}
+
+/// Share looks like a `PanelAction`, but a `ShareLink` brings its own button.
+private struct ShareAction: View {
+    let url: URL
+    @State private var hovering = false
+
+    var body: some View {
+        ShareLink(item: url) {
+            HStack(spacing: 4) {
+                Image(systemName: "square.and.arrow.up").font(.system(size: 11)).accessibilityHidden(true)
+                Text("Share").font(.system(size: 11, weight: .medium)).lineLimit(1)
+            }
+            .foregroundStyle(.white.opacity(hovering ? 0.95 : 0.8))
+            .padding(.horizontal, 8).frame(height: 24)
+            .background(Capsule().fill(.white.opacity(hovering ? 0.08 : 0)))
+            .overlay(Capsule().strokeBorder(.white.opacity(0.32), lineWidth: 0.75))
+            .fixedSize()
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
     }
 }
 
@@ -142,28 +254,6 @@ enum ShelfSharing {
     }
 }
 
-/// Drop files here to send them with AirDrop; click to send everything on the shelf.
-private struct AirDropTile: View {
-    @ObservedObject var shelf: ShelfStore
-    let targeted: Bool
-    @State private var hovering = false
-
-    var body: some View {
-        VStack(spacing: 5) {
-            Image(systemName: "dot.radiowaves.left.and.right")
-                .font(.system(size: 20, weight: .medium))
-            Text("AirDrop").font(.system(size: 10, weight: .semibold))
-        }
-        .foregroundStyle(.white.opacity(targeted || hovering ? 1 : 0.6))
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(RoundedRectangle(cornerRadius: 14).fill(Color.blue.opacity(targeted ? 0.45 : (hovering ? 0.22 : 0.12))))
-        .contentShape(RoundedRectangle(cornerRadius: 14))
-        .onHover { hovering = $0 }
-        .onTapGesture { ShelfSharing.airDrop(shelf.items.map(\.url)) }
-        .help(Text("Drop files to send with AirDrop, or click to send everything on the shelf"))
-    }
-}
-
 extension ShelfStore {
     func handleDrop(_ providers: [NSItemProvider]) -> Bool {
         let fileProviders = providers.filter { $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) }
@@ -175,15 +265,5 @@ extension ShelfStore {
             }
         }
         return true
-    }
-}
-
-private extension ShelfTile {
-    /// A Quick Look preview of the file (screenshots, images, PDFs, videos), or nil to fall back to its icon.
-    static func thumbnail(for url: URL) async -> NSImage? {
-        let request = QLThumbnailGenerator.Request(fileAt: url, size: CGSize(width: ShelfView.maxIcon, height: ShelfView.maxIcon),
-                                                   scale: NSScreen.main?.backingScaleFactor ?? 2,
-                                                   representationTypes: .thumbnail)
-        return try? await QLThumbnailGenerator.shared.generateBestRepresentation(for: request).nsImage
     }
 }

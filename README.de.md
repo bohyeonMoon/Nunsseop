@@ -19,7 +19,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/home.png" width="720" alt="Ausgeklappte Notch mit aktueller Wiedergabe und Kalender">
+  <img src="docs/images/home.png" width="720" alt="Ausgeklappte Notch mit aktueller Wiedergabe, Kalender und Wetter">
 </p>
 
 *Nunsseop* (눈썹) ist Koreanisch für *Augenbraue*, den kleinen Bogen über deinem Bildschirm. Die App ist kostenlos und Open Source, ohne Account, Abo oder Tracking.
@@ -49,9 +49,9 @@ Bei einer frischen Installation öffnet sich die Notch nach einer Sekunde außer
 | | |
 | :---: | :---: |
 | <img src="docs/images/tab-search.png" alt="Suche mit einer App, einem Befehl und einer Einstellung"><br>**Suche.** Ein Launcher für Apps, Dateien, Befehle, Zwischenablage, Emoji und Rechenaufgaben, mit einem Kurzbefehl deiner Wahl. | <img src="docs/images/tab-ai.png" alt="KI-Nutzung für Claude Code und Codex"><br>**KI-Nutzung.** Limits von Claude Code und Codex, ganz ohne Anmeldung. |
-| <img src="docs/images/shelf.png" alt="Dateiablage mit AirDrop-Kachel"><br>**Ablage.** Parke Dateien in der Notch oder wirf sie auf AirDrop. | <img src="docs/images/tab-timer.png" alt="Timer-Tab"><br>**Timer.** Countdown, Pomodoro und Stoppuhr, in jeder gewünschten Länge. |
+| <img src="docs/images/shelf.png" alt="Dateiablage mit den Details der gewählten Datei und AirDrop"><br>**Ablage.** Parke Dateien in der Notch oder wirf sie auf AirDrop. | <img src="docs/images/tab-timer.png" alt="Timer-Tab"><br>**Timer.** Countdown, Pomodoro und Stoppuhr, in jeder gewünschten Länge. |
 | <img src="docs/images/tab-tools.png" alt="Werkzeuge-Tab"><br>**Werkzeuge.** Audioausgabe, Mikrofon stummschalten, Wach halten, Bildschirmaufnahme, Farbwähler und Texterfassung. | <img src="docs/images/tab-system.png" alt="System-Tab mit Geräte-Akkus"><br>**System.** CPU, Speicher, Festplatte, Netzwerk und Geräte-Akkus. |
-| <img src="docs/images/tab-emoji.png" alt="Emoji-Auswahl"><br>**Emoji.** Alle Emoji, durchsuchbar, mit einem Klick kopiert. | <img src="docs/images/hud-headphones.png" alt="HUD für den Kopfhörer-Akku"><br>**HUDs.** Lautstärke, Helligkeit, AirPods-Akku und mehr. |
+| <img src="docs/images/tab-emoji.png" alt="Emoji-Auswahl mit einer Liste von Kategorien"><br>**Emoji.** Kategorien links, alle Emoji durchsuchbar, mit einem Klick kopiert. | <img src="docs/images/hud-headphones.png" alt="HUD für den Kopfhörer-Akku"><br>**HUDs.** Lautstärke, Helligkeit, AirPods-Akku und mehr. |
 | <img src="docs/images/collapsed-call.png" alt="Eingeklappte Notch während eines Zoom-Anrufs"><br>**Anrufe.** Die Anruf-App und wie lange du schon sprichst. | <img src="docs/images/collapsed-idle.png" alt="Eingeklappte Notch mit verbleibender Claude-Code-Nutzung und Wetter"><br>**Auf einen Blick.** Wähle, was jede Seite der geschlossenen Notch anzeigt. |
 
 ## Alles, was die App kann
@@ -69,13 +69,14 @@ Bei einer frischen Installation öffnet sich die Notch nach einer Sekunde außer
 - **Eine Suche, die Spotlight ersetzen kann.** Apps (auch solche außerhalb des Ordners „Programme“), Dateien, Systembefehle und Einstellungen, Zwischenablage-Verlauf, Emoji (beginne mit `:`) und Rechenaufgaben wie `12*(3+4)`, sortiert danach, was du am häufigsten öffnest. Auch Initialen funktionieren: `vsc` findet Visual Studio Code. Pfeiltasten wählen aus, der Zeilenschalter öffnet.
 - **Dein Kurzbefehl.** Standardmäßig <kbd>⇧⌘Leertaste</kbd>, oder nimm in den Einstellungen eine beliebige Kombination auf. Nunsseop sagt dir, wenn macOS oder eine andere App sie schon belegt.
 - **Timer, Zwischenablage-Verlauf, Notizen und eine Emoji-Auswahl.** Der Zwischenablage-Verlauf bleibt im Speicher und überspringt alles, was ein Passwortmanager als geheim markiert. Tracking-Parameter wie `utm_` und `fbclid` werden aus kopierten Links entfernt.
+- **Ein Detail neben der Liste.** Ablage, Zwischenablage, Apps, Suche und Mitteilungen zeigen das Element unter dem Zeiger (oder das mit ↑ ↓ gewählte) rechts mit seinen Aktionen. Ein Klick auf eine Zeile kopiert, öffnet oder springt wie bisher sofort zur Quelle.
 
 **💻 Dein Mac**
 - **System-HUDs.** Lautstärke, Helligkeit (auch bei externen DDC-Bildschirmen), Tastaturbeleuchtung, Ladevorgang, Feststelltaste und AirPods-Akku erscheinen in der Notch. Die App kann die Tasten für Lautstärke und Helligkeit übernehmen, damit das System-HUD ausbleibt.
-- **Systemwerte und Akkus.** CPU, Speicher, Festplatte, Netzwerk sowie deine Maus, Tastatur und dein Trackpad, mit einer Warnung bei niedrigem Akkustand.
+- **Systemwerte und Akkus.** CPU, Speicher, Festplatte, Netzwerk und der Akku dieses Macs als Panels sowie deine Maus, Tastatur und dein Trackpad, mit einer Warnung bei niedrigem Akkustand.
 - **Kamera- und Mikrofonanzeige.** Ein Punkt auf der Notch, solange eine App sie verwendet.
 - **Werkzeuge.** Audioausgabe wechseln, die Lautstärke jeder App einstellen (experimentell, macOS 14.2+), das Mikrofon stummschalten, den Mac wach halten, den Bildschirm aufnehmen, Laufwerke auswerfen, eine Farbe an beliebiger Stelle des Bildschirms auswählen und den Text aus jedem Bereich des Bildschirms kopieren.
-- **Wetter, Downloads, Spiegel und Dock-Apps**, nur einen Hover entfernt.
+- **Wetter, Downloads, Spiegel und Dock-Apps**, nur einen Hover entfernt. Das Wetter ist eine Zeile unten im Start-Tab.
 
 **📞 Auch wenn sie geschlossen ist**
 - **Anrufe.** Bei einem Anruf in Zoom, FaceTime, Teams, Slack, Discord, WhatsApp oder Google Meet zeigt die geschlossene Notch die App und wie lange du schon sprichst. Maßgeblich ist, welche App das Mikrofon nutzt, daher braucht die Anzeige eines Anrufs in einer Desktop-App keine Berechtigung; bei Anrufen im Browser (Meet, Zoom oder Teams im Web) braucht sie Automation für diesen Browser. Bei Zoom, FaceTime und Meet kannst du das Mikrofon stummschalten (bei Zoom und Meet auch die Kamera ausschalten), direkt von der Notch aus, ohne zum Anruf zu wechseln; Zoom und FaceTime brauchen dafür Bedienungshilfen, Meet braucht in einem Chromium-Browser die Option *JavaScript von Apple Events erlauben*.
@@ -84,7 +85,7 @@ Bei einer frischen Installation öffnet sich die Notch nach einer Sekunde außer
 - **Downloads.** Wie weit ein Download in Safari oder Chrome ist, in Prozent, anhand desselben Fortschritts, den der Finder an der Datei zeigt. Nichts fragt ständig nach.
 
 **🤖 Für Entwickler**
-- **KI-Nutzung.** Limits von Claude und Codex mit Zeitpunkten des Zurücksetzens sowie der Token-Verbrauch der letzten 5 Stunden und 7 Tage, gezählt über Claude Code, Codex, gjc, omo und OpenCode hinweg. Gelesen aus Dateien, die diese Tools ohnehin auf deinem Mac ablegen, daher musst du dich nirgends anmelden.
+- **KI-Nutzung.** Limits von Claude und Codex mit Zeitpunkten des Zurücksetzens sowie der Token-Verbrauch der letzten 5 Stunden und 7 Tage, gezählt über Claude Code, Codex, gjc, omo und OpenCode hinweg. Gelesen aus Dateien, die diese Tools ohnehin auf deinem Mac ablegen, daher musst du dich nirgends anmelden. Ein Limit wird ab 70 % orange und bekommt ein „!“.
 - **Claude-Limits von Claude Code.** Verbinde unter Einstellungen › Dienste › KI-Nutzung die Statuszeile von Claude Code. Claude Code übergibt ihr deine 5-Stunden- und Wochenlimits bei jeder Antwort, sodass der Tab „KI-Nutzung“ aktuell bleibt, während du arbeitest, ohne dass Nunsseop dafür bei Anthropic nachfragt. Die Statuszeile, die du schon hattest, wird wie bisher angezeigt, und „Trennen“ stellt sie wieder her. Lässt sich dein bisheriger Befehl nicht wiederherstellen, weisen die Einstellungen darauf hin.
 - **Claude-Limits live (optional).** Für den Fall, dass du Claude anderswo nutzt, fragt der Tab „KI-Nutzung“ einmal, ob deine 5-Stunden- und Wochenlimits von Claude etwa einmal pro Stunde bei Anthropic abgerufen werden sollen, mit der Anmeldung, die Claude Code im Schlüsselbund ablegt. Aus, bis du zustimmst; später änderbar unter Einstellungen › Dienste. Es gilt die jeweils aktuellste Quelle; Tarif und Balken je Modell bleiben, wenn sie diese nicht mitbringt.
 - **Mitteilungen von Agenten und Terminals.** Hooks von Claude Code, Codex, Gemini CLI und OpenCode, Erweiterungen von omp, omo und pi, Agenten in Muxy 2, cmux, herdr und Paseo sowie Glocken von tmux und WezTerm erscheinen in der Notch. Ein Klick auf eine Mitteilung bringt das zugehörige Terminal, den Bereich oder Tab in den Vordergrund ([Einrichtung weiter unten](#mitteilungen-von-agenten-und-terminals)).
@@ -95,7 +96,8 @@ Bei einer frischen Installation öffnet sich die Notch nach einer Sekunde außer
 - **Einer Sitzung schreiben, Dateien auf sie ziehen.** Drücke die Schaltfläche „Nachricht“ einer Zeile (oder ⌘M): Die Zeile unten wird zu einem Feld „An“ mit dem Namen der Sitzung, Return schickt den Text an ihre Eingabe, gefolgt von Return, Esc bricht ab. Legst du Dateien aus der Ablage oder dem Finder auf einer Zeile ab, werden ihre Pfade ohne Return eingetippt; beim Ziehen aus der Ablage wechselst du zum Agenten-Tab, indem du den Zeiger über seine Schaltfläche hältst. Das geht bei Sitzungen in Ghostty, Terminal, iTerm2, WezTerm, kitty, cmux, herdr, Muxy 2 und Orca (Terminal nimmt Nachrichten an, aber keine Dateien), bei Paseo nur als Nachricht an Agenten, die nicht arbeiten (Tabelle unten, „Was wo funktioniert“). Gesendet wird nichts, solange eine Berechtigungsanfrage oder Frage offen sein könnte, an Sitzungen in tmux, zellij oder screen oder wenn Nunsseop nicht bestätigen kann, in welchem Terminal die Sitzung steckt.
 
 **🧩 Mach sie zu deiner eigenen**
-- Wähle deine Tabs, ordne sie per Ziehen und lege fest, was Kopfzeile und eingeklappte Notch zeigen und welche Pop-ups du bekommst. **Alles, was du ausschaltest, läuft nicht mehr.**
+- Alle Tabs passen in eine Reihe der Kopfzeile, und der aktuelle Tab zeigt seinen Namen in einer Kapsel. Start, Timer, Werkzeuge, System und KI-Nutzung sind Panels mit großen Zahlen und dünnen Balken. Die Einstellungen haben eine Seitenleiste, und die Tab-Liste im Bereich Notch ist ein Raster mit zwei Spalten, das du per Ziehen neu ordnen kannst.
+- Wähle deine Tabs, ordne sie per Ziehen und lege fest, ob die Kopfzeile das Datum zeigt, was die eingeklappte Notch zeigt und welche Pop-ups du bekommst. **Alles, was du ausschaltest, läuft nicht mehr.**
 - Unter macOS 26 nutzen die ausgeklappte Notch und ihre Karten Liquid Glass, sodass der Hintergrund sanft durchscheint. Du kannst einstellen, wie dunkel das Glas ist, bis hin zu 100 % für eine tiefschwarze Notch, oder das Glas ganz ausschalten.
 - Auf Bildschirmen ohne Notch ist die geschlossene Notch eine kleine Pille in der Menüleiste, auf Wunsch aus Glas, mit der Augenbraue als weißem Pinselstrich darauf. Die Augenbraue hebt sich, wenn der Zeiger darüber ist. Nach einer Weile ohne Nutzung (3 bis 60 Sekunden, oder nie) senkt sie sich wie ein sich schließendes Auge und blendet sich aus, und sie kommt zurück, sobald der Zeiger sie erreicht; verweilst du eine halbe Sekunde darauf, öffnet sie sich und setzt sich an den oberen Rand. Dort erscheinen HUDs, Mitteilungen, Songtexte und die Vorschau in einer Zeile, mit dem Symbol direkt neben der Pegelleiste, dem Prozentwert oder dem Text. Die Ruheanzeige macht die Pille auf jeder Seite nur so breit wie ihren Wert, direkt neben der Augenbraue, und die Augenbraue bleibt über der Kamera.
 - Wähle Bildschirm, Größe und Hover-Verzögerung, starte sie bei der Anmeldung und blende die Notch aus, solange der Deckel geschlossen ist.
