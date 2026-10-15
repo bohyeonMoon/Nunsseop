@@ -13,6 +13,8 @@ enum ClaudeUsageAPI {
     /// After a refusal (429) or any other non-200 status (5xx, 400, 404 ...) at least this long passes before asking
     /// again, longer if the server says so. Only 401/403 differ: they mean signed out.
     static let backoff: TimeInterval = 600
+    /// Only the Keychain is read while the sign-in has expired, so it's looked at again soon after Claude Code renews it.
+    static let expiredRecheck: TimeInterval = 60
 
     struct Credentials: Equatable {
         let token: String
@@ -231,7 +233,7 @@ enum ClaudeUsageAPI {
         let found = keychainCredentials(now: now)
         guard case .usable(let credentials) = found else {
             // Not signed in, or the sign-in expired: asked again later, not on every refresh.
-            state.withLock { $0.nextAttempt = now.addingTimeInterval(backoff); $0.signIn = found == .expired ? .expired : .signedOut }
+            state.withLock { $0.nextAttempt = now.addingTimeInterval(wait(after: found)); $0.signIn = found == .expired ? .expired : .signedOut }
             return
         }
         // A sign-in is there again, so the warning goes even if this request then fails.
@@ -264,6 +266,10 @@ enum ClaudeUsageAPI {
         }, now: now)
     }
 
+    static func wait(after found: Found) -> TimeInterval {
+        found == .expired ? expiredRecheck : backoff
+    }
+
     enum Found: Equatable {
         case usable(Credentials)
         /// Entries read, but all of them past their expiry.
@@ -284,7 +290,6 @@ enum ClaudeUsageAPI {
         }
         return expired ? .expired : .none
     }
-
 
     private static func run(_ path: String, _ arguments: [String]) -> String? {
         let process = Process()

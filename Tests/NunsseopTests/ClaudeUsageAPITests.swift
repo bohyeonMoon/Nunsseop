@@ -254,6 +254,11 @@ struct ClaudeUsageAPISchedulingTests {
         #expect(provider.signInProblem == nil)
     }
 
+    @Test func anExpiredSignInIsLookedAtAgainWithinAMinuteAndAMissingOneAfterTheBackoff() {
+        #expect(ClaudeUsageAPI.wait(after: .expired) == 60)
+        #expect(ClaudeUsageAPI.wait(after: ClaudeUsageAPI.Found.none) == 600)
+    }
+
     @Test func theSignInNotesAreTranslatedIntoEveryLanguage() throws {
         let resources = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Resources")
