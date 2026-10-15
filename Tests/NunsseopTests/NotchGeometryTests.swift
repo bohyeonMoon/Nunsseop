@@ -166,6 +166,15 @@ struct PickScreenTests {
         #expect(!NotchGeometry.holdsPointer(left, NSPoint(x: 2560, y: 500)))
     }
 
+    @Test func thePointerHasLeftOnlyForAnotherListedScreen() {
+        let left = NSRect(x: 0, y: 0, width: 2560, height: 1440)
+        let right = NSRect(x: 2560, y: 0, width: 1920, height: 1080)
+        #expect(NotchGeometry.pointerLeft(left, for: NSPoint(x: 3000, y: 500), among: [left, right]))
+        #expect(!NotchGeometry.pointerLeft(left, for: NSPoint(x: 1280, y: 1440), among: [left, right]))
+        // Below the shorter right screen is on no screen: the notch stays.
+        #expect(!NotchGeometry.pointerLeft(left, for: NSPoint(x: 3000, y: 1300), among: [left, right]))
+    }
+
     @Test func aClosedLidWithOnlyTheBuiltInDisplayListedStillGivesAScreen() {
         #expect(NotchGeometry.pick([builtin], preferredName: "", lidClosed: true) == 0)
         #expect(NotchGeometry.pick([], preferredName: "", lidClosed: false) == nil)

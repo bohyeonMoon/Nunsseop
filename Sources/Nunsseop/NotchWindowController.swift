@@ -531,6 +531,12 @@ final class NotchWindowController {
             followWork = work
             DispatchQueue.main.asyncAfter(deadline: .now() + Self.closeSettle, execute: work)
         })
+        // A pop-up shows where the pointer is, so it isn't missed on another display.
+        for appears in [model.hud.$event.map { $0 != nil }.eraseToAnyPublisher(),
+                        model.approvals.$prompts.map { !$0.isEmpty }.eraseToAnyPublisher(),
+                        model.$sneakPeekPending.eraseToAnyPublisher()] {
+            settingsObservers.append(appears.removeDuplicates().filter { $0 }.sink { [weak self] _ in self?.showPopUpUnderPointer() })
+        }
         settingsObservers.append(model.settings.$perAppVolume.combineLatest(model.$isExpanded, model.$tab)
             .sink { [weak self] enabled, expanded, tab in
                 self?.model.appVolume.update(enabled: enabled, listing: expanded && tab == .tools)
@@ -602,9 +608,17 @@ final class NotchWindowController {
     /// open or shows a pop-up.
     private func followPointer(to point: NSPoint) {
         guard model.settings.displayName.isEmpty, isIdle, Self.hasSettled(closedAt: closedAt, now: .now),
-              !NotchGeometry.holdsPointer(model.geometry.screenFrame, point),
-              NSScreen.screens.contains(where: { NotchGeometry.holdsPointer($0.frame, point) }) else { return }
+              NotchGeometry.pointerLeft(model.geometry.screenFrame, for: point, among: NSScreen.screens.map(\.frame)) else { return }
         relayout()
+    }
+
+    /// Takes the closed notch to the pointer's screen as a pop-up is about to show. The pop-up is not on screen yet, so the
+    /// notch is moved as if it were idle.
+    private func showPopUpUnderPointer() {
+        let point = NSEvent.mouseLocation
+        guard model.settings.displayName.isEmpty, !model.isExpanded, Self.hasSettled(closedAt: closedAt, now: .now),
+              NotchGeometry.pointerLeft(model.geometry.screenFrame, for: point, among: NSScreen.screens.map(\.frame)) else { return }
+        relayout(followingPointer: true)
     }
 
     /// How long the closing notch takes to settle. Moved sooner, it would finish closing on the other screen.
@@ -615,10 +629,10 @@ final class NotchWindowController {
     /// Closed with nothing showing, so the notch may change screens.
     private var isIdle: Bool { !model.isExpanded && model.hud.event == nil && model.approvals.current == nil }
 
-    private func relayout() {
+    private func relayout(followingPointer: Bool? = nil) {
         // An open notch or a pop-up stays on its screen while that screen is still there.
         let frame = model.geometry.screenFrame
-        let pointer = isIdle ? NSEvent.mouseLocation : NSPoint(x: frame.midX, y: frame.midY)
+        let pointer = (followingPointer ?? isIdle) ? NSEvent.mouseLocation : NSPoint(x: frame.midX, y: frame.midY)
         guard let screen = NotchGeometry.pickScreen(preferredName: model.settings.displayName, pointer: pointer) else { return }
         model.geometry = NotchGeometry(screen: screen)
         panel.setFrame(model.geometry.panelFrame, display: true)

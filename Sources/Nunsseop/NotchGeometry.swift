@@ -36,6 +36,11 @@ struct NotchGeometry: Equatable {
     /// `contains` leaves out.
     static func holdsPointer(_ frame: NSRect, _ point: NSPoint) -> Bool { NSMouseInRect(point, frame, false) }
 
+    /// Whether the pointer is off the notch's screen and on another one; on no screen at all, it has not left.
+    static func pointerLeft(_ current: NSRect, for point: NSPoint, among screens: [NSRect]) -> Bool {
+        !holdsPointer(current, point) && screens.contains { holdsPointer($0, point) }
+    }
+
     struct ScreenCandidate: Equatable {
         var name: String
         var hasNotch: Bool
