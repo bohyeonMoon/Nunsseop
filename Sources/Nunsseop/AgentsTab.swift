@@ -291,10 +291,10 @@ struct AgentRow: Identifiable, Equatable {
         guard let since else { return nil }
         let seconds = max(0, now.timeIntervalSince(since))
         switch seconds {
-        case ..<60: return "<1m"
-        case ..<3_600: return "\(Int(seconds / 60))m"
-        case ..<86_400: return "\(Int(seconds / 3_600))h"
-        default: return "\(Int(seconds / 86_400))d"
+        case ..<60: return String(localized: "<1m")
+        case ..<3_600: return String(localized: "\(Int(seconds / 60))m")
+        case ..<86_400: return String(localized: "\(Int(seconds / 3_600))h")
+        default: return String(localized: "\(Int(seconds / 86_400))d")
         }
     }
 
@@ -964,6 +964,8 @@ private enum Metrics {
     static let tag: CGFloat = 24
     static let meter: CGFloat = 36
     static let figure: CGFloat = 32
+    /// The time since a change, wide enough for the longest translation ("59 Min.").
+    static let age: CGFloat = 40
 }
 
 struct AgentsTab: View {
@@ -1202,7 +1204,7 @@ private struct AgentRowView: View {
             context
             Text(verbatim: AgentRow.elapsed(since: row.since, now: now) ?? "").font(.system(size: 11).monospacedDigit())
                 .foregroundStyle(.white.opacity(0.6))
-                .frame(width: Metrics.figure, alignment: .trailing)
+                .frame(width: Metrics.age, alignment: .trailing)
         }
         .frame(height: Metrics.row)
     }
@@ -1413,7 +1415,7 @@ private struct RecentRowView: View {
                 .help(Text("Resume"))
             }
             Text(verbatim: conversation.age(now: now) ?? "").font(.system(size: 11).monospacedDigit()).foregroundStyle(.white.opacity(0.6))
-                .frame(width: Metrics.figure, alignment: .trailing)
+                .frame(width: Metrics.age, alignment: .trailing)
         }
         .padding(.horizontal, 8).frame(height: 28)
         .background {

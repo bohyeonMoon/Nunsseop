@@ -18,7 +18,6 @@
 "Show volume changes in the notch" = "볼륨이 바뀌면 노치에 표시";
 "Replace the system volume and brightness HUD" = "볼륨·밝기 키를 가로채 기본 HUD 대신 노치만 표시";
 "Allow Nunsseop in System Settings › Privacy & Security › Accessibility." = "시스템 설정 › 개인정보 보호 및 보안 › 손쉬운 사용에서 Nunsseop을 허용하세요.";
-"Show battery level in the header" = "헤더에 배터리 잔량 표시";
 "Show when power is connected or disconnected" = "전원 연결·해제 시 노치에 표시";
 "Show headphone battery when they connect" = "헤드폰 연결 시 배터리 표시";
 "Sneak Peek" = "미리보기";
@@ -598,3 +597,7 @@
 "Not asked yet" = "아직 묻지 않음";
 "Camera preview" = "카메라 미리보기";
 "Pick the camera in Settings › Services" = "카메라는 설정 › 서비스에서 고를 수 있어요";
+"<1m" = "방금";
+"%lldm" = "%lld분";
+"%lldh" = "%lld시간";
+"%lldd" = "%lld일";
