@@ -208,12 +208,17 @@ final class PermissionTestServer {
     let events: PromptEvents
     let port: UInt16
 
+    /// - stall: how long a connection may go without becoming a request before the server drops it. The server's own 5 seconds are counted
+    ///   from the connection's arrival, and on a busy runner the server (its queue, and Network.framework's delivery) can be kept from reading
+    ///   a request that is already there for longer than that: the timer then cancels the connection first, and the request is either
+    ///   dropped or still delivered, a card shown for a hook that is gone, and the answer to it has nowhere to go. So a test server waits
+    ///   as long as a test waits for any event.
     /// - token: one already in the home, as an earlier run left it.
     /// - seed: puts what an earlier version left in the home (tools' settings, say) before the server starts.
-    init(hold: Double = PermissionGate.holdSeconds, token: String? = nil, seed: (URL) throws -> Void = { _ in }) async throws {
+    init(hold: Double = PermissionGate.holdSeconds, stall: Double = eventDeadline, token: String? = nil, seed: (URL) throws -> Void = { _ in }) async throws {
         let home = try ScratchHome(token: token)
         try seed(home.url)
-        let server = NotifyIntegration.$homeOverride.withValue(home.url) { NotifyServer(port: 0, permissionHold: hold) }
+        let server = NotifyIntegration.$homeOverride.withValue(home.url) { NotifyServer(port: 0, permissionHold: hold, stallSeconds: stall) }
         let events = PromptEvents()
         server.permissions.onPrompt = { events.add($0) }
         server.permissions.onGone = { events.remove($0) }

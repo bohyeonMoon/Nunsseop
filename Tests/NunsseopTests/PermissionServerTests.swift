@@ -244,6 +244,19 @@ struct PermissionServerTests {
         #expect(server.events.goneIDs == [first.id])
     }
 
+    /// The server drops a connection that never becomes a request after `stallSeconds`, which a test server sets as long as a test waits for an event.
+    @Test func aConnectionThatSaysNothingIsDroppedAfterTheStallTimeButAHeldPromptIsNot() async throws {
+        let server = try await PermissionTestServer(stall: 0.5)
+        let silent = try RawClient(port: server.port)
+        let asking = try RawClient(port: server.port)
+        asking.send(server.request(body: PermissionTestServer.hookInput()))
+        await eventually { server.events.prompts.count == 1 }
+        #expect(await silent.closes(within: Int(eventDeadline)))
+        #expect(server.events.goneIDs.isEmpty)
+        server.server.permissions.answer(try #require(server.events.prompts.first).id, .allow)
+        #expect(await asking.status() == "HTTP/1.1 200 OK")
+    }
+
     @Test func stoppingTheServerOrTurningTheFeatureOffLetsEveryHookGo() async throws {
         let server = try await PermissionTestServer()
         let clients = try (0..<3).map { _ in try RawClient(port: server.port) }

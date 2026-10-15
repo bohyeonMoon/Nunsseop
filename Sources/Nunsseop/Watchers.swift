@@ -281,6 +281,8 @@ final class NotifyServer: @unchecked Sendable {
 
     private let listenPort: UInt16
     private let queue: DispatchQueue
+    /// How long a connection may go without becoming a complete request before it is dropped, counted from its arrival.
+    private let stallSeconds: Double
     /// Touched only on `queue`.
     private var listener: NWListener?
     private var retry: DispatchWorkItem?
@@ -434,8 +436,9 @@ final class NotifyServer: @unchecked Sendable {
         return secret
     }
 
-    init(port: UInt16 = NotifyServer.port, permissionHold: Double = PermissionGate.holdSeconds) {
+    init(port: UInt16 = NotifyServer.port, permissionHold: Double = PermissionGate.holdSeconds, stallSeconds: Double = 5) {
         listenPort = port
+        self.stallSeconds = stallSeconds
         let queue = DispatchQueue(label: "nunsseop.notify")
         self.queue = queue
         // The folder holding the secrets is for this user alone, whatever it was when an earlier version made it.
@@ -515,7 +518,7 @@ final class NotifyServer: @unchecked Sendable {
         }
         connection.start(queue: queue)
         // Drop clients that connect and then stall; a held prompt is meant to wait.
-        queue.asyncAfter(deadline: .now() + 5) { [weak self] in
+        queue.asyncAfter(deadline: .now() + stallSeconds) { [weak self] in
             if self?.permissions.holds(connection) != true { connection.cancel() }
         }
         receive(on: connection, buffer: Data())
