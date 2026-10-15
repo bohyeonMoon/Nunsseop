@@ -19,7 +19,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/home.png" width="720" alt="Notch desplegado con la música en reproducción y el calendario">
+  <img src="docs/images/home.png" width="720" alt="Notch desplegado con la música en reproducción, el calendario y el tiempo">
 </p>
 
 *Nunsseop* (눈썹) significa *ceja* en coreano, ese pequeño arco sobre tu pantalla. Es gratuita, de código abierto y sin cuenta, suscripción ni rastreo.
@@ -51,7 +51,7 @@ En una instalación nueva, el notch también se abre solo al cabo de un segundo 
 | <img src="docs/images/tab-search.png" alt="Buscar mostrando una app, un comando y un ajuste"><br>**Buscar.** Un lanzador de apps, archivos, comandos, portapapeles, emojis y cálculos, con el atajo que prefieras. | <img src="docs/images/tab-ai.png" alt="Uso de IA de Claude Code y Codex"><br>**Uso de IA.** Los límites de Claude Code y Codex, sin iniciar sesión. |
 | <img src="docs/images/shelf.png" alt="Estante de archivos con la tarjeta de AirDrop"><br>**Estante.** Deja archivos en el notch o suéltalos en AirDrop. | <img src="docs/images/tab-timer.png" alt="Pestaña Temporizador"><br>**Temporizador.** Cuenta atrás, Pomodoro y cronómetro, con la duración que quieras. |
 | <img src="docs/images/tab-tools.png" alt="Pestaña Herramientas"><br>**Herramientas.** Salida de audio, silenciar el micrófono, mantener activo el Mac, grabación de pantalla, selector de color y captura de texto. | <img src="docs/images/tab-system.png" alt="Pestaña Sistema con la batería de los dispositivos"><br>**Sistema.** CPU, memoria, disco, red y batería de los dispositivos. |
-| <img src="docs/images/tab-emoji.png" alt="Selector de emojis"><br>**Emoji.** Todos los emojis, con búsqueda y un clic para copiar. | <img src="docs/images/hud-headphones.png" alt="HUD de batería de los auriculares"><br>**HUDs.** Volumen, brillo, batería de los AirPods y más. |
+| <img src="docs/images/tab-emoji.png" alt="Selector de emojis con una lista de categorías"><br>**Emoji.** Categorías a la izquierda, todos los emojis con búsqueda y un clic para copiar. | <img src="docs/images/hud-headphones.png" alt="HUD de batería de los auriculares"><br>**HUDs.** Volumen, brillo, batería de los AirPods y más. |
 | <img src="docs/images/collapsed-call.png" alt="Notch plegado durante una llamada de Zoom"><br>**Llamadas.** La app de la llamada y cuánto llevas hablando. | <img src="docs/images/collapsed-idle.png" alt="Notch plegado con el uso restante de Claude Code y el tiempo"><br>**De un vistazo.** Elige qué muestra cada lado del notch plegado. |
 
 ## Todo lo que hace
@@ -69,13 +69,14 @@ En una instalación nueva, el notch también se abre solo al cabo de un segundo 
 - **Una búsqueda que puede sustituir a Spotlight.** Apps (incluso las que están fuera de Aplicaciones), archivos, comandos y ajustes del sistema, historial del portapapeles, emojis (empieza con `:`) y cálculos como `12*(3+4)`, ordenados según lo que más abres. Funcionan las iniciales: `vsc` encuentra Visual Studio Code. Las flechas eligen y Retorno abre.
 - **Tu atajo.** <kbd>⇧⌘Espacio</kbd> por defecto, o graba cualquier combinación en Ajustes. Nunsseop te avisa si macOS u otra app ya la usa.
 - **Temporizador, historial del portapapeles, notas y un selector de emojis.** El historial del portapapeles se queda en memoria y omite todo lo que un gestor de contraseñas marque como secreto. Los parámetros de seguimiento como `utm_` y `fbclid` se quitan de los enlaces que copias.
+- **Un detalle junto a la lista.** Estante, Portapapeles, Apps, Buscar y Notificaciones muestran a la derecha, con sus acciones, el elemento bajo el puntero (o el elegido con ↑ ↓). Un clic en una fila sigue copiando, abriendo o yendo al origen al instante.
 
 **💻 Tu Mac**
 - **HUDs del sistema.** Volumen, brillo (incluidas las pantallas externas DDC), retroiluminación del teclado, carga, Bloq Mayús y batería de los AirPods aparecen en el notch. Puede quedarse con las teclas de volumen y brillo para que no salga el HUD del sistema.
-- **Estadísticas del sistema y baterías.** CPU, memoria, disco y red, además del ratón, el teclado y el trackpad, con un aviso cuando alguno tiene la batería baja.
+- **Estadísticas del sistema y baterías.** CPU, memoria, disco, red y la batería de este Mac en paneles, además del ratón, el teclado y el trackpad, con un aviso cuando alguno tiene la batería baja.
 - **Indicador de cámara y micrófono.** Un punto en el notch mientras cualquier app los usa.
 - **Herramientas.** Cambia la salida de audio, ajusta el volumen de cada app (experimental, macOS 14.2+), silencia el micrófono, mantén el Mac activo, graba la pantalla, expulsa discos, toma un color de cualquier punto de la pantalla y copia el texto de cualquier zona de la pantalla.
-- **El tiempo, las descargas, el espejo y las apps del Dock**, a un gesto del puntero.
+- **El tiempo, las descargas, el espejo y las apps del Dock**, a un gesto del puntero. El tiempo es una fila al pie de Inicio.
 
 **📞 Incluso plegado**
 - **Llamadas.** Durante una llamada en Zoom, FaceTime, Teams, Slack, Discord, WhatsApp o Google Meet, el notch plegado muestra la app y cuánto llevas hablando. Se basa en qué app usa el micrófono, así que mostrar la llamada de una app de escritorio no necesita permiso; en un navegador (Meet, o Zoom y Teams en la web) hace falta Automatización para ese navegador. En Zoom, FaceTime y Meet puedes silenciar el micrófono desde el notch (y apagar la cámara en Zoom y Meet), sin cambiar a la llamada; Zoom y FaceTime necesitan Accesibilidad, y Meet necesita *Permitir JavaScript desde Apple Events* en un navegador Chromium.
@@ -84,7 +85,7 @@ En una instalación nueva, el notch también se abre solo al cabo de un segundo 
 - **Descargas.** El avance en porcentaje de una descarga de Safari o Chrome, a partir del mismo progreso que el Finder muestra en el archivo. No se consulta continuamente.
 
 **🤖 Para desarrolladores**
-- **Uso de IA.** Los límites de Claude y Codex con sus horas de restablecimiento, y el uso de tokens de las últimas 5 horas y los últimos 7 días, sumado entre Claude Code, Codex, gjc, omo y OpenCode. Se lee de archivos que esas herramientas ya guardan en tu Mac, así que no hay que iniciar sesión en nada.
+- **Uso de IA.** Los límites de Claude y Codex con sus horas de restablecimiento, y el uso de tokens de las últimas 5 horas y los últimos 7 días, sumado entre Claude Code, Codex, gjc, omo y OpenCode. Se lee de archivos que esas herramientas ya guardan en tu Mac, así que no hay que iniciar sesión en nada. Un límite se vuelve naranja con un «!» a partir del 70 %.
 - **Límites de Claude desde Claude Code.** En Ajustes › Servicios › Uso de IA, conecta la línea de estado de Claude Code. Claude Code le pasa tus límites de 5 horas y semanales con cada respuesta, así que la pestaña de IA se mantiene al día mientras trabajas, sin que Nunsseop le pida nada a Anthropic. La línea de estado que ya tenías sigue mostrándose como antes, y Desconectar la restablece. Si no se puede restaurar tu comando anterior, Ajustes te lo indica.
 - **Límites de Claude en tiempo real (opcional).** Para cuando usas Claude en otro sitio, la pestaña de IA pregunta una vez si quieres obtener de Anthropic tus límites de Claude de 5 horas y semanales, aproximadamente cada hora, con el inicio de sesión que Claude Code guarda en el llavero. Desactivado hasta que digas que sí; puedes cambiarlo después en Ajustes › Servicios. Gana la fuente más reciente, y el plan y las barras por modelo se mantienen cuando esta no los trae.
 - **Notificaciones de agentes y terminales.** Los hooks de Claude Code, Codex, Gemini CLI y OpenCode, las extensiones de omp, omo y pi, los agentes de Muxy 2, cmux, herdr y Paseo, y las campanas de tmux y WezTerm aparecen en el notch. Haz clic en un aviso para traer al frente su terminal, panel o pestaña ([configuración más abajo](#notificaciones-de-agentes-y-terminales)).
@@ -95,7 +96,8 @@ En una instalación nueva, el notch también se abre solo al cabo de un segundo 
 - **Escribir a una sesión, soltar archivos en ella.** Pulsa el botón «Mensaje» de una fila (o ⌘M): la línea inferior se convierte en un campo «Para» con el nombre de la sesión, Return envía el texto a su entrada, seguido de Return, y Esc cancela. Si sueltas archivos del Estante o del Finder sobre una fila, sus rutas se escriben sin Return; al arrastrar desde el Estante, mantén el puntero sobre el botón de la pestaña Agentes para pasar a ella. Funciona en sesiones de Ghostty, Terminal, iTerm2, WezTerm, kitty, cmux, herdr, Muxy 2 y Orca (Terminal acepta mensajes pero no archivos), y en Paseo solo mensajes, a los agentes que no están trabajando (tabla más abajo, «Qué funciona dónde»). No se envía nada mientras pueda haber abierta una solicitud de permiso o una pregunta, a sesiones dentro de tmux, zellij o screen, ni cuando Nunsseop no puede confirmar en qué terminal está la sesión.
 
 **🧩 Hazlo tuyo**
-- Elige tus pestañas, arrástralas para ordenarlas y decide qué muestran la cabecera y el notch plegado y qué ventanas emergentes recibes. **Lo que desactivas deja de ejecutarse.**
+- Todas las pestañas caben en una sola fila de la cabecera, y la pestaña actual muestra su nombre en una cápsula. Inicio, Temporizador, Herramientas, Sistema y Uso de IA son paneles con cifras grandes y barras finas. Ajustes tiene una barra lateral, y la lista de pestañas del panel Notch es una cuadrícula de dos columnas que puedes arrastrar para reordenar.
+- Elige tus pestañas, arrástralas para ordenarlas y decide si la cabecera muestra la fecha, qué muestra el notch plegado y qué ventanas emergentes recibes. **Lo que desactivas deja de ejecutarse.**
 - En macOS 26, el notch desplegado y sus tarjetas usan Liquid Glass, de modo que lo que hay detrás se transparenta con suavidad. Puedes ajustar lo oscuro que es el cristal, hasta el 100 % para un notch negro sólido, o desactivar el cristal.
 - En pantallas sin notch, el notch plegado es una pequeña píldora en la barra de menús, de cristal si quieres, con la ceja, un trazo blanco de pincel, encima. La ceja se levanta cuando el puntero está encima. Tras un tiempo sin uso (de 3 a 60 segundos, o nunca) baja como un ojo que se cierra y se desvanece, y reaparece cuando el puntero llega hasta ella; si lo dejas medio segundo encima, se abre, unido al borde superior. Allí, los HUDs, los avisos, las letras y la vista previa ocupan una sola línea, con el símbolo junto a la barra de nivel, el porcentaje o el texto. Los valores en reposo alargan la píldora solo lo justo para cada uno, junto a la ceja, y la ceja se queda sobre la cámara.
 - Elige la pantalla, el tamaño y el retraso al pasar el puntero, abre la app al iniciar sesión y oculta el notch con la tapa cerrada.
