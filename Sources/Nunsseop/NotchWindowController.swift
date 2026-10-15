@@ -587,8 +587,22 @@ final class NotchWindowController {
         }
     }
 
+    /// With no display chosen in Settings, the closed notch moves to the screen the pointer goes to. It stays put while it is
+    /// open or shows a pop-up.
+    private func followPointer(to point: NSPoint) {
+        guard model.settings.displayName.isEmpty, isIdle, !NotchGeometry.holdsPointer(model.geometry.screenFrame, point),
+              NSScreen.screens.contains(where: { NotchGeometry.holdsPointer($0.frame, point) }) else { return }
+        relayout()
+    }
+
+    /// Closed with nothing showing, so the notch may change screens.
+    private var isIdle: Bool { !model.isExpanded && model.hud.event == nil && model.approvals.current == nil }
+
     private func relayout() {
-        guard let screen = NotchGeometry.pickScreen(preferredName: model.settings.displayName) else { return }
+        // An open notch or a pop-up stays on its screen while that screen is still there.
+        let frame = model.geometry.screenFrame
+        let pointer = isIdle ? NSEvent.mouseLocation : NSPoint(x: frame.midX, y: frame.midY)
+        guard let screen = NotchGeometry.pickScreen(preferredName: model.settings.displayName, pointer: pointer) else { return }
         model.geometry = NotchGeometry(screen: screen)
         panel.setFrame(model.geometry.panelFrame, display: true)
         model.resetBrowHide()
@@ -740,6 +754,7 @@ final class NotchWindowController {
         if type == .leftMouseUp { idleDragCount = NSPasteboard(name: .drag).changeCount }
         guard panel.isVisible else { return }
         let point = NSEvent.mouseLocation
+        followPointer(to: point)
         // Every shape fits in the panel, so away from it the pointer is outside without working out the shape's size.
         let nearPanel = panel.frame.insetBy(dx: -8, dy: -8).contains(point)
 

@@ -195,7 +195,7 @@ private struct GeneralPane: View {
             }
             Section("Display") {
                 Picker("Show on", selection: $settings.displayName) {
-                    Text("Automatic (built-in display first)").tag("")
+                    Text("Automatic (follows the pointer)").tag("")
                     ForEach(NSScreen.screens.map(\.localizedName), id: \.self) { name in
                         Text(name).tag(name)
                     }

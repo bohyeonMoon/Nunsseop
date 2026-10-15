@@ -133,7 +133,7 @@ Rechtsklick auf die Notch → Einstellungen → Notch, und schalte aus, was du n
 <details>
 <summary><b>Mein Mac hat keine Notch.</b></summary>
 
-Auf einem Bildschirm ohne Notch, etwa einem externen Monitor bei geschlossenem Deckel, ist die geschlossene Notch eine kleine Pille, die in der Menüleiste schwebt, mit der Augenbraue als weißem Pinselstrich darauf. Die Augenbraue hebt sich, wenn der Zeiger darüber ist, und beim Öffnen setzt sich die Notch in der üblichen Größe an den oberen Rand. HUDs, Mitteilungen, Songtexte und die Vorschau erscheinen in einer Zeile statt rund um eine Kamera. Bei Nichtbenutzung senkt sich die Augenbraue wie ein sich schließendes Auge, und die Pille blendet sich aus; schalte das ab oder ändere die Verzögerung in den Einstellungen. Dort wählst du auch, welchen Bildschirm sie nutzt.
+Auf einem Bildschirm ohne Notch, etwa einem externen Monitor bei geschlossenem Deckel, ist die geschlossene Notch eine kleine Pille, die in der Menüleiste schwebt, mit der Augenbraue als weißem Pinselstrich darauf. Die Augenbraue hebt sich, wenn der Zeiger darüber ist, und beim Öffnen setzt sich die Notch in der üblichen Größe an den oberen Rand. HUDs, Mitteilungen, Songtexte und die Vorschau erscheinen in einer Zeile statt rund um eine Kamera. Bei Nichtbenutzung senkt sich die Augenbraue wie ein sich schließendes Auge, und die Pille blendet sich aus; schalte das ab oder ändere die Verzögerung in den Einstellungen. Bei mehreren Bildschirmen wandert die geschlossene Notch auf den Bildschirm, auf dem der Zeiger ist; wähle dort einen Bildschirm aus, damit sie an Ort und Stelle bleibt.
 </details>
 
 <details>

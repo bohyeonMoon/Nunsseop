@@ -79,7 +79,7 @@
 "System default" = "Par défaut du système";
 "Display" = "Écran";
 "Show on" = "Afficher sur";
-"Automatic (built-in display first)" = "Automatique (écran intégré d’abord)";
+"Automatic (follows the pointer)" = "Automatique (suit le pointeur)";
 "Brightness keys adjust the display under the pointer, including external displays that support DDC. Keyboard backlight keys work on keyboards that have them." = "Les touches de luminosité règlent l’écran sous le pointeur, y compris les écrans externes compatibles DDC. Les touches de rétroéclairage fonctionnent sur les claviers qui en ont.";
 "Updates" = "Mises à jour";
 "Check for updates automatically" = "Rechercher les mises à jour automatiquement";
