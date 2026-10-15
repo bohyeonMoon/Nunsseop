@@ -106,6 +106,8 @@ final class NotchWindowController {
     private var swipe = SwipeRecognizer()
     private var swipeIdleWork: DispatchWorkItem?
     private var screenObserver: NSObjectProtocol?
+    private var wakeObservers: [NSObjectProtocol] = []
+    private var settleWork: [DispatchWorkItem] = []
     private var displayObserver: AnyCancellable?
     private var browHideObserver: AnyCancellable?
     private var liftWork: DispatchWorkItem?
@@ -546,7 +548,12 @@ final class NotchWindowController {
             forName: NSApplication.didChangeScreenParametersNotification,
             object: nil, queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.relayout() }
+            MainActor.assumeIsolated { self?.relayoutAsScreensSettle() }
+        }
+        for name in [NSWorkspace.screensDidWakeNotification, NSWorkspace.didWakeNotification] {
+            wakeObservers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.relayoutAsScreensSettle() }
+            })
         }
         browHideObserver = model.settings.$autoHideBrow.map { _ in () }
             .merge(with: model.settings.$browHideDelay.map { _ in () })
@@ -566,6 +573,18 @@ final class NotchWindowController {
     func prepareToQuit() {
         model.appVolume.shutdown()
         model.notes.flush()
+    }
+
+    /// Closing or opening the lid announces the change before the list of screens has caught up with it, and no second
+    /// notice follows, so the screen is picked again once things have settled.
+    private func relayoutAsScreensSettle() {
+        relayout()
+        settleWork.forEach { $0.cancel() }
+        settleWork = [0.5, 2].map { delay in
+            let work = DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.relayout() } }
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+            return work
+        }
     }
 
     private func relayout() {

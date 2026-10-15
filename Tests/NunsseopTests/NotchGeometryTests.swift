@@ -124,3 +124,30 @@ struct NotchGeometryTests {
         #expect(!g.hasNotch)
     }
 }
+
+struct PickScreenTests {
+    private let builtin = NotchGeometry.ScreenCandidate(name: "Built-in Retina Display", hasNotch: true, isMain: false, isBuiltin: true)
+    private let external = NotchGeometry.ScreenCandidate(name: "Q27G2SG4B+", hasNotch: false, isMain: true, isBuiltin: false)
+    private let second = NotchGeometry.ScreenCandidate(name: "DELL U2720Q", hasNotch: false, isMain: false, isBuiltin: false)
+
+    @Test func withTheLidOpenTheBuiltInDisplayWithItsCameraHousingWins() {
+        #expect(NotchGeometry.pick([external, builtin], preferredName: "", lidClosed: false) == 1)
+    }
+
+    @Test func withTheLidClosedTheBuiltInDisplayStillListedIsPassedOver() {
+        // Right after the lid closes the built-in display can still be listed with its camera housing.
+        #expect(NotchGeometry.pick([external, builtin], preferredName: "", lidClosed: true) == 0)
+        #expect(NotchGeometry.pick([builtin, second, external], preferredName: "", lidClosed: true) == 2)
+    }
+
+    @Test func theDisplayNamedInSettingsWinsUnlessItIsTheClosedBuiltInOne() {
+        #expect(NotchGeometry.pick([builtin, external, second], preferredName: "DELL U2720Q", lidClosed: false) == 2)
+        #expect(NotchGeometry.pick([builtin, external], preferredName: "Built-in Retina Display", lidClosed: true) == 1)
+        #expect(NotchGeometry.pick([builtin, external], preferredName: "Gone", lidClosed: false) == 0)
+    }
+
+    @Test func aClosedLidWithOnlyTheBuiltInDisplayListedStillGivesAScreen() {
+        #expect(NotchGeometry.pick([builtin], preferredName: "", lidClosed: true) == 0)
+        #expect(NotchGeometry.pick([], preferredName: "", lidClosed: false) == nil)
+    }
+}
