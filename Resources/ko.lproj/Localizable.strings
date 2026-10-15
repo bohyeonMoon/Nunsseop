@@ -100,7 +100,7 @@
 /* Display */
 "Display" = "화면";
 "Show on" = "표시할 화면";
-"Automatic (built-in display first)" = "자동 (내장 디스플레이 우선)";
+"Automatic (follows the pointer)" = "자동 (포인터를 따라감)";
 
 /* Backlights */
 "Brightness keys adjust the display under the pointer, including external displays that support DDC. Keyboard backlight keys work on keyboards that have them." = "밝기 키는 마우스가 있는 화면을 조절합니다. DDC를 지원하는 외부 모니터도 포함됩니다. 키보드 백라이트 키는 해당 키가 있는 키보드에서 동작합니다.";

@@ -146,6 +146,26 @@ struct PickScreenTests {
         #expect(NotchGeometry.pick([builtin, external], preferredName: "Gone", lidClosed: false) == 0)
     }
 
+    @Test func theScreenWithThePointerWinsUnlessADisplayIsNamedInSettings() {
+        var pointed = second
+        pointed.hasPointer = true
+        #expect(NotchGeometry.pick([builtin, external, pointed], preferredName: "", lidClosed: false) == 2)
+        #expect(NotchGeometry.pick([builtin, external, pointed], preferredName: "Q27G2SG4B+", lidClosed: false) == 1)
+        // Nowhere on a listed screen (between frames): the built-in display with its camera housing, as before.
+        #expect(NotchGeometry.pick([external, builtin, second], preferredName: "", lidClosed: false) == 1)
+    }
+
+    @Test func thePointerAtTheTopEdgeOrOnTheSeamIsOnOneScreen() {
+        let left = NSRect(x: 0, y: 0, width: 2560, height: 1440)
+        let right = NSRect(x: 2560, y: 0, width: 1920, height: 1080)
+        // Pushed against the top of the left screen, as when opening the notch.
+        #expect(NotchGeometry.holdsPointer(left, NSPoint(x: 1280, y: 1440)))
+        #expect(!NotchGeometry.holdsPointer(right, NSPoint(x: 1280, y: 1440)))
+        // On the seam it belongs to the right screen only.
+        #expect(NotchGeometry.holdsPointer(right, NSPoint(x: 2560, y: 500)))
+        #expect(!NotchGeometry.holdsPointer(left, NSPoint(x: 2560, y: 500)))
+    }
+
     @Test func aClosedLidWithOnlyTheBuiltInDisplayListedStillGivesAScreen() {
         #expect(NotchGeometry.pick([builtin], preferredName: "", lidClosed: true) == 0)
         #expect(NotchGeometry.pick([], preferredName: "", lidClosed: false) == nil)

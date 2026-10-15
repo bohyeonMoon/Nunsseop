@@ -79,7 +79,7 @@
 "System default" = "システムのデフォルト";
 "Display" = "ディスプレイ";
 "Show on" = "表示するディスプレイ";
-"Automatic (built-in display first)" = "自動（内蔵ディスプレイを優先）";
+"Automatic (follows the pointer)" = "自動（ポインタに追従）";
 "Brightness keys adjust the display under the pointer, including external displays that support DDC. Keyboard backlight keys work on keyboards that have them." = "明るさキーはポインタのあるディスプレイを調整します。DDC に対応した外部ディスプレイも含みます。キーボードバックライトキーは、そのキーがあるキーボードで動作します。";
 "Updates" = "アップデート";
 "Check for updates automatically" = "アップデートを自動的に確認";

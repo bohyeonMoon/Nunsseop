@@ -79,7 +79,7 @@
 "System default" = "Predeterminada del sistema";
 "Display" = "Pantalla";
 "Show on" = "Mostrar en";
-"Automatic (built-in display first)" = "Automático (primero la pantalla integrada)";
+"Automatic (follows the pointer)" = "Automático (sigue al puntero)";
 "Brightness keys adjust the display under the pointer, including external displays that support DDC. Keyboard backlight keys work on keyboards that have them." = "Las teclas de brillo ajustan la pantalla bajo el puntero, incluidas las pantallas externas compatibles con DDC. Las teclas de retroiluminación funcionan en teclados que las tienen.";
 "Updates" = "Actualizaciones";
 "Check for updates automatically" = "Buscar actualizaciones automáticamente";

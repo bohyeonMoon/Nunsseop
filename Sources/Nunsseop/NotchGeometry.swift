@@ -19,22 +19,28 @@ struct NotchGeometry: Equatable {
         return (value as? Bool) ?? false
     }
 
-    /// The display named in settings if it is connected; otherwise the built-in display
+    /// The display named in settings if it is connected; otherwise the one with the pointer, then the built-in display
     /// with a camera housing, then the main screen.
-    static func pickScreen(preferredName: String = "") -> NSScreen? {
+    static func pickScreen(preferredName: String = "", pointer: NSPoint = NSEvent.mouseLocation) -> NSScreen? {
         let screens = NSScreen.screens
         let candidates = screens.map { screen in
             ScreenCandidate(name: screen.localizedName, hasNotch: screen.safeAreaInsets.top > 0, isMain: screen == NSScreen.main,
+                            hasPointer: holdsPointer(screen.frame, pointer),
                             isBuiltin: (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID)
                                 .map { CGDisplayIsBuiltin($0) != 0 } ?? false)
         }
         return pick(candidates, preferredName: preferredName, lidClosed: lidIsClosed).map { screens[$0] }
     }
 
+    /// Whether the pointer is on the screen with this frame. At the very top the pointer sits on the frame's top edge, which
+    /// `contains` leaves out.
+    static func holdsPointer(_ frame: NSRect, _ point: NSPoint) -> Bool { NSMouseInRect(point, frame, false) }
+
     struct ScreenCandidate: Equatable {
         var name: String
         var hasNotch: Bool
         var isMain: Bool
+        var hasPointer = false
         var isBuiltin: Bool
     }
 
@@ -43,7 +49,8 @@ struct NotchGeometry: Equatable {
     static func pick(_ screens: [ScreenCandidate], preferredName: String, lidClosed: Bool) -> Int? {
         let usable = screens.indices.filter { !(lidClosed && screens[$0].isBuiltin) }
         if !preferredName.isEmpty, let match = usable.first(where: { screens[$0].name == preferredName }) { return match }
-        return usable.first { screens[$0].hasNotch } ?? usable.first { screens[$0].isMain } ?? usable.first ?? screens.indices.first
+        return usable.first { screens[$0].hasPointer } ?? usable.first { screens[$0].hasNotch } ?? usable.first { screens[$0].isMain }
+            ?? usable.first ?? screens.indices.first
     }
 
     /// Width of the collapsed eyebrow on a display without a camera housing.

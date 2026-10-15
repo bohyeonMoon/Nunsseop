@@ -79,7 +79,7 @@
 "System default" = "系统默认";
 "Display" = "显示器";
 "Show on" = "显示在";
-"Automatic (built-in display first)" = "自动（优先内建显示器）";
+"Automatic (follows the pointer)" = "自动（跟随指针）";
 "Brightness keys adjust the display under the pointer, including external displays that support DDC. Keyboard backlight keys work on keyboards that have them." = "亮度键调节指针所在的显示器，包括支持 DDC 的外接显示器。键盘背光键适用于带有这些按键的键盘。";
 "Updates" = "更新";
 "Check for updates automatically" = "自动检查更新";
