@@ -23,8 +23,8 @@ enum ClaudeUsageAPI {
 
     struct State {
         var limits: AIUsageModel.Limits?
-        /// No usable sign-in at the last attempt: none in the Keychain, expired, or refused by the server (401/403).
-        var signedOut = false
+        /// How the sign-in was at the last attempt.
+        var signIn = SignIn.usable
         /// A request to Anthropic is on its way.
         var inFlight = false
         var nextAttempt = Date.distantPast
@@ -56,6 +56,14 @@ enum ClaudeUsageAPI {
         set { enabledFlag.withLock { $0 = newValue } }
     }
 
+    enum SignIn: Equatable {
+        case usable
+        /// Only entries past their expiry: Claude Code renews the token the next time it runs.
+        case expired
+        /// None in the Keychain, or one the server refused (401/403).
+        case signedOut
+    }
+
     enum Status: Equatable {
         /// Not asked at all.
         case off
@@ -63,6 +71,8 @@ enum ClaudeUsageAPI {
         case waiting
         /// No limits are known and none are on their way: the last request failed, or the server put it off.
         case unavailable
+        /// Claude Code's sign-in has expired and Claude Code hasn't run since to renew it.
+        case expired
         /// Claude Code's sign-in is missing or no longer works.
         case signedOut
         case ready
@@ -70,12 +80,13 @@ enum ClaudeUsageAPI {
 
     static var status: Status {
         guard isEnabled else { return .off }
-        return state.withLock { status(signedOut: $0.signedOut, hasLimits: $0.limits != nil, inFlight: $0.inFlight) }
+        return state.withLock { status(signIn: $0.signIn, hasLimits: $0.limits != nil, inFlight: $0.inFlight) }
     }
 
     /// Placeholders only stand in while a request is out, so an answer that never comes doesn't leave them pulsing.
-    static func status(signedOut: Bool, hasLimits: Bool, inFlight: Bool) -> Status {
-        if signedOut { return .signedOut }
+    static func status(signIn: SignIn, hasLimits: Bool, inFlight: Bool) -> Status {
+        if signIn == .signedOut { return .signedOut }
+        if signIn == .expired { return .expired }
         if hasLimits { return .ready }
         return inFlight ? .waiting : .unavailable
     }
@@ -217,13 +228,14 @@ enum ClaudeUsageAPI {
 
     private static func fetch(now: Date) async {
         defer { state.withLock { $0.inFlight = false } }
-        guard let credentials = keychainCredentials(now: now) else {
+        let found = keychainCredentials(now: now)
+        guard case .usable(let credentials) = found else {
             // Not signed in, or the sign-in expired: asked again later, not on every refresh.
-            state.withLock { $0.nextAttempt = now.addingTimeInterval(backoff); $0.signedOut = true }
+            state.withLock { $0.nextAttempt = now.addingTimeInterval(backoff); $0.signIn = found == .expired ? .expired : .signedOut }
             return
         }
         // A sign-in is there again, so the warning goes even if this request then fails.
-        state.withLock { $0.signedOut = false }
+        state.withLock { $0.signIn = .usable }
         guard let (data, response) = try? await session.data(for: request(token: credentials.token)),
               let response = response as? HTTPURLResponse else {
             apply(reaction(status: nil, retryAfter: nil, parsed: false), now: now)
@@ -238,29 +250,41 @@ enum ClaudeUsageAPI {
     private static func apply(_ reaction: (wait: TimeInterval?, signedOut: Bool), now: Date, limits: AIUsageModel.Limits? = nil) {
         state.withLock {
             if let wait = reaction.wait { $0.nextAttempt = now.addingTimeInterval(wait) }
-            if reaction.signedOut { $0.signedOut = true }
+            if reaction.signedOut { $0.signIn = .signedOut }
             if let limits { $0.limits = limits }
         }
     }
 
     /// The user's own entry first: an older one under the account "Claude Code" can linger, long expired.
-    private static func keychainCredentials(now: Date) -> Credentials? {
-        usable([NSUserName(), nil].lazy.map { account -> Data? in
+    private static func keychainCredentials(now: Date) -> Found {
+        found([NSUserName(), nil].lazy.map { account -> Data? in
             var arguments = ["find-generic-password", "-s", "Claude Code-credentials"]
             if let account { arguments += ["-a", account] }
             return run("/usr/bin/security", arguments + ["-w"]).map { Data($0.utf8) }
         }, now: now)
     }
 
+    enum Found: Equatable {
+        case usable(Credentials)
+        /// Entries read, but all of them past their expiry.
+        case expired
+        case none
+    }
+
     /// The first entry that reads and hasn't expired. Taken lazily, so the second lookup only runs when the first fails.
-    static func usable(_ entries: some Sequence<Data?>, now: Date) -> Credentials? {
+    static func found(_ entries: some Sequence<Data?>, now: Date) -> Found {
+        var expired = false
         for case let entry? in entries {
             guard let credentials = credentials(from: entry) else { continue }
-            if let expires = credentials.expiresAt, expires <= now { continue }
-            return credentials
+            if let expires = credentials.expiresAt, expires <= now {
+                expired = true
+                continue
+            }
+            return .usable(credentials)
         }
-        return nil
+        return expired ? .expired : .none
     }
+
 
     private static func run(_ path: String, _ arguments: [String]) -> String? {
         let process = Process()

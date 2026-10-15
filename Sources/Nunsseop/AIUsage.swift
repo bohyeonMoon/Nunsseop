@@ -37,6 +37,15 @@ final class AIUsageModel: ObservableObject {
         var limitsSource: String?
         /// The tools whose logs make up the token totals.
         var tools: [String] = []
+
+        /// What to do so Anthropic can be asked again; nil while the sign-in works.
+        var signInProblem: String? {
+            switch anthropic {
+            case .signedOut: String(localized: "Sign in to Claude Code again to update the limits.")
+            case .expired: String(localized: "Run Claude Code to update the limits.")
+            default: nil
+            }
+        }
     }
 
     /// Subscription limits are per account, so every tool's usage of a provider's models counts toward one of these.
@@ -623,13 +632,13 @@ private struct ProviderPanel: View {
             .frame(height: 18)
             // The tools whose logs are counted, e.g. "Claude Code · gjc"; the sign-in problem takes the line when there is one.
             Group {
-                if provider.anthropic == .signedOut {
+                if let problem = provider.signInProblem {
                     HStack(spacing: 4) {
                         Image(systemName: "exclamationmark").font(.system(size: 9, weight: .bold)).accessibilityHidden(true)
-                        Text("Sign in to Claude Code again to update the limits.").lineLimit(1).minimumScaleFactor(0.8)
+                        Text(problem).lineLimit(1).minimumScaleFactor(0.8)
                     }
                     .font(.system(size: 11)).foregroundStyle(PanelInk.waiting)
-                    .help(Text("Sign in to Claude Code again to update the limits."))
+                    .help(Text(problem))
                 } else {
                     Text.panel(provider.tools.joined(separator: " · "), size: 11, opacity: 0.6).lineLimit(1)
                 }
