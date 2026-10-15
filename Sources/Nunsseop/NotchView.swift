@@ -111,6 +111,8 @@ struct NotchView: View {
                             }
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        // A list that fits its cell would otherwise spring up and down under a swipe.
+                        .scrollBounceBehavior(.basedOnSize, axes: .vertical)
                         .padding(.top, 8)
                     }
                     .padding(.horizontal, topRadius + 14)

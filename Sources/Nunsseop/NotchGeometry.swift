@@ -22,10 +22,28 @@ struct NotchGeometry: Equatable {
     /// The display named in settings if it is connected; otherwise the built-in display
     /// with a camera housing, then the main screen.
     static func pickScreen(preferredName: String = "") -> NSScreen? {
-        if !preferredName.isEmpty, let match = NSScreen.screens.first(where: { $0.localizedName == preferredName }) {
-            return match
+        let screens = NSScreen.screens
+        let candidates = screens.map { screen in
+            ScreenCandidate(name: screen.localizedName, hasNotch: screen.safeAreaInsets.top > 0, isMain: screen == NSScreen.main,
+                            isBuiltin: (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID)
+                                .map { CGDisplayIsBuiltin($0) != 0 } ?? false)
         }
-        return NSScreen.screens.first { $0.safeAreaInsets.top > 0 } ?? NSScreen.main ?? NSScreen.screens.first
+        return pick(candidates, preferredName: preferredName, lidClosed: lidIsClosed).map { screens[$0] }
+    }
+
+    struct ScreenCandidate: Equatable {
+        var name: String
+        var hasNotch: Bool
+        var isMain: Bool
+        var isBuiltin: Bool
+    }
+
+    /// The index of the screen to use. With the lid closed the built-in display is passed over: it can stay listed, camera housing
+    /// and all, for a moment after the lid closes.
+    static func pick(_ screens: [ScreenCandidate], preferredName: String, lidClosed: Bool) -> Int? {
+        let usable = screens.indices.filter { !(lidClosed && screens[$0].isBuiltin) }
+        if !preferredName.isEmpty, let match = usable.first(where: { screens[$0].name == preferredName }) { return match }
+        return usable.first { screens[$0].hasNotch } ?? usable.first { screens[$0].isMain } ?? usable.first ?? screens.indices.first
     }
 
     /// Width of the collapsed eyebrow on a display without a camera housing.
