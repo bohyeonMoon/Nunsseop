@@ -53,11 +53,16 @@ struct OnboardingView: View {
 
     private var header: some View {
         HStack {
-            Text(OnboardingText.title)
-            Spacer()
-            Text(verbatim: "\(tour.index + 1) / \(OnboardingTour.stepCount)")
-                .monospacedDigit()
-                .accessibilityLabel(OnboardingText.stepLabel(tour.index + 1, of: OnboardingTour.stepCount))
+            if let news = tour.news {
+                Text(String(localized: "What's new in \(news.version)"))
+                Spacer()
+            } else {
+                Text(OnboardingText.title)
+                Spacer()
+                Text(verbatim: "\(tour.index + 1) / \(OnboardingTour.stepCount)")
+                    .monospacedDigit()
+                    .accessibilityLabel(OnboardingText.stepLabel(tour.index + 1, of: OnboardingTour.stepCount))
+            }
         }
         .font(.system(size: 11, weight: .medium))
         .foregroundStyle(.white.opacity(0.65))
@@ -67,7 +72,7 @@ struct OnboardingView: View {
     private var footer: some View {
         ZStack {
             HStack(spacing: 6) {
-                ForEach(0..<OnboardingTour.stepCount, id: \.self) { i in
+                ForEach(0..<(tour.news == nil ? OnboardingTour.stepCount : 0), id: \.self) { i in
                     Capsule().fill(.white.opacity(i == tour.index ? 0.9 : 0.35)).frame(width: i == tour.index ? 16 : 6, height: 6)
                 }
             }
@@ -85,7 +90,7 @@ struct OnboardingView: View {
                 }
                 Spacer(minLength: 0)
                 if tour.index > 0 { pill(OnboardingText.back, primary: false) { tour.back() } }
-                pill(tour.isLast ? OnboardingText.done : OnboardingText.next, primary: true) { tour.next() }
+                pill(tour.news != nil ? String(localized: "Got it") : tour.isLast ? OnboardingText.done : OnboardingText.next, primary: true) { tour.next() }
             }
         }
         .frame(height: OnboardingMetrics.buttonHeight)
@@ -131,6 +136,8 @@ struct OnboardingView: View {
             CopyColumn(title: OnboardingText.agentsTitle, text: OnboardingText.agentsText, note: OnboardingText.agentsNote)
         case .ready:
             CopyColumn(title: OnboardingText.readyTitle, text: OnboardingText.ready(hasNotch: hasNotch), check: true)
+        case .whatsNew:
+            CopyColumn(title: tour.news?.title ?? "", text: tour.news?.text ?? "")
         }
     }
 
@@ -141,6 +148,7 @@ struct OnboardingView: View {
         case .filesAndSearch: filesVisual
         case .agents: agentsVisual
         case .ready: readyVisual
+        case .whatsNew: newsVisual
         }
     }
 
@@ -315,6 +323,16 @@ struct OnboardingView: View {
         case .idle:
             if !notificationsOn { return (OnboardingText.notificationsOff, false, "") }
             return (row.tool == .codex ? OnboardingText.trustHooks : OnboardingText.notConnected, false, "")
+        }
+    }
+
+    // MARK: What's new
+
+    private var newsVisual: some View {
+        VStack(alignment: .leading, spacing: OnboardingMetrics.rowGap) {
+            ForEach(tour.news?.items ?? [], id: \.title) { item in
+                InfoRow(symbol: item.symbol, title: item.title, sub: item.detail)
+            }
         }
     }
 

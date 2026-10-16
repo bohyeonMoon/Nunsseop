@@ -244,6 +244,11 @@
 "Last 7 days" = "7 derniers jours";
 "%@ tokens" = "%@ jetons";
 "Resets %@" = "Réinitialisé %@";
+"Tell me when Claude or Codex limits are nearly used up, and when they reset" = "Me prévenir quand les limites de Claude ou Codex sont presque atteintes, et quand elles sont réinitialisées";
+"At %@ and %@ of the 5-hour or weekly limit, once each, and again when a limit that got that far resets." = "À %1$@ et %2$@ de la limite de 5 heures ou hebdomadaire, une fois chacun, puis de nouveau quand une limite arrivée jusque-là est réinitialisée.";
+"%@ %@: %@ used" = "%1$@ %2$@ : %3$@ utilisés";
+"%@ %@ limit reset" = "%1$@ %2$@ : limite réinitialisée";
+"Ready to use again" = "De nouveau disponible";
 "Usage appears here once you have used Claude Code or Codex on this Mac." = "L’usage s’affichera ici dès que vous utiliserez Claude Code ou Codex sur ce Mac.";
 "Open Search from anywhere with a shortcut" = "Ouvrir Rechercher depuis n’importe où avec un raccourci";
 "Shortcut" = "Raccourci";
@@ -577,3 +582,11 @@
 "%lldm" = "%lld min";
 "%lldh" = "%lld h";
 "%lldd" = "%lld j";
+"What's new in %@" = "Nouveautés de la %@";
+"Freshly groomed" = "Sourcils tout frais";
+"Nunsseop %@ brings two new things, and there's nothing to set up." = "Nunsseop %@ apporte deux nouveautés, rien à régler.";
+"Limit alerts" = "Alertes de limite";
+"A nudge at %@ and %@, a cheer at the reset" = "Un signe à %1$@ et %2$@, la fête quand tout repart";
+"This, once per update" = "Ceci, une fois par mise à jour";
+"Says what's new, then gets out of your way" = "Dit ce qui change, puis s’efface";
+"Got it" = "Compris";

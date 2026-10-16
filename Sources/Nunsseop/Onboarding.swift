@@ -6,7 +6,7 @@ import Combine
 /// the same step; only finishing or skipping ends it.
 @MainActor
 final class OnboardingTour: ObservableObject {
-    enum Step: Equatable { case opening, tabs, filesAndSearch, agents, ready }
+    enum Step: Equatable { case opening, tabs, filesAndSearch, agents, ready, whatsNew }
 
     /// What a key does while the notch shows the tour.
     enum Command: Equatable { case next, back, skip }
@@ -42,6 +42,8 @@ final class OnboardingTour: ObservableObject {
     @Published private(set) var isActive = false
     @Published private(set) var index = 0
     @Published private(set) var rows: [ToolRow] = []
+    /// After an update, the release's notes: then the tour is that one page.
+    @Published private(set) var news: WhatsNew.Notes?
 
     /// A first launch that has not started the tour yet.
     private(set) var isPending = false
@@ -79,8 +81,12 @@ final class OnboardingTour: ObservableObject {
         freshInstall && !defaults.bool(forKey: doneKey)
     }
 
-    func prepare(freshInstall: Bool) {
+    func prepare(freshInstall: Bool, version: String = WhatsNew.currentVersion) {
         isPending = Self.shouldStart(freshInstall: freshInstall, defaults: defaults)
+        news = isPending ? nil : WhatsNew.pending(freshInstall: freshInstall, version: version, defaults: defaults)
+        // A fresh install has nothing to catch up on: its first update is what shows notes.
+        if freshInstall { defaults.set(version, forKey: WhatsNew.seenKey) }
+        if news != nil { isPending = true }
     }
 
     /// A notice that leads somewhere or a permission prompt is answered first, and nothing opens on a hidden panel.
@@ -95,7 +101,7 @@ final class OnboardingTour: ObservableObject {
         [.opening, .tabs, .filesAndSearch, hasTools ? .agents : .ready]
     }
 
-    var steps: [Step] { Self.steps(hasTools: !rows.isEmpty) }
+    var steps: [Step] { news == nil ? Self.steps(hasTools: !rows.isEmpty) : [.whatsNew] }
     var step: Step { steps[index] }
     var isLast: Bool { index == steps.count - 1 }
 
@@ -125,7 +131,12 @@ final class OnboardingTour: ObservableObject {
     func skip() { finish() }
 
     func finish() {
-        defaults.set(true, forKey: Self.doneKey)
+        if let news {
+            defaults.set(news.version, forKey: WhatsNew.seenKey)
+            self.news = nil
+        } else {
+            defaults.set(true, forKey: Self.doneKey)
+        }
         isPending = false
         isActive = false
     }
@@ -195,8 +206,16 @@ final class OnboardingTour: ObservableObject {
         connectTool = { _ in }
         hasBackup = { _ in true }
         showsWithoutNotch = withoutNotch
+        news = nil
         start()
         index = min(max(step, 0), Self.stepCount - 1)
+    }
+
+    /// Debug: `--demo-whats-new`. Shows the notes of `version` without touching the real record of what was seen.
+    func startDemo(news version: String) {
+        defaults = UserDefaults(suiteName: "nunsseop-onboarding-demo") ?? .standard
+        news = WhatsNew.notes(for: version)
+        start()
     }
     #endif
 }

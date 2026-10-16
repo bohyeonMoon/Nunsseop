@@ -334,6 +334,18 @@ final class NotchWindowController {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { self.snapshotter?.capture(label: "onboarding") }
             }
         }
+        // Debug: --demo-whats-new <version> shows that release's notes pinned.
+        if let i = CommandLine.arguments.firstIndex(of: "--demo-whats-new"), i + 1 < CommandLine.arguments.count {
+            let version = CommandLine.arguments[i + 1]
+            model.onboarding.prepare(freshInstall: false, version: "")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                guard let self else { return }
+                self.model.onboarding.startDemo(news: version)
+                self.model.expand()
+                self.engageTour()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { self.snapshotter?.capture(label: "whats-new") }
+            }
+        }
         if let i = CommandLine.arguments.firstIndex(of: "--demo-search"), i + 1 < CommandLine.arguments.count {
             let query = CommandLine.arguments[i + 1]
             model.search.loadApps()
@@ -469,8 +481,9 @@ final class NotchWindowController {
             .sink { [weak self] city, header, left, right in
                 self?.model.weather.setCity(header || left == .weather || right == .weather ? city : "")
             })
-        settingsObservers.append(model.settings.$idleLeft.combineLatest(model.settings.$idleRight)
-            .map { $0.usesAIUsage || $1.usesAIUsage }
+        // The limits are also read in the background for the limit alerts, not only for an ear that shows them.
+        settingsObservers.append(model.settings.$idleLeft.combineLatest(model.settings.$idleRight, model.settings.$limitAlerts)
+            .map { $0.usesAIUsage || $1.usesAIUsage || $2 }
             .removeDuplicates()
             .sink { [weak self] shown in
                 guard let self else { return }

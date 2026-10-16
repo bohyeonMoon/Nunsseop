@@ -159,6 +159,7 @@ final class NotchViewModel: ObservableObject {
         browHidden && !isExpanded && hud.event == nil && approvals.current == nil && !showsLiveActivity && !showsSneakPeek
     }
     private var cancellables: Set<AnyCancellable> = []
+    private var limitAlerts = LimitAlerts()
     private var sneakPeekWork: DispatchWorkItem?
     private var peekFilter = SneakPeekFilter(launchedAt: .now)
     private var callPeekWork: DispatchWorkItem?
@@ -343,6 +344,9 @@ final class NotchViewModel: ObservableObject {
                                   detail: Self.upcomingDetail(item), action: join)
             }
         }
+        aiUsage.$providers
+            .sink { [weak self] in self?.announceLimits($0) }
+            .store(in: &cancellables)
         settings.$eventAlerts.combineLatest(settings.$calendarEnabled)
             .map { $0 && $1 }
             .sink { [weak self] in self?.calendar.alertsEnabled = $0 }
@@ -350,6 +354,23 @@ final class NotchViewModel: ObservableObject {
         settings.objectWillChange
             .sink { [weak self] in self?.objectWillChange.send() }
             .store(in: &cancellables)
+    }
+
+    /// Turning the alerts off forgets what was passed, so turning them on again doesn't announce what already is.
+    private func announceLimits(_ providers: [AIUsageModel.Provider]) {
+        guard settings.limitAlerts else {
+            limitAlerts = LimitAlerts()
+            return
+        }
+        let alerts = limitAlerts.step(providers, now: .now)
+        if let first = alerts.first {
+            _ = hud.showLasting(duration: CalendarModel.alertSpacing) {
+                .notice(symbol: LimitAlerts.symbol(first), title: LimitAlerts.title(first), detail: LimitAlerts.detail(first))
+            }
+        }
+        for alert in alerts {
+            notices.add(symbol: LimitAlerts.symbol(alert), title: LimitAlerts.title(alert), detail: LimitAlerts.detail(alert))
+        }
     }
 
     /// "in 5 minutes", and "in 5 minutes · Click to join" when the event has a meeting link.
