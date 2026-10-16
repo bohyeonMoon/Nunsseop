@@ -269,6 +269,11 @@
 "Last 7 days" = "최근 7일";
 "%@ tokens" = "%@ 토큰";
 "Resets %@" = "%@ 초기화";
+"Tell me when Claude or Codex limits are nearly used up, and when they reset" = "Claude·Codex 한도를 거의 다 쓰면, 그리고 초기화되면 알리기";
+"At %@ and %@ of the 5-hour or weekly limit, once each, and again when a limit that got that far resets." = "5시간·주간 한도가 %1$@와 %2$@에 이르면 한 번씩, 그만큼 쓴 한도가 초기화되면 다시 한 번 알립니다.";
+"%@ %@: %@ used" = "%1$@ %2$@: %3$@ 사용";
+"%@ %@ limit reset" = "%1$@ %2$@ 한도 초기화";
+"Ready to use again" = "다시 쓸 수 있어요";
 "Usage appears here once you have used Claude Code or Codex on this Mac." = "이 Mac에서 Claude Code나 Codex를 쓰면 여기에 사용량이 표시됩니다.";
 "Open Search from anywhere with a shortcut" = "단축키로 어디서든 검색 열기";
 "Shortcut" = "단축키";
@@ -602,3 +607,11 @@
 "%lldm" = "%lld분";
 "%lldh" = "%lld시간";
 "%lldd" = "%lld일";
+"What's new in %@" = "%@에서 바뀐 점";
+"Freshly groomed" = "눈썹 다듬고 왔어요";
+"Nunsseop %@ brings two new things, and there's nothing to set up." = "Nunsseop %@에 새로 생긴 게 두 가지 있어요. 설정할 건 없어요.";
+"Limit alerts" = "한도 알림";
+"A nudge at %@ and %@, a cheer at the reset" = "%1$@·%2$@에서 귀띔, 초기화되면 축하";
+"This, once per update" = "업데이트마다 딱 한 번, 이 화면";
+"Says what's new, then gets out of your way" = "새로 생긴 걸 알려 주고 조용히 빠져요";
+"Got it" = "알겠어요";

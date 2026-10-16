@@ -475,6 +475,11 @@ private struct AlertsPane: View {
                 Toggle("Show events 5 minutes before they start", isOn: $settings.eventAlerts)
                     .disabled(!settings.calendarEnabled)
             }
+            Section("AI usage") {
+                Toggle("Tell me when Claude or Codex limits are nearly used up, and when they reset", isOn: $settings.limitAlerts)
+                Text("At \(LimitAlerts.share(80)) and \(LimitAlerts.share(95)) of the 5-hour or weekly limit, once each, and again when a limit that got that far resets.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Section("Files") {
                 Toggle("Add new screenshots to the shelf", isOn: $settings.screenshotsToShelf)
                 Toggle("Show when downloads start and finish", isOn: $settings.downloadAlerts)

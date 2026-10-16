@@ -244,6 +244,11 @@
 "Last 7 days" = "過去 7 日間";
 "%@ tokens" = "%@ トークン";
 "Resets %@" = "%@ にリセット";
+"Tell me when Claude or Codex limits are nearly used up, and when they reset" = "Claude・Codex の上限をほぼ使い切ったときと、リセットされたときに知らせる";
+"At %@ and %@ of the 5-hour or weekly limit, once each, and again when a limit that got that far resets." = "5 時間または週の上限が %1$@ と %2$@ に達したときにそれぞれ 1 回、そこまで使った上限がリセットされたときにもう一度知らせます。";
+"%@ %@: %@ used" = "%1$@ %2$@：%3$@ 使用";
+"%@ %@ limit reset" = "%1$@ %2$@ の上限がリセットされました";
+"Ready to use again" = "また使えます";
 "Usage appears here once you have used Claude Code or Codex on this Mac." = "この Mac で Claude Code や Codex を使うと、ここに使用量が表示されます。";
 "Open Search from anywhere with a shortcut" = "ショートカットでどこからでも検索を開く";
 "Shortcut" = "ショートカット";
@@ -577,3 +582,11 @@
 "%lldm" = "%lld分";
 "%lldh" = "%lld時間";
 "%lldd" = "%lld日";
+"What's new in %@" = "%@ の新機能";
+"Freshly groomed" = "眉、整えてきました";
+"Nunsseop %@ brings two new things, and there's nothing to set up." = "Nunsseop %@ に新しいことが 2 つ。設定は不要です。";
+"Limit alerts" = "上限アラート";
+"A nudge at %@ and %@, a cheer at the reset" = "%1$@ と %2$@ でひと声、リセットでお祝い";
+"This, once per update" = "アップデートごとに一度だけ、この画面";
+"Says what's new, then gets out of your way" = "新しいことを伝えたら、すっと引っ込みます";
+"Got it" = "了解";

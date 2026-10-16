@@ -129,6 +129,7 @@ final class AppSettings: ObservableObject {
     /// City for the header weather chip; empty hides it.
     @Published var weatherCity: String = AppSettings.load("weatherCity", default: "") { didSet { save(weatherCity, "weatherCity") } }
     @Published var downloadAlerts: Bool = AppSettings.load("downloadAlerts", default: true) { didSet { save(downloadAlerts, "downloadAlerts") } }
+    @Published var limitAlerts: Bool = AppSettings.load("limitAlerts", default: true) { didSet { save(limitAlerts, "limitAlerts") } }
     /// Shaking the pointer while dragging files shows a drop target that adds them to the shelf.
     @Published var shakeToShelf: Bool = AppSettings.load("shakeToShelf", default: true) { didSet { save(shakeToShelf, "shakeToShelf") } }
     @Published var downloadsToShelf: Bool = AppSettings.load("downloadsToShelf", default: false) { didSet { save(downloadsToShelf, "downloadsToShelf") } }

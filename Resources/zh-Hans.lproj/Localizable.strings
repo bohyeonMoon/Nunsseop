@@ -244,6 +244,11 @@
 "Last 7 days" = "过去 7 天";
 "%@ tokens" = "%@ 个令牌";
 "Resets %@" = "%@重置";
+"Tell me when Claude or Codex limits are nearly used up, and when they reset" = "Claude 或 Codex 的限额快用完时以及重置时通知我";
+"At %@ and %@ of the 5-hour or weekly limit, once each, and again when a limit that got that far resets." = "5 小时或每周限额达到 %1$@ 和 %2$@ 时各通知一次，用到这个程度的限额重置时再通知一次。";
+"%@ %@: %@ used" = "%1$@ %2$@：已用 %3$@";
+"%@ %@ limit reset" = "%1$@ %2$@ 限额已重置";
+"Ready to use again" = "可以再次使用了";
 "Usage appears here once you have used Claude Code or Codex on this Mac." = "在这台 Mac 上使用 Claude Code 或 Codex 后，用量会显示在这里。";
 "Open Search from anywhere with a shortcut" = "使用快捷键在任何地方打开搜索";
 "Shortcut" = "快捷键";
@@ -577,3 +582,11 @@
 "%lldm" = "%lld分钟";
 "%lldh" = "%lld小时";
 "%lldd" = "%lld天";
+"What's new in %@" = "%@ 的新变化";
+"Freshly groomed" = "眉毛修好了";
+"Nunsseop %@ brings two new things, and there's nothing to set up." = "Nunsseop %@ 带来两项新功能，无需设置。";
+"Limit alerts" = "限额提醒";
+"A nudge at %@ and %@, a cheer at the reset" = "到 %1$@ 和 %2$@ 时提个醒，重置时道声喜";
+"This, once per update" = "每次更新只出现一次的这个页面";
+"Says what's new, then gets out of your way" = "说完新变化就安静退场";
+"Got it" = "知道了";
