@@ -128,6 +128,13 @@ struct HeaderRow: View {
     }
 }
 
+/// Whether tabs lie past an end of the strip, so that end gets an arrow. Within a point counts as in view, so rounding
+/// never leaves an arrow over a tab that is in full view.
+enum TabArrows {
+    static func hidesBefore(firstMinX: CGFloat) -> Bool { firstMinX < -1 }
+    static func hidesAfter(lastMaxX: CGFloat, width: CGFloat) -> Bool { lastMaxX > width + 1 }
+}
+
 /// Tabs that don't fit scroll sideways, with arrows at the ends; the selected one is kept in view.
 private struct TabStrip: View {
     let tabs: [NotchTab]
@@ -138,10 +145,15 @@ private struct TabStrip: View {
     let select: (NotchTab) -> Void
     @State private var leading: NotchTab?
     @State private var dragHover = TabDragHover()
+    /// Where the first tab starts and the last one ends in the strip, and how wide the strip is: the arrows go by these,
+    /// since how many tabs fit changes with the selected one's title.
+    @State private var firstMinX: CGFloat = 0
+    @State private var lastMaxX: CGFloat = 0
+    @State private var stripWidth: CGFloat = 0
 
     private var leadingIndex: Int { leading.flatMap { tabs.firstIndex(of: $0) } ?? 0 }
-    private var canGoBack: Bool { overflowing && leadingIndex > 0 }
-    private var canGoForward: Bool { overflowing && leadingIndex + visibleCount < tabs.count }
+    private var canGoBack: Bool { overflowing && TabArrows.hidesBefore(firstMinX: firstMinX) }
+    private var canGoForward: Bool { overflowing && TabArrows.hidesAfter(lastMaxX: lastMaxX, width: stripWidth) }
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -151,10 +163,16 @@ private struct TabStrip: View {
                         .help(tab.title)
                         .id(tab)
                         .onDrop(of: tab == .agents ? [.fileURL] : [], delegate: TabDragHoverDelegate(hover: dragHover) { select(tab) })
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.space)) } action: { frame in
+                            if tab == tabs.first { firstMinX = frame.minX }
+                            if tab == tabs.last { lastMaxX = frame.maxX }
+                        }
                 }
             }
             .scrollTargetLayout()
         }
+        .coordinateSpace(.named(Self.space))
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { stripWidth = $0 }
         .scrollPosition(id: $leading, anchor: .leading)
         .scrollDisabled(!overflowing)
         .mask {
@@ -169,6 +187,8 @@ private struct TabStrip: View {
         .onAppear { reveal(selected, animated: false) }
         .onChange(of: selected) { _, tab in reveal(tab, animated: true) }
     }
+
+    private static let space = "tabStrip"
 
     /// Scrolls just enough to bring the tab into view.
     private func reveal(_ tab: NotchTab, animated: Bool) {
