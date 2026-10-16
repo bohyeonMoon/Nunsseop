@@ -236,6 +236,7 @@
 "Updated %@" = "Mis à jour %@";
 "5-hour" = "5 heures";
 "Sign in to Claude Code again to update the limits." = "Reconnectez-vous à Claude Code pour mettre à jour les limites.";
+"Run Claude Code to update the limits." = "Lancez Claude Code pour mettre à jour les limites.";
 "Weekly · all models" = "Hebdomadaire · tous les modèles";
 "Weekly · %@" = "Hebdomadaire · %@";
 "Weekly" = "Hebdomadaire";
@@ -332,7 +333,7 @@
 "Copy WezTerm config" = "Copier la configuration WezTerm";
 "Paste it into ~/.wezterm.lua before `return config`. Bells from any WezTerm pane then show in the notch; WezTerm's config isn't changed for you." = "Collez-la dans ~/.wezterm.lua avant `return config`. Les sonneries de tous les panneaux WezTerm s'afficheront dans l'encoche ; la configuration de WezTerm n'est pas modifiée pour vous.";
 "Ask Anthropic for Claude's limits" = "Demander à Anthropic les limites de Claude";
-"Reads the sign-in Claude Code keeps in the Keychain and asks api.anthropic.com for your 5-hour and weekly limits about once an hour, so they also move when another app or claude.ai uses them. While that sign-in has expired they stop updating, until Claude Code signs in again. The sign-in is never changed or sent anywhere else." = "Lit la connexion que Claude Code garde dans le trousseau et demande à api.anthropic.com vos limites de 5 heures et hebdomadaires environ une fois par heure, pour qu'elles bougent aussi quand une autre app ou claude.ai les utilise. Tant que cette connexion a expiré, elles ne se mettent plus à jour, jusqu'à ce que Claude Code se reconnecte. La connexion n'est jamais modifiée ni envoyée ailleurs.";
+"Reads the sign-in Claude Code keeps in the Keychain and asks api.anthropic.com for your 5-hour and weekly limits about once an hour, so they also move when another app or claude.ai uses them. While that sign-in has expired they stop updating, until Claude Code runs again and renews it. The sign-in is never changed or sent anywhere else." = "Lit la connexion que Claude Code garde dans le trousseau et demande à api.anthropic.com vos limites de 5 heures et hebdomadaires environ une fois par heure, pour qu'elles bougent aussi quand une autre app ou claude.ai les utilise. Tant que cette connexion a expiré, elles ne se mettent plus à jour, jusqu'à ce que Claude Code soit relancé et la renouvelle. La connexion n'est jamais modifiée ni envoyée ailleurs.";
 "Claude Code status line" = "Ligne d’état de Claude Code";
 "Takes Claude's 5-hour and weekly limits from what Claude Code passes to its status line, and keeps running your own status line as before. Nothing leaves this Mac." = "Récupère les limites de 5 heures et hebdomadaires de Claude à partir des données que Claude Code transmet à sa ligne d’état, et continue d’exécuter votre ligne d’état comme avant. Rien ne quitte ce Mac.";
 "Connected. The limits update while Claude Code runs." = "Connecté. Les limites se mettent à jour pendant que Claude Code tourne.";

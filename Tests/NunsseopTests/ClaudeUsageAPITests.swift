@@ -58,11 +58,12 @@ struct ClaudeUsageAPITests {
     }
 
     @Test func placeholdersOnlyWhileARequestIsOut() {
-        #expect(ClaudeUsageAPI.status(signedOut: false, hasLimits: false, inFlight: true) == .waiting)
+        #expect(ClaudeUsageAPI.status(signIn: .usable, hasLimits: false, inFlight: true) == .waiting)
         // A request that failed or was put off leaves nothing on its way, so no placeholders.
-        #expect(ClaudeUsageAPI.status(signedOut: false, hasLimits: false, inFlight: false) == .unavailable)
-        #expect(ClaudeUsageAPI.status(signedOut: false, hasLimits: true, inFlight: true) == .ready)
-        #expect(ClaudeUsageAPI.status(signedOut: true, hasLimits: true, inFlight: false) == .signedOut)
+        #expect(ClaudeUsageAPI.status(signIn: .usable, hasLimits: false, inFlight: false) == .unavailable)
+        #expect(ClaudeUsageAPI.status(signIn: .usable, hasLimits: true, inFlight: true) == .ready)
+        #expect(ClaudeUsageAPI.status(signIn: .signedOut, hasLimits: true, inFlight: false) == .signedOut)
+        #expect(ClaudeUsageAPI.status(signIn: .expired, hasLimits: true, inFlight: true) == .expired)
     }
 
     @Test func readsThePlanFromTheKeychainEntry() {
@@ -223,26 +224,76 @@ struct ClaudeUsageAPISchedulingTests {
 
     private var nowMilliseconds: Double { now.timeIntervalSince1970 * 1000 }
 
+    private func usable(_ entries: some Sequence<Data?>, now: Date) -> ClaudeUsageAPI.Credentials? {
+        guard case .usable(let credentials) = ClaudeUsageAPI.found(entries, now: now) else { return nil }
+        return credentials
+    }
+
+    @Test func onlyExpiredEntriesAreToldApartFromNone() {
+        let expired = entry("old", expiresAtMilliseconds: nowMilliseconds - 1)
+        #expect(ClaudeUsageAPI.found([expired], now: now) == .expired)
+        #expect(ClaudeUsageAPI.found([nil, expired], now: now) == .expired)
+        #expect(ClaudeUsageAPI.found([expired, Data("garbage".utf8)], now: now) == .expired)
+        #expect(ClaudeUsageAPI.found([nil, Data("garbage".utf8)], now: now) == ClaudeUsageAPI.Found.none)
+        #expect(ClaudeUsageAPI.found([Data?](), now: now) == ClaudeUsageAPI.Found.none)
+        // One that still works wins over an expired one, whichever comes first.
+        #expect(ClaudeUsageAPI.found([expired, entry("live")], now: now) == .usable(ClaudeUsageAPI.Credentials(token: "live", expiresAt: nil)))
+    }
+
+    @Test func anExpiredSignInAsksToRunClaudeCodeAndOnlyAMissingOrRefusedOneToSignIn() {
+        var provider = AIUsageModel.Provider(id: "claude", name: "Claude")
+        provider.anthropic = .expired
+        #expect(provider.signInProblem == "Run Claude Code to update the limits.")
+        provider.anthropic = .signedOut
+        #expect(provider.signInProblem == "Sign in to Claude Code again to update the limits.")
+        for status in [ClaudeUsageAPI.Status.ready, .waiting, .unavailable, .off] {
+            provider.anthropic = status
+            #expect(provider.signInProblem == nil)
+        }
+        provider.anthropic = nil
+        #expect(provider.signInProblem == nil)
+    }
+
+    @Test func anExpiredSignInIsLookedAtAgainWithinAMinuteAndAMissingOneAfterTheBackoff() {
+        #expect(ClaudeUsageAPI.wait(after: .expired) == 60)
+        #expect(ClaudeUsageAPI.wait(after: ClaudeUsageAPI.Found.none) == 600)
+    }
+
+    @Test func theSignInNotesAreTranslatedIntoEveryLanguage() throws {
+        let resources = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Resources")
+        let keys = ["Sign in to Claude Code again to update the limits.", "Run Claude Code to update the limits.",
+                    "Reads the sign-in Claude Code keeps in the Keychain and asks api.anthropic.com for your 5-hour and weekly limits about once an hour, so they also move when another app or claude.ai uses them. While that sign-in has expired they stop updating, until Claude Code runs again and renews it. The sign-in is never changed or sent anywhere else."]
+        for language in ["de", "es", "fr", "ja", "ko", "zh-Hans"] {
+            let table = try #require(NSDictionary(contentsOfFile: resources.appendingPathComponent("\(language).lproj/Localizable.strings").path), Comment(rawValue: language))
+            for key in keys {
+                let text = table[key] as? String ?? ""
+                #expect(!text.isEmpty && text != key, Comment(rawValue: "\(language): \(key)"))
+            }
+            #expect(table["Reads the sign-in Claude Code keeps in the Keychain and asks api.anthropic.com for your 5-hour and weekly limits about once an hour, so they also move when another app or claude.ai uses them. While that sign-in has expired they stop updating, until Claude Code signs in again. The sign-in is never changed or sent anywhere else."] == nil, Comment(rawValue: language))
+        }
+    }
+
     @Test func expiredOrCorruptEntriesAreSkipped() {
         let expired = entry("old", expiresAtMilliseconds: nowMilliseconds - 1)
         let valid = entry("live", expiresAtMilliseconds: nowMilliseconds + 60_000)
-        #expect(ClaudeUsageAPI.usable([expired, valid], now: now)?.token == "live")
+        #expect(usable([expired, valid], now: now)?.token == "live")
         // Expiring this very moment counts as expired.
-        #expect(ClaudeUsageAPI.usable([entry("edge", expiresAtMilliseconds: nowMilliseconds)], now: now) == nil)
-        #expect(ClaudeUsageAPI.usable([entry("edge", expiresAtMilliseconds: nowMilliseconds + 1)], now: now)?.token == "edge")
+        #expect(usable([entry("edge", expiresAtMilliseconds: nowMilliseconds)], now: now) == nil)
+        #expect(usable([entry("edge", expiresAtMilliseconds: nowMilliseconds + 1)], now: now)?.token == "edge")
         // No expiry given: valid. Nothing readable is skipped over.
-        #expect(ClaudeUsageAPI.usable([nil, Data("garbage".utf8), entry("noexpiry")], now: now)?.token == "noexpiry")
-        #expect(ClaudeUsageAPI.usable([expired, expired], now: now) == nil)
-        #expect(ClaudeUsageAPI.usable([Data?](), now: now) == nil)
+        #expect(usable([nil, Data("garbage".utf8), entry("noexpiry")], now: now)?.token == "noexpiry")
+        #expect(usable([expired, expired], now: now) == nil)
+        #expect(usable([Data?](), now: now) == nil)
         // The first one wins.
-        #expect(ClaudeUsageAPI.usable([entry("A"), entry("B")], now: now)?.token == "A")
+        #expect(usable([entry("A"), entry("B")], now: now)?.token == "A")
     }
 
     @Test func theSecondLookupOnlyRunsWhenTheFirstFails() {
         // The first lookup is good: the second never runs.
         var looked = 0
         let lookups = [entry("A"), entry("B")].lazy.map { data -> Data? in looked += 1; return data }
-        #expect(ClaudeUsageAPI.usable(lookups, now: now)?.token == "A")
+        #expect(usable(lookups, now: now)?.token == "A")
         #expect(looked == 1)
     }
 
@@ -255,7 +306,7 @@ struct ClaudeUsageAPISchedulingTests {
         }
         var looked = 0
         let lookups = [unusable, entry("B")].lazy.map { data -> Data? in looked += 1; return data }
-        #expect(ClaudeUsageAPI.usable(lookups, now: now)?.token == "B")
+        #expect(usable(lookups, now: now)?.token == "B")
         #expect(looked == 2)
     }
 
