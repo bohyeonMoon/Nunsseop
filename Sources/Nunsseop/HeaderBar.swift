@@ -145,7 +145,7 @@ private struct TabStrip: View {
     let select: (NotchTab) -> Void
     @State private var leading: NotchTab?
     @State private var dragHover = TabDragHover()
-    /// Where the first tab starts and the last one ends in the strip, and how wide the strip is: the arrows go by these,
+    /// Where the row of tabs starts and ends in the strip, and how wide the strip is: the arrows go by these,
     /// since how many tabs fit changes with the selected one's title.
     @State private var firstMinX: CGFloat = 0
     @State private var lastMaxX: CGFloat = 0
@@ -163,13 +163,13 @@ private struct TabStrip: View {
                         .help(tab.title)
                         .id(tab)
                         .onDrop(of: tab == .agents ? [.fileURL] : [], delegate: TabDragHoverDelegate(hover: dragHover) { select(tab) })
-                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.space)) } action: { frame in
-                            if tab == tabs.first { firstMinX = frame.minX }
-                            if tab == tabs.last { lastMaxX = frame.maxX }
-                        }
                 }
             }
             .scrollTargetLayout()
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.space)) } action: { frame in
+                firstMinX = frame.minX
+                lastMaxX = frame.maxX
+            }
         }
         .coordinateSpace(.named(Self.space))
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { stripWidth = $0 }

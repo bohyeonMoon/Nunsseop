@@ -118,6 +118,12 @@ final class OnboardingTour: ObservableObject {
         isActive = true
     }
 
+    /// Settings' "show the tour again": the tour itself, even while an update's notes wait. Those still show next launch.
+    func replay() {
+        news = nil
+        start()
+    }
+
     func next() {
         guard isActive else { return }
         if isLast { finish() } else { index += 1 }

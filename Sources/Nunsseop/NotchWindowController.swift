@@ -239,14 +239,14 @@ final class NotchWindowController {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { SettingsWindowController.shared.show() }
         }
         #endif
-        SettingsWindowController.shared.onReplayTour = { [weak self] in self?.beginTour() }
+        SettingsWindowController.shared.onReplayTour = { [weak self] in self?.beginTour(replay: true) }
     }
 
     // MARK: Tour
 
     /// Opens the notch on the tour's first step, whatever it is doing, and has the keyboard for the tour's keys.
-    private func beginTour() {
-        model.onboarding.start()
+    private func beginTour(replay: Bool = false) {
+        if replay { model.onboarding.replay() } else { model.onboarding.start() }
         model.expand()
         engageTour()
     }
@@ -324,7 +324,7 @@ final class NotchWindowController {
            let step = demoSteps[CommandLine.arguments[i + 1]] {
             let name = CommandLine.arguments[i + 1]
             // The demo is what shows, not the real first-run tour.
-            model.onboarding.prepare(freshInstall: false)
+            model.onboarding.prepare(freshInstall: false, version: "")
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
                 guard let self else { return }
                 self.model.onboarding.startDemo(step: step, tools: name == "ready" ? [] : [.claudeCode, .codex],
@@ -483,15 +483,15 @@ final class NotchWindowController {
             })
         // The limits are also read in the background for the limit alerts, not only for an ear that shows them.
         settingsObservers.append(model.settings.$idleLeft.combineLatest(model.settings.$idleRight, model.settings.$limitAlerts)
-            .map { $0.usesAIUsage || $1.usesAIUsage || $2 }
+            .map { left, right, alerts in left.usesAIUsage || right.usesAIUsage ? 20 : alerts ? 60 : nil as TimeInterval? }
             .removeDuplicates()
-            .sink { [weak self] shown in
+            .sink { [weak self] interval in
                 guard let self else { return }
                 self.aiUsageTimer?.invalidate()
                 self.aiUsageTimer = nil
-                guard shown else { return }
+                guard let interval else { return }
                 self.model.aiUsage.refresh(includeTokens: false)
-                self.aiUsageTimer = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
+                self.aiUsageTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
                     MainActor.assumeIsolated { self?.model.aiUsage.refresh(includeTokens: false) }
                 }
                 self.aiUsageTimer?.tolerance = 2

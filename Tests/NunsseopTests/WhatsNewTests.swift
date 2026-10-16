@@ -74,6 +74,22 @@ struct WhatsNewTests {
         }
     }
 
+    @Test func replayingTheTourFromSettingsShowsTheTourWhileNotesWait() {
+        withDefaults { defaults in
+            defaults.set(true, forKey: OnboardingTour.doneKey)
+            let tour = makeTour(defaults)
+            tour.prepare(freshInstall: false, version: version)
+            tour.replay()
+            #expect(tour.steps == OnboardingTour.steps(hasTools: false) && tour.news == nil)
+            tour.skip()
+            // The notes weren't seen, so the next launch still shows them.
+            #expect(defaults.string(forKey: WhatsNew.seenKey) == nil)
+            let next = makeTour(defaults)
+            next.prepare(freshInstall: false, version: version)
+            #expect(next.news?.version == version)
+        }
+    }
+
     @Test func aVersionWithoutNotesShowsNothing() {
         withDefaults { defaults in
             defaults.set("0.33.5", forKey: WhatsNew.seenKey)

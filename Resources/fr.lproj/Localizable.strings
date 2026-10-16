@@ -582,7 +582,7 @@
 "%lldm" = "%lld min";
 "%lldh" = "%lld h";
 "%lldd" = "%lld j";
-"What's new in %@" = "Nouveautés de la %@";
+"What's new in %@" = "Nouveautés de la version %@";
 "Freshly groomed" = "Sourcils tout frais";
 "Nunsseop %@ brings two new things, and there's nothing to set up." = "Nunsseop %@ apporte deux nouveautés, rien à régler.";
 "Limit alerts" = "Alertes de limite";

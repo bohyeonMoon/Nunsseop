@@ -347,6 +347,11 @@ final class NotchViewModel: ObservableObject {
         aiUsage.$providers
             .sink { [weak self] in self?.announceLimits($0) }
             .store(in: &cancellables)
+        // Off and on again starts from what is so by then: nothing passed while it was off is announced late.
+        settings.$limitAlerts
+            .removeDuplicates()
+            .sink { [weak self] _ in self?.limitAlerts = LimitAlerts() }
+            .store(in: &cancellables)
         settings.$eventAlerts.combineLatest(settings.$calendarEnabled)
             .map { $0 && $1 }
             .sink { [weak self] in self?.calendar.alertsEnabled = $0 }
@@ -356,12 +361,8 @@ final class NotchViewModel: ObservableObject {
             .store(in: &cancellables)
     }
 
-    /// Turning the alerts off forgets what was passed, so turning them on again doesn't announce what already is.
     private func announceLimits(_ providers: [AIUsageModel.Provider]) {
-        guard settings.limitAlerts else {
-            limitAlerts = LimitAlerts()
-            return
-        }
+        guard settings.limitAlerts else { return }
         let alerts = limitAlerts.step(providers, now: .now)
         if let first = alerts.first {
             _ = hud.showLasting(duration: CalendarModel.alertSpacing) {
