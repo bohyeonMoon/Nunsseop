@@ -600,3 +600,9 @@
 "No notice to go back to" = "Keine Mitteilung, zu der man zurückkehren kann";
 "New actions start empty. You'll be told when another app already uses a combination." = "Neue Aktionen starten leer. Du wirst benachrichtigt, wenn eine andere App eine Kombination schon verwendet.";
 "Already used by “%@”. Pick a different combination." = "Wird bereits für „%@“ verwendet. Wähle eine andere Kombination.";
+"Connect %@?" = "%@ verbinden?";
+"%@ will change like this." = "%@ ändert sich so.";
+"%@ will be created." = "%@ wird angelegt.";
+"The current file is kept as %@." = "Die aktuelle Datei bleibt als %@ erhalten.";
+"… %lld more lines" = "… %lld weitere Zeilen";
+"Hooks you already had stay as they are. Disconnecting takes out only Nunsseop's lines." = "Bereits vorhandene Hooks bleiben unverändert. Beim Trennen werden nur die Zeilen von Nunsseop entfernt.";

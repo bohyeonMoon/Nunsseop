@@ -600,3 +600,9 @@
 "No notice to go back to" = "没有可前往的通知";
 "New actions start empty. You'll be told when another app already uses a combination." = "新增的操作默认为空。如果其他 App 已在使用某个组合，会提醒你。";
 "Already used by “%@”. Pick a different combination." = "已用于“%@”。请选择其他组合。";
+"Connect %@?" = "要连接 %@ 吗？";
+"%@ will change like this." = "%@ 将按如下方式更改。";
+"%@ will be created." = "将创建 %@。";
+"The current file is kept as %@." = "当前文件将保留为 %@。";
+"… %lld more lines" = "… 另外 %lld 行";
+"Hooks you already had stay as they are. Disconnecting takes out only Nunsseop's lines." = "你原有的钩子保持不变。断开连接时只会移除 Nunsseop 添加的行。";

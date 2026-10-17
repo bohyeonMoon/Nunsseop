@@ -625,3 +625,9 @@
 "No notice to go back to" = "돌아갈 알림이 없어요";
 "New actions start empty. You'll be told when another app already uses a combination." = "새로 생긴 동작은 비워 둡니다. 다른 앱이 이미 쓰는 조합이면 알려 드려요.";
 "Already used by “%@”. Pick a different combination." = "이미 “%@”에 쓰고 있어요. 다른 조합을 고르세요.";
+"Connect %@?" = "%@를 연결할까요?";
+"%@ will change like this." = "%@ 파일이 이렇게 바뀝니다.";
+"%@ will be created." = "%@ 파일이 새로 만들어집니다.";
+"The current file is kept as %@." = "현재 파일은 %@ 이름으로 보관됩니다.";
+"… %lld more lines" = "… %lld줄 더";
+"Hooks you already had stay as they are. Disconnecting takes out only Nunsseop's lines." = "이미 쓰던 훅은 그대로 둡니다. 연결을 끊으면 Nunsseop이 넣은 줄만 빠집니다.";

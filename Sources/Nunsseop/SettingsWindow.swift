@@ -504,6 +504,7 @@ private struct AlertsPane: View {
     @ObservedObject var settings: AppSettings
     @State private var connected: Set<NotifyIntegration> = []
     @State private var failed: URL?
+    @State private var connecting: ConnectRequest?
     @State private var terminals = ResumeTerminal.installed
     @State private var muxyBridge = MuxyBridge.status()
     @State private var paseo = PaseoStatus.current()
@@ -679,6 +680,12 @@ private struct AlertsPane: View {
             }
         }
         .formStyle(.grouped)
+        .sheet(item: $connecting) { request in
+            ConnectSheet(request: request, cancel: { connecting = nil }, connect: {
+                connecting = nil
+                connect(request.tool)
+            })
+        }
     }
 
     private func refreshConnections() {
@@ -694,9 +701,31 @@ private struct AlertsPane: View {
         muxyBridge = MuxyBridge.status()
     }
 
+    /// Connecting asks first, with the lines it would change; disconnecting doesn't.
     private func toggle(_ tool: NotifyIntegration) {
+        guard !connected.contains(tool) else {
+            do {
+                try tool.uninstall()
+                failed = nil
+            } catch {
+                failed = tool.file(failing: error)
+            }
+            return refreshConnections()
+        }
         do {
-            if connected.contains(tool) { try tool.uninstall() } else { try tool.install() }
+            if let request = ConnectRequest(tool: tool, changes: try tool.changes()) {
+                connecting = request
+            } else {
+                connect(tool)
+            }
+        } catch {
+            failed = tool.file(failing: error)
+        }
+    }
+
+    private func connect(_ tool: NotifyIntegration) {
+        do {
+            try tool.install()
             failed = nil
         } catch {
             failed = tool.file(failing: error)

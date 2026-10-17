@@ -600,3 +600,9 @@
 "No notice to go back to" = "移動先のある通知はありません";
 "New actions start empty. You'll be told when another app already uses a combination." = "新しい操作は空のままです。他のアプリがすでに使っている組み合わせなら、お知らせします。";
 "Already used by “%@”. Pick a different combination." = "すでに「%@」で使っています。別の組み合わせを選んでください。";
+"Connect %@?" = "%@を接続しますか？";
+"%@ will change like this." = "%@ は次のように変わります。";
+"%@ will be created." = "%@ が新しく作成されます。";
+"The current file is kept as %@." = "現在のファイルは %@ として保管されます。";
+"… %lld more lines" = "… さらに %lld 行";
+"Hooks you already had stay as they are. Disconnecting takes out only Nunsseop's lines." = "もともとあったフックはそのまま残ります。接続を解除すると、Nunsseop の行だけが取り除かれます。";
