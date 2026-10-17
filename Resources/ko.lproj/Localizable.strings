@@ -615,3 +615,35 @@
 "This, once per update" = "업데이트마다 딱 한 번, 이 화면";
 "Says what's new, then gets out of your way" = "새로 생긴 걸 알려 주고 조용히 빠져요";
 "Got it" = "알겠어요";
+
+/* Weekly recap */
+"What your brow saw last week" = "지난주, 눈썹이 지켜본 것";
+"Agent working time" = "에이전트가 일한 시간";
+"Sessions" = "세션";
+"Lines changed" = "바뀐 줄";
+"Tokens" = "토큰";
+"Most worked project" = "가장 많이 한 곳";
+"Longest session" = "가장 긴 세션";
+"Busiest day: %@" = "가장 바쁜 날: %@";
+"Busiest day" = "가장 바쁜 날";
+"↑ %@ vs the week before" = "지지난주보다 %@ 더";
+"↓ %@ vs the week before" = "지지난주보다 %@ 덜";
+"Same as the week before" = "지지난주와 비슷해요";
+"Nothing the week before" = "지지난주엔 기록이 없어요";
+"1 file" = "파일 1개";
+"%@ of the time" = "전체 시간의 %@";
+"%@ morning" = "%@ 아침";
+"%@ afternoon" = "%@ 오후";
+"%@ evening" = "%@ 저녁";
+"%@ night" = "%@ 밤";
+"1 project" = "프로젝트 1곳";
+"%lld projects" = "프로젝트 %lld곳";
+"Names hidden" = "이름은 숨김";
+"Save image" = "이미지로 저장";
+"Saved to Downloads" = "다운로드에 저장했어요";
+"Couldn't save the image" = "이미지를 저장하지 못했어요";
+"A quiet week" = "조용한 한 주였어요";
+"No Claude Code or Codex sessions last week, so there is nothing to look back on." = "지난주에는 Claude Code나 Codex 세션이 없어서 돌아볼 내용이 없어요.";
+"Last week" = "지난주";
+"Recap last week's agent work on Mondays" = "월요일에 지난주 에이전트 작업 요약 보기";
+"Added up on this Mac from the session files of Claude Code and Codex, and never sent anywhere. The AI tab can show it any time." = "Claude Code와 Codex의 세션 파일로 이 Mac에서만 계산하고, 어디에도 보내지 않아요. AI 탭에서 언제든 다시 볼 수 있어요.";

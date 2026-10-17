@@ -90,7 +90,7 @@ struct NotchView: View {
                                 case .emoji:
                                     EmojiTab(model: model.emoji)
                                 case .ai:
-                                    AIUsageTab(usage: model.aiUsage)
+                                    AIUsageTab(usage: model.aiUsage) { model.recap.show() }
                                 case .notices:
                                     NoticesTab(log: model.notices)
                                 case .agents:
@@ -99,10 +99,13 @@ struct NotchView: View {
                                     MirrorTab(mirror: model.mirror, deviceID: model.settings.mirrorCameraID)
                                 }
                             }
-                            .allowsHitTesting(model.approvals.current == nil)
-                            .disabled(model.approvals.current != nil)
-                            .opacity(model.approvals.current == nil ? 1 : 0)
-                            .accessibilityHidden(model.approvals.current != nil)
+                            .allowsHitTesting(model.approvals.current == nil && !model.recap.isShowing)
+                            .disabled(model.approvals.current != nil || model.recap.isShowing)
+                            .opacity(model.approvals.current == nil && !model.recap.isShowing ? 1 : 0)
+                            .accessibilityHidden(model.approvals.current != nil || model.recap.isShowing)
+                            if model.recap.isShowing && model.approvals.current == nil {
+                                RecapView(card: model.recap)
+                            }
                             if let prompt = model.approvals.current {
                                 PermissionPanel(prompt: prompt, count: model.approvals.prompts.count, gate: model.approvals.gate,
                                                 draft: model.approvals.draft(for: prompt), act: { model.approvals.act(prompt, $0) }) {

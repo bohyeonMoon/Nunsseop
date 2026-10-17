@@ -131,6 +131,7 @@ final class NotchViewModel: ObservableObject {
     let appMenus = AppMenuWatcher()
     let emoji = EmojiModel()
     let aiUsage = AIUsageModel()
+    let recap = RecapCard()
     lazy var search = QuickSearchModel(clipboard: clipboard, emoji: emoji, tools: tools)
     let recorder = ScreenRecorder()
     /// Set when opened by the hotkey; the notch then stays open until the pointer visits it or Escape is pressed.
@@ -266,6 +267,22 @@ final class NotchViewModel: ObservableObject {
         onboarding.objectWillChange
             .sink { [weak self] in self?.objectWillChange.send() }
             .store(in: &cancellables)
+        recap.objectWillChange
+            .sink { [weak self] in self?.objectWillChange.send() }
+            .store(in: &cancellables)
+        $isExpanded.removeDuplicates()
+            .sink { [weak self] expanded in
+                guard let self else { return }
+                if expanded {
+                    recap.notchOpened(enabled: settings.weeklyRecap) { [weak self] in self?.canShowRecap == true }
+                } else {
+                    recap.close()
+                }
+            }
+            .store(in: &cancellables)
+        $tab.removeDuplicates().dropFirst()
+            .sink { [weak self] _ in self?.recap.close() }
+            .store(in: &cancellables)
         approvals.$drafts
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
@@ -385,6 +402,10 @@ final class NotchViewModel: ObservableObject {
         if settings.widenForTabs { width = Self.widened(width, fitting: widthFittingTabs, limit: geometry.maxExpandedWidth) }
         // A permission prompt shows its command in full, so it takes all the height the panel has.
         var height = approvals.current == nil ? settings.expandedHeight : max(settings.expandedHeight, AppSettings.expandedHeightRange.upperBound)
+        if recap.isShowing {
+            width = max(width, RecapView.minimumSize.width)
+            height = max(height, RecapView.minimumSize.height)
+        }
         // The tour is laid out for this much room.
         if onboarding.isActive {
             let frame = OnboardingTour.minimumFrame(notchHeight: geometry.collapsedSize.height)
@@ -845,6 +866,11 @@ final class NotchViewModel: ObservableObject {
     /// one that is hidden.
     nonisolated static func tabAfterCollapse(_ tab: NotchTab, isVisible: (NotchTab) -> Bool) -> NotchTab {
         visibleTab(tab == .mirror ? .home : tab, isVisible: isVisible)
+    }
+
+    /// The recap waits for the tour and for a permission prompt, which have the notch first.
+    private var canShowRecap: Bool {
+        isExpanded && !onboarding.isActive && !onboarding.isPending && approvals.current == nil
     }
 
     func expand() {

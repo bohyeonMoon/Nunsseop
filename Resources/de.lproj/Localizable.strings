@@ -590,3 +590,35 @@
 "This, once per update" = "Das hier, einmal pro Update";
 "Says what's new, then gets out of your way" = "Sagt, was neu ist, und verschwindet wieder";
 "Got it" = "Verstanden";
+
+/* Weekly recap */
+"What your brow saw last week" = "Was deine Braue letzte Woche sah";
+"Agent working time" = "Agenten-Arbeitszeit";
+"Sessions" = "Sitzungen";
+"Lines changed" = "Geänderte Zeilen";
+"Tokens" = "Tokens";
+"Most worked project" = "Meistbearbeitetes Projekt";
+"Longest session" = "Längste Sitzung";
+"Busiest day: %@" = "Aktivster Tag: %@";
+"Busiest day" = "Aktivster Tag";
+"↑ %@ vs the week before" = "↑ %@ zur Vorwoche";
+"↓ %@ vs the week before" = "↓ %@ zur Vorwoche";
+"Same as the week before" = "Wie in der Vorwoche";
+"Nothing the week before" = "In der Vorwoche nichts";
+"1 file" = "1 Datei";
+"%@ of the time" = "%@ der Zeit";
+"%@ morning" = "%@ morgens";
+"%@ afternoon" = "%@ nachmittags";
+"%@ evening" = "%@ abends";
+"%@ night" = "%@ nachts";
+"1 project" = "1 Projekt";
+"%lld projects" = "%lld Projekte";
+"Names hidden" = "Namen ausgeblendet";
+"Save image" = "Bild sichern";
+"Saved to Downloads" = "In Downloads gesichert";
+"Couldn't save the image" = "Bild konnte nicht gesichert werden";
+"A quiet week" = "Eine ruhige Woche";
+"No Claude Code or Codex sessions last week, so there is nothing to look back on." = "Letzte Woche gab es keine Sitzungen von Claude Code oder Codex, daher gibt es nichts zum Zurückblicken.";
+"Last week" = "Letzte Woche";
+"Recap last week's agent work on Mondays" = "Montags die Agenten-Arbeit der letzten Woche zusammenfassen";
+"Added up on this Mac from the session files of Claude Code and Codex, and never sent anywhere. The AI tab can show it any time." = "Wird auf diesem Mac aus den Sitzungsdateien von Claude Code und Codex berechnet und nirgendwohin gesendet. Der KI-Tab zeigt sie jederzeit.";

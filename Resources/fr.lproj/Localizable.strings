@@ -590,3 +590,35 @@
 "This, once per update" = "Ceci, une fois par mise à jour";
 "Says what's new, then gets out of your way" = "Dit ce qui change, puis s’efface";
 "Got it" = "Compris";
+
+/* Weekly recap */
+"What your brow saw last week" = "La semaine passée vue par votre sourcil";
+"Agent working time" = "Temps de travail";
+"Sessions" = "Sessions";
+"Lines changed" = "Lignes modifiées";
+"Tokens" = "Jetons";
+"Most worked project" = "Projet le plus travaillé";
+"Longest session" = "Session la plus longue";
+"Busiest day: %@" = "Jour le plus chargé : %@";
+"Busiest day" = "Jour le plus chargé";
+"↑ %@ vs the week before" = "↑ %@ vs sem. d’avant";
+"↓ %@ vs the week before" = "↓ %@ vs sem. d’avant";
+"Same as the week before" = "Comme la semaine d’avant";
+"Nothing the week before" = "Rien la semaine d’avant";
+"1 file" = "1 fichier";
+"%@ of the time" = "%@ du temps";
+"%@ morning" = "%@ matin";
+"%@ afternoon" = "%@ après-midi";
+"%@ evening" = "%@ soir";
+"%@ night" = "%@ nuit";
+"1 project" = "1 projet";
+"%lld projects" = "%lld projets";
+"Names hidden" = "Noms masqués";
+"Save image" = "Enregistrer l’image";
+"Saved to Downloads" = "Enregistrée dans Téléchargements";
+"Couldn't save the image" = "Impossible d’enregistrer l’image";
+"A quiet week" = "Une semaine tranquille";
+"No Claude Code or Codex sessions last week, so there is nothing to look back on." = "Aucune session de Claude Code ou de Codex la semaine passée : rien à passer en revue.";
+"Last week" = "Semaine passée";
+"Recap last week's agent work on Mondays" = "Résumer le travail des agents de la semaine passée le lundi";
+"Added up on this Mac from the session files of Claude Code and Codex, and never sent anywhere. The AI tab can show it any time." = "Calculé sur ce Mac à partir des fichiers de session de Claude Code et de Codex, et jamais envoyé ailleurs. L’onglet IA peut l’afficher à tout moment.";

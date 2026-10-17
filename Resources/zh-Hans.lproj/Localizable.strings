@@ -590,3 +590,35 @@
 "This, once per update" = "每次更新只出现一次的这个页面";
 "Says what's new, then gets out of your way" = "说完新变化就安静退场";
 "Got it" = "知道了";
+
+/* Weekly recap */
+"What your brow saw last week" = "上周，眉毛看到的一切";
+"Agent working time" = "代理工作时长";
+"Sessions" = "会话";
+"Lines changed" = "修改的行数";
+"Tokens" = "令牌";
+"Most worked project" = "工作最多的项目";
+"Longest session" = "最长的会话";
+"Busiest day: %@" = "最忙的一天：%@";
+"Busiest day" = "最忙的一天";
+"↑ %@ vs the week before" = "比前一周多 %@";
+"↓ %@ vs the week before" = "比前一周少 %@";
+"Same as the week before" = "与前一周相近";
+"Nothing the week before" = "前一周没有记录";
+"1 file" = "1 个文件";
+"%@ of the time" = "占总时间的 %@";
+"%@ morning" = "%@早上";
+"%@ afternoon" = "%@下午";
+"%@ evening" = "%@傍晚";
+"%@ night" = "%@夜里";
+"1 project" = "1 个项目";
+"%lld projects" = "%lld 个项目";
+"Names hidden" = "名称已隐藏";
+"Save image" = "保存图片";
+"Saved to Downloads" = "已存到“下载”";
+"Couldn't save the image" = "无法保存图片";
+"A quiet week" = "平静的一周";
+"No Claude Code or Codex sessions last week, so there is nothing to look back on." = "上周没有 Claude Code 或 Codex 会话，暂时没有可回顾的内容。";
+"Last week" = "上周";
+"Recap last week's agent work on Mondays" = "周一回顾上周代理的工作";
+"Added up on this Mac from the session files of Claude Code and Codex, and never sent anywhere. The AI tab can show it any time." = "根据 Claude Code 和 Codex 的会话文件在本机统计，不会发送到任何地方。随时可在 AI 标签页查看。";

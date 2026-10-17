@@ -130,6 +130,8 @@ final class AppSettings: ObservableObject {
     @Published var weatherCity: String = AppSettings.load("weatherCity", default: "") { didSet { save(weatherCity, "weatherCity") } }
     @Published var downloadAlerts: Bool = AppSettings.load("downloadAlerts", default: true) { didSet { save(downloadAlerts, "downloadAlerts") } }
     @Published var limitAlerts: Bool = AppSettings.load("limitAlerts", default: true) { didSet { save(limitAlerts, "limitAlerts") } }
+    /// Shows last week's recap of the agents' work the first time the notch opens in a week; the AI tab shows it either way.
+    @Published var weeklyRecap: Bool = AppSettings.load("weeklyRecap", default: true) { didSet { save(weeklyRecap, "weeklyRecap") } }
     /// Shaking the pointer while dragging files shows a drop target that adds them to the shelf.
     @Published var shakeToShelf: Bool = AppSettings.load("shakeToShelf", default: true) { didSet { save(shakeToShelf, "shakeToShelf") } }
     @Published var downloadsToShelf: Bool = AppSettings.load("downloadsToShelf", default: false) { didSet { save(downloadsToShelf, "downloadsToShelf") } }

@@ -32,7 +32,10 @@ struct HeaderBar: View {
         HeaderRow(tabs: model.settings.visibleTabs, selected: model.tab,
                   badges: [.shelf: shelf.items.count, .notices: model.notices.unseen],
                   width: model.expandedSize.width, hasNotch: model.geometry.hasNotch, notchWidth: model.geometry.collapsedSize.width,
-                  showsDate: model.settings.headerDate, height: height) { model.tab = $0 }
+                  showsDate: model.settings.headerDate, height: height) {
+            model.recap.close()
+            model.tab = $0
+        }
     }
 }
 
