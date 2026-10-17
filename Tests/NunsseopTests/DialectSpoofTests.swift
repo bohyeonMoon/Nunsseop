@@ -25,7 +25,7 @@ struct DialectSpoofTests {
             ("replace_file_content", "TargetFile", "file_path", ["TargetContent": "a", "ReplacementContent": "b"]),
             ("replace_file_content", "TargetContent", "old_string", ["TargetFile": "/a", "ReplacementContent": "b"]),
             ("replace_file_content", "ReplacementContent", "new_string", ["TargetFile": "/a", "TargetContent": "a"]),
-            ("multi_replace_file_content", "TargetFile", "file_path", [:]),
+            ("multi_replace_file_content", "TargetFile", "file_path", ["ReplacementChunks": [["TargetContent": "a", "ReplacementContent": "b"]]]),
         ]
         for pair in pairs {
             let honest = pair.others.merging([pair.real: "real value"]) { $1 }
@@ -42,8 +42,8 @@ struct DialectSpoofTests {
         for name in ["command", "file_path", "content", "old_string", "new_string", "edits", "url", "description", "run_in_background", "dangerouslyDisableSandbox"] {
             #expect(parse(agy("run_command", ["CommandLine": "ls", name: "x"]), .agy) == nil, "\(name)")
         }
-        // Its own fields, whatever they are, are listed.
-        #expect(parse(agy("run_command", ["CommandLine": "ls", "Cwd": "/a", "Anything": 1]), .agy)?.prompt.secondary == "Anything: 1\nCwd: /a")
+        // Its own fields are listed.
+        #expect(parse(agy("run_command", ["CommandLine": "ls", "Cwd": "/a", "WaitMsBeforeAsync": 1]), .agy)?.prompt.secondary == "Cwd: /a\nWaitMsBeforeAsync: 1")
     }
 
     // MARK: Copilot
@@ -62,8 +62,10 @@ struct DialectSpoofTests {
         for name in ["file_path", "content", "url", "description", "edits"] {
             #expect(parse(honest.merging([name: "x"]) { $1 }, .copilot) == nil, "\(name)")
         }
-        // Other fields of the envelope are listed.
-        #expect(parse(honest.merging(["fullCommandText": "ls"]) { $1 }, .copilot)?.prompt.secondary == "fullCommandText: ls")
+        // Another field that could be the command is no other field of the envelope: which one runs?
+        #expect(parse(honest.merging(["fullCommandText": "ls"]) { $1 }, .copilot) == nil)
+        // Fields of a tool the card has no headline for are listed.
+        #expect(parse(copilot(["toolName": "view", "toolArgs": ["x": 1], "kind": "read"]), .copilot)?.prompt.detail.contains("\"kind\" : \"read\"") == true)
     }
 
     @Test func copilotHasNoCardWhenTheNameOrTheArgumentsComeInTwoPlaces() {
@@ -128,6 +130,133 @@ struct DialectSpoofTests {
         let cursorResult = try #require(await cursorHook.finish())
         #expect(cursorResult.stdout == "" && cursorResult.status == 1)
         #expect(server.events.prompts.isEmpty)
+    }
+
+    // MARK: Other spellings, texts with a key twice, fields the card can't show
+
+    @Test func antigravityKnowsOnlyTheArgumentsItsDocsNameAndSpelledAsTheyAre() {
+        let honest: [String: Any] = ["CommandLine": "ls"]
+        #expect(parse(agy("run_command", honest), .agy) != nil)
+        for key in ["commandLine", "commandline", "command_line", "COMMANDLINE", "Command", "cmd", "CommandLine ", "Env", "Args"] {
+            #expect(parse(agy("run_command", honest.merging([key: "rm -rf ~"]) { $1 }), .agy) == nil, "\(key)")
+            #expect(parse(agy("run_command", [key: "rm -rf ~"]), .agy) == nil, "only \(key)")
+        }
+        let bases: [String: [String: Any]] = [
+            "write_to_file": ["TargetFile": "/a", "CodeContent": "x"],
+            "replace_file_content": ["TargetFile": "/a", "TargetContent": "a", "ReplacementContent": "b"],
+            "multi_replace_file_content": ["TargetFile": "/a", "ReplacementChunks": [["TargetContent": "a", "ReplacementContent": "b"]]]]
+        for (tool, key) in [("write_to_file", "targetFile"), ("write_to_file", "codeContent"), ("replace_file_content", "target_content"),
+                            ("replace_file_content", "replacementcontent"), ("multi_replace_file_content", "TARGETFILE"), ("write_to_file", "filePath")] {
+            let base = bases[tool]!
+            #expect(parse(agy(tool, base), .agy) != nil, "\(tool) alone")
+            #expect(parse(agy(tool, base.merging([key: "/etc/passwd"]) { $1 }), .agy) == nil, "\(tool) \(key)")
+        }
+        // A field of the tool's call besides its name and arguments is not shown either.
+        let call: [String: Any] = ["conversationId": "c", "toolCall": ["name": "run_command", "args": honest, "overrideArgs": ["CommandLine": "rm -rf ~"]]]
+        #expect(parse(call, .agy) == nil)
+        #expect(parse(["toolCall": ["name": "run_command", "args": honest, "id": "call-1"]], .agy) != nil)
+    }
+
+    @Test func antigravityNeedsTheFieldsAToolCannotDoWithout() {
+        #expect(parse(agy("run_command", ["Cwd": "/a"]), .agy) == nil)
+        #expect(parse(agy("run_command", ["CommandLine": ""]), .agy) == nil)
+        #expect(parse(agy("run_command", ["CommandLine": ["ls"]]), .agy) == nil)
+        #expect(parse(agy("write_to_file", ["TargetFile": "/a"]), .agy) == nil)
+        #expect(parse(agy("write_to_file", ["TargetFile": "/a", "CodeContent": ""]), .agy) != nil)
+        #expect(parse(agy("replace_file_content", ["TargetFile": "/a", "TargetContent": "a"]), .agy) == nil)
+        #expect(parse(agy("multi_replace_file_content", ["TargetFile": "/a"]), .agy) == nil)
+        #expect(parse(agy("multi_replace_file_content", ["TargetFile": "/a", "ReplacementChunks": "oops"]), .agy) == nil)
+    }
+
+    @Test func antigravityShowsEveryChunkOfAMultiEdit() throws {
+        let chunks: [[String: Any]] = [["TargetContent": "first", "ReplacementContent": "one"], ["TargetContent": "second", "ReplacementContent": "two"]]
+        let prompt = try #require(parse(agy("multi_replace_file_content", ["TargetFile": "/a", "ReplacementChunks": chunks, "Instruction": "rename"]), .agy)).prompt
+        for word in ["first", "one", "second", "two"] { #expect(prompt.secondary.contains(word), "\(word)") }
+        #expect(prompt.secondary.contains("Instruction: rename"))
+    }
+
+    @Test func copilotHasNoCardForAnotherSpellingOfTheNameOrTheArgumentsOfTheCommand() {
+        let honest = copilot(["toolName": "bash", "toolArgs": ["command": "ls"]])
+        #expect(parse(honest, .copilot) != nil)
+        for key in ["ToolArgs", "tool_args", "toolargs", "ToolInput", "toolinput", "ToolName", "toolname"] {
+            #expect(parse(honest.merging([key: ["command": "rm -rf ~"]]) { $1 }, .copilot) == nil, "\(key)")
+        }
+        for key in ["cmd", "Command", "commandLine", "command_line", "script", "args", "path", "text"] {
+            #expect(parse(copilot(["toolName": "bash", "toolArgs": ["command": "ls", key: "rm -rf ~"]]), .copilot) == nil, "\(key)")
+        }
+        // A tool with no headline shows every field with its name, and a field named so is one of them.
+        let card = parse(copilot(["toolName": "view", "toolArgs": ["cmd": "x", "path": "/a"]]), .copilot)?.prompt
+        #expect(card?.title == "view" && card?.detail.contains("\"cmd\" : \"x\"") == true)
+        // A tool of Claude Code's names gets the same care.
+        #expect(parse(copilot(["toolName": "Write", "toolArgs": ["file_path": "/a", "content": "x", "filePath": "/b"]]), .copilot) == nil)
+    }
+
+    @Test func aTextWithAKeyTwiceGetsNoCard() {
+        let twice = #"{"command":"ls","command":"rm -rf ~"}"#
+        #expect(parse(copilot(["toolName": "bash", "toolArgs": #"{"command":"ls"}"#]), .copilot) != nil)
+        #expect(parse(copilot(["toolName": "bash", "toolArgs": twice]), .copilot) == nil)
+        #expect(parse(copilot(["toolName": "bash", "toolInput": twice]), .copilot) == nil)
+        #expect(parse(copilot(["toolName": "bash", "toolArgs": #"{"command":"ls","command":"rm -rf ~"}"#]), .copilot) == nil)
+        #expect(parse(copilot(["toolName": "tool", "toolArgs": #"{"a":{"b":1,"b":2}}"#]), .copilot) == nil)
+        #expect(parse(copilot(["toolName": "tool", "toolArgs": #"{"a":[{"b":1},{"c":2,"c":3}]}"#]), .copilot) == nil)
+        // Keys that are two spellings of the same letters are one key to some parsers.
+        #expect(parse(copilot(["toolName": "tool", "toolArgs": "{\"\u{e9}\":1,\"e\u{301}\":2}"]), .copilot) == nil)
+        #expect(parse(cursorMCP(["tool_input": twice]), .cursor) == nil)
+        // And in the text of the whole request, where Foundation keeps one of two.
+        let raw = #"{"sessionId":"s","toolName":"view","toolName":"bash","toolArgs":{"command":"ls"}}"#
+        #expect(PermissionPrompt.parse(Data(raw.utf8), dialect: .copilot) == nil)
+        let rawAgy = #"{"toolCall":{"name":"run_command","args":{"CommandLine":"ls","CommandLine":"rm -rf ~"}}}"#
+        #expect(PermissionPrompt.parse(Data(rawAgy.utf8), dialect: .agy) == nil)
+        let rawCursor = #"{"hook_event_name":"beforeShellExecution","command":"ls","command":"rm -rf ~","sandbox":true}"#
+        #expect(PermissionPrompt.parse(Data(rawCursor.utf8), dialect: .cursor) == nil)
+    }
+
+    @Test func argumentsThatAreNoObjectGetNoCard() {
+        for args in ["ls", "[1]", "42", "null", "\"x\"", "{", "{\"a\":1} trailing", "{'a':1}"] {
+            #expect(parse(copilot(["toolName": "bash", "toolArgs": args]), .copilot) == nil, "\(args)")
+            #expect(parse(cursorMCP(["tool_input": args]), .cursor) == nil, "\(args)")
+        }
+        #expect(parse(copilot(["toolName": "bash", "toolArgs": [1, 2]]), .copilot) == nil)
+        #expect(parse(copilot(["toolName": "bash", "toolArgs": 5]), .copilot) == nil)
+        // Nothing at all is no arguments, which a tool may take.
+        #expect(parse(copilot(["toolName": "tool"]), .copilot) != nil && parse(copilot(["toolName": "tool", "toolArgs": ""]), .copilot) != nil)
+    }
+
+    @Test func cursorShowsWhereACommandRunsWholeAndEveryOtherFieldOfTheCall() throws {
+        let prompt = try #require(parse(cursorShell(["sandbox": true, "cwd": "/Users/me/a/web", "env": ["PATH": "/evil"], "timeout": 5]), .cursor)).prompt
+        #expect(prompt.detail == "make" && prompt.folder == "web")
+        #expect(prompt.secondary == "cwd: /Users/me/a/web\nenv: {\"PATH\":\"/evil\"}\nsandbox: true\ntimeout: 5")
+        // The other fields of the hook, which say who and where, are not part of the call.
+        #expect(parse(cursorShell(["conversation_id": "c", "generation_id": "g", "workspace_roots": ["/a"], "model": "m"]), .cursor)?.prompt.secondary == "cwd: /Users/me/p")
+        for key in ["cmd", "Command", "commandLine", "script", "args", "path"] {
+            #expect(parse(cursorShell([key: "rm -rf ~"]), .cursor) == nil, "\(key)")
+        }
+        for key in ["description", "run_in_background", "file_path", "url"] {
+            #expect(parse(cursorShell([key: "x"]), .cursor) == nil, "\(key)")
+        }
+        // An MCP call lists every field it has as well, and none may be the name of another.
+        let mcp = try #require(parse(cursorMCP(["headers": ["a": "b"]]), .cursor)).prompt
+        #expect(mcp.detail.contains("\"headers\"") && mcp.detail.contains("\"title\" : \"Bug\""))
+        #expect(parse(cursorMCP(["tool_input": #"{"headers":1}"#, "headers": 2]), .cursor) == nil)
+    }
+
+    // MARK: Strict JSON
+
+    @Test func strictJSONFindsAKeyTwiceAtAnyDepthAndNothingElse() {
+        func twice(_ text: String) -> Bool { StrictJSON.hasDuplicateKeys(Data(text.utf8)) }
+        for text in [#"{"a":1,"a":2}"#, #"{"a":{"b":1,"b":2}}"#, #"[{"a":1},{"b":1,"b":1}]"#, #"{"a":"x","a":"y"}"#, "{\"\u{e9}\":1,\"e\u{301}\":2}",
+                     #"{"a":1,"b":{"c":[{"d":1,"d":2}]}}"#] {
+            #expect(twice(text), "\(text)")
+        }
+        for text in [#"{"a":1,"b":2}"#, #"{"a":{"a":1},"b":[{"a":1},{"a":2}]}"#, "{}", "[]", #"{"a":"a","b":"a"}"#, #"  {"a" : [1, 2.5e3, true, null, "x\"y"]}  "#,
+                     #"{"a\"b":1,"a":2}"#] {
+            #expect(!twice(text), "\(text)")
+        }
+        // What is not well formed counts as ambiguous.
+        for text in ["", "{", #"{"a":1,}"#, #"{"a" 1}"#, #"{"a":1} x"#, #"{"a":"\ud800","b":1}"#, String(repeating: "[", count: 100)] {
+            #expect(twice(text), "\(text)")
+        }
+        #expect(StrictJSON.object(from: #"{"a":1}"#)?["a"] as? Int == 1 && StrictJSON.object(from: "[1]") == nil && StrictJSON.object(from: #"{"a":1,"a":1}"#) == nil)
     }
 
     // MARK: The same checks as for Claude Code

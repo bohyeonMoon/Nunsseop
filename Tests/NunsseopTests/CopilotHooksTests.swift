@@ -244,9 +244,8 @@ struct CopilotApprovalTests {
                                "fullCommandText": "create issue Bug"])
         #expect(prompt.title == "github-mcp-server-create_issue" && prompt.symbol == "puzzlepiece.extension")
         #expect(prompt.detail.contains("\"title\" : \"Bug\"") && prompt.detail.contains("\"fullCommandText\" : \"create issue Bug\""))
-        // Arguments that are no JSON object are shown as they came.
-        let plain = try card(["toolName": "view", "toolArgs": "/Users/me/file.txt"])
-        #expect(plain.title == "view" && plain.detail.contains("/Users/me/file.txt"))
+        // Arguments that are no JSON object leave open what runs: Copilot asks for itself.
+        #expect(PermissionPrompt.parse(body(["toolName": "view", "toolArgs": "/Users/me/file.txt"]), dialect: .copilot) == nil)
     }
 
     @Test func aRequestThatSaysNothingOfTheToolGetsNoCard() throws {

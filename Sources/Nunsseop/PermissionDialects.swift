@@ -64,8 +64,23 @@ enum PermissionDialect: String {
     /// listing) isn't, and the hook doesn't even start the dance with the server for them.
     static let antigravityTools = ["run_command", "write_to_file", "replace_file_content", "multi_replace_file_content"]
 
-    /// The request as Claude Code's `PermissionRequest` hook would have sent it; nil when the call is none that is put to the user, or says
-    /// nothing of what it is.
+    /// The arguments each of them has, by the docs, and the ones a call cannot do without (and that are text). A call with any other
+    /// argument has a field the card can't be sure of, and gets none: Antigravity asks for itself.
+    private static let antigravityArguments: [String: (all: Set<String>, text: [String])] = [
+        "run_command": (["CommandLine", "Cwd", "WaitMsBeforeAsync", "RunPersistent", "RequestedTerminalID"], ["CommandLine"]),
+        "write_to_file": (["TargetFile", "Overwrite", "CodeContent", "Description", "IsArtifact", "ArtifactMetadata"], ["TargetFile", "CodeContent"]),
+        "replace_file_content": (["TargetFile", "Instruction", "Description", "AllowMultiple", "TargetContent", "ReplacementContent", "StartLine",
+                                  "EndLine", "TargetLintErrorIds"], ["TargetFile", "TargetContent", "ReplacementContent"]),
+        "multi_replace_file_content": (["TargetFile", "Instruction", "Description", "ReplacementChunks", "TargetLintErrorIds", "ArtifactMetadata"], ["TargetFile"]),
+    ]
+
+    /// The fields of every Cursor hook that say who and where, not what: the card needs none of them. Any other field of a call is part of
+    /// it, and listed.
+    private static let cursorEnvelope: Set<String> = ["conversation_id", "generation_id", "model", "model_id", "model_params", "hook_event_name",
+                                                      "cursor_version", "workspace_roots", "user_email", "transcript_path"]
+
+    /// The request as Claude Code's `PermissionRequest` hook would have sent it; nil when the call is none that is put to the user, says
+    /// nothing of what it is, or leaves open what it is.
     func normalized(_ json: [String: Any]) -> [String: Any]? {
         let call: (tool: String, input: [String: Any], cwd: String?)?
         switch self {
@@ -73,7 +88,7 @@ enum PermissionDialect: String {
         case .agy: call = antigravityCall(json)
         case .cursor: call = cursorCall(json)
         }
-        guard let call else { return nil }
+        guard let call, !Self.isAmbiguous(tool: call.tool, input: call.input) else { return nil }
         var request: [String: Any] = ["hook_event_name": "PermissionRequest", "tool_name": call.tool, "tool_input": call.input]
         request["cwd"] = call.cwd
         return request
@@ -84,11 +99,12 @@ enum PermissionDialect: String {
     private func copilotCall(_ json: [String: Any]) -> (tool: String, input: [String: Any], cwd: String?)? {
         let nameKeys = ["toolName", "tool_name", "kind"]
         guard let key = nameKeys.first(where: { (json[$0] as? String)?.isEmpty == false }), let name = json[key] as? String else { return nil }
-        // One name, one place for the arguments.
+        // One name, one place for the arguments; and no other spelling of either.
         if let camel = json["toolName"], let snake = json["tool_name"], (camel as? String) != (snake as? String) { return nil }
-        let places = ["toolInput", "tool_input", "toolArgs"].filter { json[$0] != nil }
-        guard places.count <= 1 else { return nil }
-        var input = Self.object(places.first.flatMap { json[$0] })
+        let places = ["toolInput", "tool_input", "toolArgs"]
+        guard json.keys.allSatisfy({ field in !["toolname", "toolinput", "toolargs"].contains(Self.spelled(field)) || ["toolName", "tool_name"].contains(field) || places.contains(field) }),
+              places.filter({ json[$0] != nil }).count <= 1 else { return nil }
+        guard var input = Self.arguments(places.first { json[$0] != nil }.flatMap { json[$0] }) else { return nil }
         // Docs: a sandbox bypass can't be allowed in advance, only denied; Copilot asks for it itself.
         guard input["requestSandboxBypass"] == nil, json["requestSandboxBypass"] == nil else { return nil }
         // Whatever else the request carries is part of the call, and is listed after the arguments, as long as it is not the same field as
@@ -105,8 +121,13 @@ enum PermissionDialect: String {
     // MARK: Antigravity
 
     private func antigravityCall(_ json: [String: Any]) -> (tool: String, input: [String: Any], cwd: String?)? {
-        guard let call = json["toolCall"] as? [String: Any], let name = call["name"] as? String, Self.antigravityTools.contains(name) else { return nil }
-        var args = call["args"] as? [String: Any] ?? [:]
+        guard let call = json["toolCall"] as? [String: Any], let name = call["name"] as? String, let known = Self.antigravityArguments[name],
+              call.keys.allSatisfy({ ["name", "args", "id", "callId", "toolCallId", "toolUseId"].contains($0) }) else { return nil }
+        guard var args = call["args"] as? [String: Any], args.keys.allSatisfy(known.all.contains),
+              name != "multi_replace_file_content" || args["ReplacementChunks"] is [Any],
+              known.text.allSatisfy({ (args[$0] as? String)?.isEmpty == false || (name == "write_to_file" && $0 == "CodeContent" && args[$0] is String) }) else { return nil }
+        // The folder it runs in is part of the call, and its arguments' own.
+        let cwd = args["Cwd"] as? String ?? (json["workspacePaths"] as? [Any])?.first as? String
         let tool: String
         let renames: [(String, String)]
         switch name {
@@ -116,35 +137,50 @@ enum PermissionDialect: String {
             (tool, renames) = ("Edit", [("TargetFile", "file_path"), ("TargetContent", "old_string"), ("ReplacementContent", "new_string")])
         default: (tool, renames) = ("Edit", [("TargetFile", "file_path")])
         }
-        // Antigravity's tools have none of Claude Code's field names: one in the arguments is not what runs.
+        // None of these tools has a field of Claude Code's names, and every field it has is listed with its own name.
         guard args.keys.allSatisfy({ !Self.meaningful.contains($0) }) else { return nil }
         for (key, claudeName) in renames { guard Self.rename(&args, key, to: claudeName) else { return nil } }
-        return (tool, args, args["Cwd"] as? String ?? (json["workspacePaths"] as? [Any])?.first as? String)
+        return (tool, args, cwd)
     }
 
     // MARK: Cursor
 
     private func cursorCall(_ json: [String: Any]) -> (tool: String, input: [String: Any], cwd: String?)? {
         let roots = (json["workspace_roots"] as? [Any])?.first as? String
+        // The fields of the hook that are the call's own are listed, whatever they are, and none may be read as a command or a file.
+        func rest(besides known: Set<String>) -> [String: Any]? {
+            var extra: [String: Any] = [:]
+            for (field, value) in json where !Self.cursorEnvelope.contains(field) && !known.contains(field) {
+                guard !Self.meaningful.contains(field) else { return nil }
+                extra[field] = value
+            }
+            return extra
+        }
         switch json["hook_event_name"] as? String {
         case "beforeShellExecution":
-            guard let command = json["command"] as? String, !command.isEmpty else { return nil }
+            guard let command = json["command"] as? String, !command.isEmpty, let extra = rest(besides: ["command", "cwd", "sandbox"]) else { return nil }
             // The docs don't say what `sandbox` means for this hook; a false (or anything but a true) may be a command that runs outside
             // the sandbox, which an allow may not govern. Cursor asks for itself.
             guard json["sandbox"] == nil || (json["sandbox"] as? NSNumber).map({ CFGetTypeID($0) == CFBooleanGetTypeID() && $0.boolValue }) == true else { return nil }
-            var input: [String: Any] = ["command": command]
+            // Where the command runs is part of it, and shown whole, not by the name of its last folder.
+            var input = extra.merging(["command": command]) { $1 }
             input["sandbox"] = json["sandbox"]
+            input["cwd"] = json["cwd"]
             return ("Bash", input, json["cwd"] as? String ?? roots)
         case "beforeMCPExecution":
-            guard let tool = json["tool_name"] as? String, !tool.isEmpty else { return nil }
-            var input = Self.object(json["tool_input"])
-            // Where the call goes is part of it.
-            // A name the input has already, or two fields for one name, leave it open which one is where the call goes.
+            guard let tool = json["tool_name"] as? String, !tool.isEmpty, var input = Self.arguments(json["tool_input"]),
+                  let extra = rest(besides: ["tool_name", "tool_input", "mcp_server_name", "url", "mcp_server_url", "command", "cwd"]) else { return nil }
+            // Where the call goes is part of it. A name the input has already, or two fields for one name, leave it open which one is where
+            // the call goes.
             var added: [String: Any] = [:]
-            for (field, name) in [("mcp_server_url", "mcp_server_url"), ("url", "mcp_server_url"), ("command", "mcp_server_command")] {
+            for (field, name) in [("mcp_server_url", "mcp_server_url"), ("url", "mcp_server_url"), ("command", "mcp_server_command"), ("cwd", "cwd")] {
                 guard let value = json[field] else { continue }
                 guard input[name] == nil, added[name] == nil else { return nil }
                 added[name] = value
+            }
+            for (field, value) in extra {
+                guard input[field] == nil, added[field] == nil else { return nil }
+                added[field] = value
             }
             input.merge(added) { $1 }
             let server = (json["mcp_server_name"] as? String).flatMap { $0.isEmpty ? nil : $0 }
@@ -156,21 +192,36 @@ enum PermissionDialect: String {
 
     // MARK: Shared
 
-    /// A tool's arguments as an object: an object as it is, a string that holds one parsed, any other string or value under `input`.
-    private static func object(_ value: Any?) -> [String: Any] {
+    /// A tool's arguments as an object: an object as it is, a string that holds one as that object, nothing as no arguments. nil for
+    /// anything else: a string that is no JSON object (or has a key twice, which parsers read differently), an array, a number.
+    private static func arguments(_ value: Any?) -> [String: Any]? {
         switch value {
         case nil, is NSNull: return [:]
         case let object as [String: Any]: return object
-        case let text as String:
-            if let data = text.data(using: .utf8), let parsed = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] { return parsed }
-            return text.isEmpty ? [:] : ["input": text]
-        default: return ["input": value as Any]
+        case let text as String: return text.isEmpty ? [:] : StrictJSON.object(from: text)
+        default: return nil
         }
     }
 
     /// The names the card reads as the command, the file or what goes into it (see `PermissionPrompt.describe`).
     private static let meaningful: Set<String> = ["command", "file_path", "content", "old_string", "new_string", "edits", "notebook_path", "new_source",
                                                   "url", "query", "description", "run_in_background", "dangerouslyDisableSandbox"]
+
+    /// A name without its case, underscores and hyphens: `CommandLine`, `command_line` and `command-line` are one.
+    private static func spelled(_ name: String) -> String { name.lowercased().filter { $0.isLetter || $0.isNumber } }
+
+    /// Other names for what the card of a command or a file shows as its headline.
+    private static let aliases: Set<String> = [
+        "command", "cmd", "commandline", "commandtext", "fullcommand", "fullcommandtext", "shellcommand", "script", "args", "argv", "exec",
+        "filepath", "path", "file", "filename", "targetfile", "content", "contents", "text", "codecontent", "oldstring", "newstring",
+        "targetcontent", "replacementcontent", "newsource", "notebookpath"]
+
+    /// Whether a call that the card shows as a command or a file has a field of another spelling that the tool might read instead of the one
+    /// shown (`cmd`, `commandLine`, `Command` beside `command`).
+    private static func isAmbiguous(tool: String, input: [String: Any]) -> Bool {
+        guard ["Bash", "Edit", "Write"].contains(tool) else { return false }
+        return input.keys.contains { !meaningful.contains($0) && aliases.contains(spelled($0)) }
+    }
 
     /// Renames `key` (when there is one); false when `name` is there already, which would hide one of the two.
     private static func rename(_ object: inout [String: Any], _ key: String, to name: String) -> Bool {

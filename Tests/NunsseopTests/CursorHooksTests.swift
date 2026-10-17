@@ -258,7 +258,7 @@ struct CursorApprovalTests {
     @Test func aShellCommandIsShownAsCursorsWithItsFolderAndSandbox() throws {
         let prompt = try card(shell())
         #expect(prompt.title == "Run a command" && prompt.symbol == "terminal" && prompt.detail == "npm test" && prompt.folder == "web")
-        #expect(prompt.tag == "Cursor" && prompt.grant == nil && prompt.secondary == "sandbox: true")
+        #expect(prompt.tag == "Cursor" && prompt.grant == nil && prompt.secondary == "cwd: /Users/me/secret-project/web\nsandbox: true")
         #expect(PermissionLayout.hasThirdButton(prompt, .card))
         // Without a folder in the call, the first root of the workspace is it.
         let bare = try #require(PermissionPrompt.parse(try JSONSerialization.data(withJSONObject: Cur.payload("beforeShellExecution", ["command": "ls"])), dialect: .cursor))
@@ -269,9 +269,8 @@ struct CursorApprovalTests {
         let prompt = try card(mcp())
         #expect(prompt.title == "mcp__github__create_issue" && prompt.symbol == "puzzlepiece.extension")
         #expect(prompt.detail.contains("\"title\" : \"Bug\"") && prompt.detail.contains("\"mcp_server_url\" : \"https://mcp.example.com/sse\""))
-        // An input that is no JSON object is shown as it came.
-        let plain = try card(mcp(extra: ["tool_input": "just text"]))
-        #expect(plain.detail.contains("\"input\" : \"just text\""))
+        // An input that is no JSON object leaves open what runs: Cursor asks for itself.
+        #expect(PermissionPrompt.parse(mcp(extra: ["tool_input": "just text"]), dialect: .cursor) == nil)
     }
 
     @Test func otherEventsAndEmptyCallsGetNoCard() throws {
