@@ -275,11 +275,27 @@ extension AgentBoard {
     static let demoCLIs = TerminalCLIs(muxy: URL(fileURLWithPath: "/demo/muxy"))
 
     /// What their transcripts would say, by `Entry.key`.
+    static let demoEdit = AgentActivity.Edit(path: "Sources/Login.swift", old: """
+        func signIn(_ user: User) async throws {
+            let token = try await api.login(user.name, user.password)
+            store.save(token)
+            session.begin(with: token)
+        }
+        """, new: """
+        func signIn(_ user: User) async throws {
+            let token = try await api.login(user.credentials)
+            guard token.isValid else { throw AuthError.expired }
+            try keychain.save(token, for: user.id)
+            session.begin(with: token)
+        }
+        """)
+
     static let demoTranscripts: [String: AgentTranscript] = [
-        "demo|a": AgentTranscript(model: "claude-opus-5-5", tokens: 84_300, name: "Agents tab"),
+        "demo|a": AgentTranscript(model: "claude-opus-5-5", tokens: 84_300, name: "Agents tab",
+                                  activity: AgentActivity(verb: .edit, subject: "Sources/Login.swift", edit: demoEdit), edits: [demoEdit]),
         "demo|b": AgentTranscript(model: "claude-sonnet-5-5", tokens: 31_900, mode: .plan),
         "demo|c": AgentTranscript(model: "claude-opus-5-5", tokens: 142_000),
-        "demo|d": AgentTranscript(model: "gpt-5.6", tokens: 19_500),
+        "demo|d": AgentTranscript(model: "gpt-5.6", tokens: 19_500, activity: AgentActivity(verb: .run, subject: "swift test --filter Auth")),
         "demo|e": AgentTranscript(model: "claude-sonnet-5-5", tokens: 12_400),
     ]
 

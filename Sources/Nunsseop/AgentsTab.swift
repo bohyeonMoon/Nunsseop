@@ -23,6 +23,9 @@ struct AgentRow: Identifiable, Equatable {
     let tokens: Int?
     let mode: AgentMode?
     let name: String?
+    /// What the agent did last in its turn, and the files the turn changed, from its transcript.
+    let activity: AgentActivity?
+    let edits: [AgentActivity.Edit]
     /// The program that runs it for the tool, as the source says (Paseo).
     let host: String?
     let target: Target?
@@ -115,6 +118,8 @@ struct AgentRow: Identifiable, Equatable {
         tokens = transcript?.tokens
         mode = transcript?.mode
         name = agent.title ?? transcript?.name
+        activity = transcript?.activity
+        edits = transcript?.edits ?? []
         host = agent.host
         target = Self.target(for: agent) ?? Self.bundleID(hostApp).map(Target.app)
         input = agent.input
@@ -236,6 +241,14 @@ struct AgentRow: Identifiable, Equatable {
 
     /// A session that asks for an answer: its row opens to say so. A finished hand ("Your turn") stays one line.
     var asksForAnswer: Bool { state == .waiting && !finished }
+    /// The last step shows under a row at work or done with its turn; one that asks shows its prompt instead.
+    var showsActivity: Bool { activity != nil && state != .idle && !asksForAnswer }
+
+    /// A path inside the session's folder, from there; any other as it is.
+    func shortPath(_ path: String) -> String {
+        guard let folder = self.path, path.hasPrefix(folder + "/") else { return path }
+        return String(path.dropFirst(folder.count + 1))
+    }
 
     /// What the opened row says is being asked. Nothing on the permission board names its session (only a folder), so it is the
     /// generic sentence.
@@ -313,7 +326,7 @@ struct AgentRow: Identifiable, Equatable {
 /// and only while the tab is showing: on opening it and whenever the board changes, not on a timer.
 @MainActor
 final class AgentsTabModel: ObservableObject {
-    @Published private(set) var rows: [AgentRow] = [] { didSet { pruneSelection() } }
+    @Published private(set) var rows: [AgentRow] = [] { didSet { pruneSelection(); follow() } }
     /// Conversations that aren't open, to pick up again; listed when no session is.
     @Published private(set) var recent: [RecentConversation] = [] { didSet { pruneSelection() } }
     /// Whether the first look for them is done; until then an empty list doesn't mean there are none.
@@ -325,6 +338,18 @@ final class AgentsTabModel: ObservableObject {
     @Published private(set) var selected: String?
     /// The row whose message field is open, by `AgentRow.id`: the field has the keyboard, and the notch stays open while it does.
     @Published private(set) var composing: String?
+    /// The row whose turn's changes show in place of the list, and which change.
+    @Published private(set) var diffing: DiffFocus?
+
+    struct DiffFocus: Equatable {
+        let id: String
+        var index: Int
+    }
+
+    /// How often the transcripts of sessions at work are looked at while the tab shows: the hooks say nothing between a prompt
+    /// and the turn's end.
+    static let followInterval: TimeInterval = 2
+    private var following: Timer?
     /// A short note under a row whose message or files didn't go out, by `AgentRow.id`.
     @Published private(set) var notes: [String: String] = [:]
     /// Under the recent conversations: macOS didn't let Nunsseop open one in the terminal chosen (see `Resume.notAllowedNotification`).
@@ -332,7 +357,8 @@ final class AgentsTabModel: ObservableObject {
     private var denial: AnyCancellable?
     var isShowing = false {
         didSet {
-            if !isShowing { composing = nil; selected = nil }
+            if !isShowing { composing = nil; selected = nil; diffing = nil }
+            follow()
             guard isShowing && !oldValue else { return }
             connected = checkConnected()
             refresh()
@@ -470,6 +496,54 @@ final class AgentsTabModel: ObservableObject {
             updated.refresh(keys, home: home)
             await self?.loaded(updated)
         }
+    }
+
+    /// Looks at the transcripts every `followInterval` while the tab shows a session at work.
+    private func follow() {
+        let wanted = isShowing && rows.contains { $0.state == .working }
+        guard wanted != (following != nil) else { return }
+        following?.invalidate()
+        following = nil
+        guard wanted else { return }
+        let timer = Timer(timeInterval: Self.followInterval, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.readTranscripts() }
+        }
+        timer.tolerance = 0.5
+        RunLoop.main.add(timer, forMode: .common)
+        following = timer
+    }
+
+    /// The transcripts only, for the last steps: the terminals and recent conversations stay as the last refresh left them.
+    private func readTranscripts() {
+        guard !loading else { return }
+        let entries = board.entries(now: .now)
+        let keys = Set(entries.compactMap { fixed[$0.key] == nil ? AgentRow.transcriptKey($0.agent) : nil })
+        guard !keys.isEmpty else { return }
+        asOf = .now
+        loading = true
+        let snapshot = transcripts, home = home()
+        Task.detached(priority: .utility) { [weak self] in
+            var updated = snapshot
+            updated.refresh(keys, home: home)
+            await self?.loaded(updated)
+        }
+    }
+
+    /// Shows the changes of the row's turn, from the latest.
+    func showDiff(_ row: AgentRow) {
+        guard !row.edits.isEmpty else { return }
+        diffing = DiffFocus(id: row.id, index: row.edits.count - 1)
+    }
+
+    func closeDiff() { diffing = nil }
+
+    /// The change before (-1) or after (1) the one shown. True when there was one.
+    @discardableResult
+    func stepDiff(_ by: Int) -> Bool {
+        guard var focus = diffing, let row = rows.first(where: { $0.id == focus.id }), row.edits.indices.contains(focus.index + by) else { return false }
+        focus.index += by
+        diffing = focus
+        return true
     }
 
     private func loaded(_ updated: AgentTranscripts) {
@@ -827,7 +901,15 @@ final class AgentsTabModel: ObservableObject {
     /// A key the tab uses while it is showing and no field has the keyboard. True when it was used, so the notch's monitor swallows it.
     @discardableResult
     func perform(_ key: AgentKey) -> Bool {
+        if diffing != nil {
+            // The arrows are the diff's even at its first or last change, so they don't scroll anything behind it.
+            guard key == .left || key == .right else { return false }
+            stepDiff(key == .left ? -1 : 1)
+            return true
+        }
         switch key {
+        case .left, .right:
+            return false
         case .up, .down:
             let ids = navigable
             guard !ids.isEmpty else { return false }
@@ -849,6 +931,10 @@ final class AgentsTabModel: ObservableObject {
 
     private func pruneSelection() {
         if let selected, !navigable.contains(selected) { self.selected = nil }
+        if let diffing, !rows.contains(where: { $0.id == diffing.id && $0.edits.indices.contains(diffing.index) }) {
+            // The turn moved on (a new prompt) or the row went: back to the list.
+            self.diffing = rows.first { $0.id == diffing.id && !$0.edits.isEmpty }.map { DiffFocus(id: $0.id, index: $0.edits.count - 1) }
+        }
     }
 
     /// Whether the tab says it has nothing: no session is listed and no recent conversation turned up.
@@ -933,6 +1019,8 @@ final class AgentsTabModel: ObservableObject {
 /// The keys the tab uses, as the notch's key monitor hands them over (see `AgentsTabModel.perform`).
 enum AgentKey: Equatable {
     case up, down
+    /// ← →: the change before or after, in a diff.
+    case left, right
     /// Return: go to the selected session's terminal, or resume the selected conversation.
     case activate
     /// ⌘M: open the message field for the selected session.
@@ -944,6 +1032,8 @@ enum AgentKey: Equatable {
         let held = modifiers.intersection([.command, .shift, .option, .control])
         switch (keyCode, held) {
         case (126, []): self = .up
+        case (123, []): self = .left
+        case (124, []): self = .right
         case (125, []): self = .down
         case (36, []), (76, []): self = .activate
         case (_, .command) where characters?.lowercased() == "m": self = .message
@@ -959,6 +1049,8 @@ private enum Ink {
 
 private enum Metrics {
     static let row: CGFloat = 24
+    /// The last step's line under a row.
+    static let activity: CGFloat = 16
     static let expanded: CGFloat = 52
     static let titleWidth: CGFloat = 120
     static let tag: CGFloat = 24
@@ -984,6 +1076,8 @@ struct AgentsTab: View {
                     VStack(spacing: 0) {
                         if model.rows.isEmpty {
                             RecentList(model: model, now: context.date)
+                        } else if let focus = model.diffing, let row = model.rows.first(where: { $0.id == focus.id }), row.edits.indices.contains(focus.index) {
+                            AgentDiffView(row: row, index: focus.index, model: model)
                         } else {
                             AgentList(model: model, now: context.date)
                             if let to = model.composing.flatMap({ id in model.rows.first { $0.id == id } }) {
@@ -1127,9 +1221,10 @@ private struct AgentRowView: View {
         VStack(spacing: 0) {
             line
             if open, let prompt = row.waitingPrompt { promptLine(prompt) }
+            else if row.showsActivity, let activity = row.activity { activityLine(activity) }
         }
         .padding(.horizontal, 8)
-        .frame(height: open ? Metrics.expanded : Metrics.row)
+        .frame(height: open ? Metrics.expanded : row.showsActivity ? Metrics.row + Metrics.activity : Metrics.row)
         .background { background }
         .overlay {
             if dropTargeted {
@@ -1223,6 +1318,30 @@ private struct AgentRowView: View {
         } else {
             Color.clear.frame(width: Metrics.meter + 4 + Metrics.figure, height: 1)
         }
+    }
+
+    /// "Edited Sources/Login.swift +12 −3 [Show diff]", under the title.
+    private func activityLine(_ activity: AgentActivity) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: activity.verb.symbol).font(.system(size: 10)).foregroundStyle(.white.opacity(0.55)).frame(width: 12)
+            Text(verbatim: activity.verb.label).font(.system(size: 11)).foregroundStyle(.white.opacity(0.55)).fixedSize()
+            Text(verbatim: activity.edit.map { row.shortPath($0.path) } ?? row.shortPath(activity.subject))
+                .font(.system(size: 11, design: .monospaced)).foregroundStyle(.white.opacity(0.85))
+                .lineLimit(1).truncationMode(.middle)
+            if let edit = activity.edit {
+                DiffCounts(added: edit.added, removed: edit.removed)
+                Button { model.showDiff(row) } label: {
+                    Text("Show diff").font(.system(size: 10, weight: .medium)).foregroundStyle(.white.opacity(0.75))
+                        .padding(.horizontal, 6).frame(height: 16).background(Capsule().fill(.white.opacity(0.1))).contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .fixedSize()
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.leading, 24)
+        .frame(height: Metrics.activity, alignment: .top)
+        .accessibilityElement(children: .combine)
     }
 
     private func promptLine(_ prompt: String) -> some View {
@@ -1429,5 +1548,74 @@ private struct RecentRowView: View {
         // Resuming is what a click on a conversation always did.
         .onTapGesture { model.select(conversation.id); model.resume(conversation) }
         .onHover { hovering = $0 }
+    }
+}
+
+/// "+12 −3", green and red.
+private struct DiffCounts: View {
+    let added: Int
+    let removed: Int
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if added > 0 { Text(verbatim: "+\(added)").foregroundStyle(DiffInk.added) }
+            if removed > 0 { Text(verbatim: "−\(removed)").foregroundStyle(DiffInk.removed) }
+        }
+        .font(.system(size: 11, weight: .medium).monospacedDigit())
+        .fixedSize()
+    }
+}
+
+private enum DiffInk {
+    static let added = Color(red: 0.35, green: 0.85, blue: 0.45)
+    static let removed = Color(red: 1, green: 0.42, blue: 0.4)
+}
+
+/// One change of a session's turn in place of the list: the file, its counts, the lines with what was removed and added marked,
+/// and ← → to the change before or after.
+private struct AgentDiffView: View {
+    let row: AgentRow
+    let index: Int
+    @ObservedObject var model: AgentsTabModel
+
+    var body: some View {
+        let edit = row.edits[index]
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Button { model.closeDiff() } label: {
+                    Image(systemName: "chevron.left").font(.system(size: 11, weight: .semibold)).frame(width: 20, height: 20).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(Text("Back"))
+                Text(verbatim: row.title).font(.system(size: 12, weight: .semibold)).lineLimit(1).fixedSize()
+                Text(verbatim: row.shortPath(edit.path)).font(.system(size: 11, design: .monospaced)).foregroundStyle(.white.opacity(0.7))
+                    .lineLimit(1).truncationMode(.middle)
+                DiffCounts(added: edit.added, removed: edit.removed)
+                Spacer(minLength: 4)
+                Text("Change \(index + 1) of \(row.edits.count) this turn").font(.system(size: 11)).foregroundStyle(.white.opacity(0.5))
+                    .lineLimit(1).fixedSize()
+            }
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 0) {
+                    ForEach(Array(edit.lines.enumerated()), id: \.offset) { _, line in
+                        HStack(spacing: 8) {
+                            Text(verbatim: line.kind == .added ? "+" : line.kind == .removed ? "−" : " ")
+                                .foregroundStyle(line.kind == .added ? DiffInk.added : line.kind == .removed ? DiffInk.removed : .clear)
+                                .frame(width: 10)
+                            Text(verbatim: line.text.isEmpty ? " " : line.text).foregroundStyle(.white.opacity(line.kind == .same ? 0.6 : 0.95))
+                                .lineLimit(1).truncationMode(.tail)
+                            Spacer(minLength: 0)
+                        }
+                        .font(.system(size: 11, design: .monospaced))
+                        .padding(.horizontal, 6)
+                        .frame(height: 16)
+                        .background((line.kind == .added ? DiffInk.added : line.kind == .removed ? DiffInk.removed : .clear).opacity(0.14))
+                    }
+                }
+            }
+            .background(RoundedRectangle(cornerRadius: 6).fill(.white.opacity(0.04)))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            Text("← → the change before or after · Esc back to the list").font(.system(size: 11)).foregroundStyle(.white.opacity(0.5)).lineLimit(1)
+        }
     }
 }

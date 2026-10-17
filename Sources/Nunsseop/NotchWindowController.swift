@@ -466,8 +466,9 @@ final class NotchWindowController {
                 return MainActor.assumeIsolated { self.handlesAgentKey(event) || self.handlesPanelKey(event) } ? nil : event
             }
             MainActor.assumeIsolated {
-                // Escape closes the message field first, and the notch only the next time.
+                // Escape closes the message field or the diff first, and the notch only the next time.
                 if self.model.agentList.composing != nil { self.model.agentList.cancelCompose(); return }
+                if self.model.agentList.diffing != nil, self.model.agentList.isShowing { self.model.agentList.closeDiff(); return }
                 self.model.collapse()
                 self.panel.ignoresMouseEvents = true
             }

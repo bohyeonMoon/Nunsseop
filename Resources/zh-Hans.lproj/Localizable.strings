@@ -593,3 +593,13 @@
 "Cheer when an agent finishes its turn" = "智能体完成一轮时庆祝一下";
 "The eyebrow hops and the notch says which agent is done, unless its terminal is already in front. Its face also follows the agents: raised while one waits for you, low and level while they work." = "眉毛会跳一跳，刘海会告诉你哪个智能体完成了；如果它的终端已在最前面则不提示。眉毛的表情也随智能体变化：等你时扬起，工作时压低放平。";
 "%@ is done" = "%@ 完成了";
+"Read" = "读取";
+"Edited" = "编辑";
+"Wrote" = "写入";
+"Ran" = "运行";
+"Searched" = "搜索";
+"Asked" = "提问";
+"Delegated" = "委派";
+"Show diff" = "查看差异";
+"Change %lld of %lld this turn" = "本轮第 %1$lld/%2$lld 处修改";
+"← → the change before or after · Esc back to the list" = "← → 上一处或下一处修改 · Esc 返回列表";
