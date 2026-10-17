@@ -400,13 +400,26 @@ final class NotifyServer: @unchecked Sendable {
     /// terminal answered first) by TERM or KILL, a watchdog sees the shell gone within a second and ends curl and its connection.
     static var permissionHookCommand: String { permissionHookCommand(port: port) }
 
-    static func permissionHookCommand(port: UInt16) -> String {
-        #"""
+    /// - agent: a tool whose hook is this one too (Copilot, Antigravity, Cursor). The request names it in `X-Agent`, which tells the
+    ///   server how to read the tool's input and which answer the tool reads back (see `PermissionDialect`). The text for Claude Code,
+    ///   which sends no such header, is the one installed so far, and stays as it is. Cursor reads an exit code of 1 as "the hook had
+    ///   nothing to say" (its action goes on as if there were no hook) and an empty answer of a permission hook as possibly a block, so
+    ///   there the hook ends with 1 whenever it decides nothing; for the others, it ends with 0.
+    static func permissionHookCommand(port: UInt16, agent: AgentKind? = nil) -> String {
+        let quit = agent == .cursor ? "exit 1" : "exit 0"
+        let chain = agent == .cursor ? " && exit 0" : ""
+        let header = agent.map { "-H 'X-Agent: \($0.rawValue)' " } ?? ""
+        // Antigravity runs the hook before every tool call its matcher names; only the calls that can be put to the user get past here.
+        let filter = agent == .agy
+            ? "; case $(printf %s \"$in\" | plutil -extract toolCall.name raw -o - - 2>/dev/null) in "
+                + PermissionDialect.antigravityTools.joined(separator: "|") + ") ;; *) exit 0;; esac"
+            : ""
+        return #"""
         t="$HOME/Library/Application Support/Nunsseop/permission-key"
-        in=$(cat)
-        [ -n "$in" ] && [ $(printf %s "$in" | wc -c) -le \#(PermissionGate.maxBodyBytes) ] || exit 0
+        in=$(cat)\#(filter)
+        [ -n "$in" ] && [ $(printf %s "$in" | wc -c) -le \#(PermissionGate.maxBodyBytes) ] || \#(quit)
         kh=$(tr -d ' \t\r\n' < "$t" 2>/dev/null | od -An -v -tx1 | tr -d ' \n')
-        [ ${#kh} -ge 64 ] || exit 0
+        [ ${#kh} -ge 64 ] || \#(quit)
         [ ${#kh} -gt 128 ] && kh=$(tr -d ' \t\r\n' < "$t" | openssl dgst -sha256 -binary | od -An -v -tx1 | tr -d ' \n')
         while [ ${#kh} -lt 128 ]; do kh=${kh}00; done
         i=; o=; r=$kh
@@ -414,18 +427,18 @@ final class NotifyServer: @unchecked Sendable {
         H() { openssl dgst -sha256 | sed 's/^.*= //'; }
         M() { { printf "$i"; cat; } | openssl dgst -sha256 -binary | { printf "$o"; cat; } | H; }
         n=$(dd if=/dev/urandom bs=16 count=1 2>/dev/null | od -An -v -tx1 | tr -d ' \n')
-        [ ${#n} -eq 32 ] || exit 0
+        [ ${#n} -eq 32 ] || \#(quit)
         p=$(printf 'nunsseop-permission-request\n%s\n%s' "$n" "$(printf %s "$in" | H)" | M)
         s=$$
-        r=$({ printf %s "$in" | curl -s -m 590 --connect-timeout 1 -X POST http://127.0.0.1:\#(port)/permission -H 'Expect:' -H "X-Nonce: $n" -H "X-Proof: $p" --data-binary @- 2>/dev/null &
+        r=$({ printf %s "$in" | curl -s -m 590 --connect-timeout 1 -X POST http://127.0.0.1:\#(port)/permission -H 'Expect:' \#(header)-H "X-Nonce: $n" -H "X-Proof: $p" --data-binary @- 2>/dev/null &
         c=$!
         ( while kill -0 $s 2>/dev/null; do kill -0 $c 2>/dev/null || exit 0; sleep 1; done; kill $c ) >/dev/null 2>&1 &
         wait $c; })
-        case $r in *\ *) ;; *) exit 0;; esac
+        case $r in *\ *) ;; *) \#(quit);; esac
         m=${r%% *}
         d=${r#* }
-        [ -n "$d" ] && [ "$m" = "$(printf 'nunsseop-permission-response\n%s\n%s' "$n" "$(printf %s "$d" | H)" | M)" ] && printf %s "$d"
-        exit 0
+        [ -n "$d" ] && [ "$m" = "$(printf 'nunsseop-permission-response\n%s\n%s' "$n" "$(printf %s "$d" | H)" | M)" ] && printf %s "$d"\#(chain)
+        \#(quit)
         """#
     }
 

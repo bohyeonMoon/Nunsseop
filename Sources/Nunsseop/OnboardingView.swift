@@ -402,6 +402,9 @@ private extension NotifyIntegration {
         case .omp: "OP"
         case .omo: "OM"
         case .pi: "PI"
+        case .copilot: "GH"
+        case .antigravity: "AG"
+        case .cursor: "CU"
         }
     }
 }

@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 @testable import Nunsseop
 
@@ -24,4 +25,8 @@ enum ToolHook {
         let sent = try ShellRun.run({ _ in ["-c", command] }, stdin: json(payload), environment: environment, curlExit: curlExit)
         return (sent.curlCalls == 0 ? nil : AgentHook.event(headers: headers(of: sent), processes: ProcessTable { _ in nil }), sent)
     }
+}
+
+enum Hash {
+    static func sha256(_ text: String) -> String { SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined() }
 }

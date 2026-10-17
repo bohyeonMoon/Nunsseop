@@ -39,7 +39,8 @@ struct PermissionInstallTests {
         #expect(events(true) == ["PermissionRequest"])
         #expect(events(false).isEmpty)
         #expect(on(true) { NotifyIntegration.codex.hooks.count } == on(false) { NotifyIntegration.codex.hooks.count } + 1)
-        #expect(on(true) { NotifyIntegration.gemini.hooks.count } == 1)
+        // Gemini CLI's hooks are a notice and its sessions, never approvals.
+        #expect(on(true) { NotifyIntegration.gemini.hooks.count } == on(false) { NotifyIntegration.gemini.hooks.count })
     }
 
     @Test func turningTheSettingOffRemovesTheHookAndOnPutsItBack() throws {
