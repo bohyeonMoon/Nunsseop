@@ -504,7 +504,7 @@ final class NotchWindowController {
         // A click on a notice goes to the terminal, and where possible the pane, it came from. Every one is also kept
         // in the Notifications tab, in case it went by unseen.
         model.notifyServer.onNotify = { [weak self] notice in
-            self?.announce(symbol: "sparkles", title: notice.title, detail: notice.message,
+            self?.announce(symbol: BrowMood.waiting.symbol, title: notice.title, detail: notice.message,
                            action: TerminalFocus.action(app: notice.app, target: notice.target))
         }
         model.cmux.onNotice = { [weak self] notice in
@@ -518,7 +518,8 @@ final class NotchWindowController {
             let detail = [state, notice.title].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
             // A named session shows its name beside the agent.
             let title = session.map { "\(notice.agent) · \($0)" } ?? notice.agent
-            self?.announce(symbol: "terminal", title: String(title.prefix(80)), detail: String(detail.prefix(200)),
+            let mood: BrowMood = notice.status == "blocked" ? .waiting : .happy
+            self?.announce(symbol: mood.symbol, title: String(title.prefix(80)), detail: String(detail.prefix(200)),
                            action: { Herdr.focus(notice) })
         }
         model.paseoWatcher.onNotice = { [weak self] notice in

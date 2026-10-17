@@ -237,7 +237,7 @@ struct LedgerRow<Content: View>: View {
 struct PanelSymbol: View {
     let name: String
     var body: some View {
-        Image(systemName: name).font(.system(size: 12)).foregroundStyle(.white.opacity(0.75)).frame(width: 16).accessibilityHidden(true)
+        NoticeGlyph(name: name, browWidth: 15).font(.system(size: 12)).foregroundStyle(.white.opacity(0.75)).frame(width: 16).accessibilityHidden(true)
     }
 }
 

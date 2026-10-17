@@ -158,6 +158,14 @@ final class NotchViewModel: ObservableObject {
     var browFaded: Bool {
         browHidden && !isExpanded && hud.event == nil && approvals.current == nil && !showsLiveActivity && !showsSneakPeek
     }
+    /// The eyebrow's mood: a moment's (a finished turn, a limit) while it lasts, otherwise the agents'.
+    @Published private(set) var browMood: BrowMood = .rest
+    /// Counts the cheers for finished turns; each one hops the eyebrow.
+    @Published private(set) var browHops = 0
+    private var agentsMood: BrowMood = .rest
+    private var momentMood: BrowMood?
+    private var momentWork: DispatchWorkItem?
+    private var finishWatch = FinishWatch()
     private var cancellables: Set<AnyCancellable> = []
     private var limitAlerts = LimitAlerts()
     private var sneakPeekWork: DispatchWorkItem?
@@ -283,6 +291,9 @@ final class NotchViewModel: ObservableObject {
             .removeDuplicates()
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
+        agents.$revision
+            .sink { [weak self] _ in self?.followAgents() }
+            .store(in: &cancellables)
         // The tab's badge counts unseen notices.
         notices.$unseen
             .removeDuplicates()
@@ -365,6 +376,7 @@ final class NotchViewModel: ObservableObject {
         guard settings.limitAlerts else { return }
         let alerts = limitAlerts.step(providers, now: .now)
         if let first = alerts.first {
+            showMoment(LimitAlerts.mood(first))
             _ = hud.showLasting(duration: CalendarModel.alertSpacing) {
                 .notice(symbol: LimitAlerts.symbol(first), title: LimitAlerts.title(first), detail: LimitAlerts.detail(first))
             }
@@ -372,6 +384,49 @@ final class NotchViewModel: ObservableObject {
         for alert in alerts {
             notices.add(symbol: LimitAlerts.symbol(alert), title: LimitAlerts.title(alert), detail: LimitAlerts.detail(alert))
         }
+    }
+
+    /// Keeps the eyebrow's face with the agents, and cheers for the turns that just finished.
+    private func followAgents() {
+        let entries = agents.entries()
+        agentsMood = BrowMood.steady(entries)
+        let finished = finishWatch.step(entries)
+        if settings.cheerFinished, let done = finished.first(where: { !Self.isInFront(app: $0.agent.app) }) {
+            showMoment(.happy)
+            let row = agentList.rows.first { $0.id == done.key }
+            let place = (row?.name ?? row?.path.map { URL(fileURLWithPath: $0).lastPathComponent })
+            hud.show(.notice(symbol: BrowMood.happy.symbol, title: Self.finishedTitle(AgentRow.toolName(done.agent.tool)), detail: place),
+                     duration: BrowMood.happy.lasts ?? 2.6, action: { [agentList] in if let row { agentList.focus(row) } })
+        }
+        updateBrowMood()
+    }
+
+    nonisolated static func finishedTitle(_ tool: String) -> String { String(localized: "\(tool) is done") }
+
+    /// Whether the agent's terminal is the app in front, where its end was seen already.
+    private static func isInFront(app: String?) -> Bool {
+        app != nil && NSWorkspace.shared.frontmostApplication?.bundleIdentifier == app
+    }
+
+    /// Shows a mood for its moment, then goes back to the agents'.
+    private func showMoment(_ mood: BrowMood) {
+        momentWork?.cancel()
+        momentMood = mood
+        if mood == .happy { browHops &+= 1 }
+        updateBrowMood()
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                self?.momentMood = nil
+                self?.updateBrowMood()
+            }
+        }
+        momentWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + (mood.lasts ?? 0), execute: work)
+    }
+
+    private func updateBrowMood() {
+        let mood = momentMood ?? agentsMood
+        if mood != browMood { browMood = mood }
     }
 
     /// "in 5 minutes", and "in 5 minutes · Click to join" when the event has a meeting link.
@@ -658,7 +713,7 @@ final class NotchViewModel: ObservableObject {
     nonisolated static func idleEarWidth(for value: IdleValue) -> CGFloat {
         let font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
         let text = (value.text as NSString).size(withAttributes: [.font: font]).width
-        let symbol = value.symbol
+        let symbol = value.brow.map { _ in IdleValue.browWidth + 3 } ?? value.symbol
             .flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: 11, weight: .semibold)) }
             .map { $0.size.width + 3 } ?? 0
         return ceil(symbol + text) + 8

@@ -36,9 +36,10 @@ struct NotchView: View {
                     .zIndex(-1)
 
                 if !model.isExpanded && !model.geometry.hasNotch && !model.hudSingleRow && !model.sneakPeekInline {
-                    EyebrowMark(lift: model.browFaded ? -1 : model.browLifted ? 1 : 0)
+                    EyebrowMark(lift: model.browFaded ? -1 : model.browLifted ? 1 : 0, mood: model.browMood, hops: reduceMotion ? 0 : model.browHops)
                         .animation(model.browFaded ? .easeIn(duration: 0.3) : motion.brow, value: model.browFaded)
                         .animation(motion.brow, value: model.browLifted)
+                        .animation(motion.mood, value: model.browMood)
                         .frame(width: model.geometry.collapsedSize.width, height: notchHeight)
                         .padding(.leading, NotchViewModel.browLead(width: size.width, notch: model.geometry.collapsedSize.width, shift: shift))
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -263,6 +264,8 @@ private struct NotchMotion {
     var close: Animation { reduceMotion ? Self.ease : .spring(response: 0.3, dampingFraction: 1).delay(0.04) }
     /// A quick spring with a little bounce, like a brow popping up.
     var brow: Animation { reduceMotion ? Self.ease : .spring(response: 0.25, dampingFraction: 0.55) }
+    /// Softer than a hover: the face changes as a mood settles in.
+    var mood: Animation { reduceMotion ? Self.ease : .spring(response: 0.45, dampingFraction: 0.7) }
     var earsGrow: Animation { reduceMotion ? Self.ease : .spring(response: 0.34, dampingFraction: 0.75) }
     var earsShrink: Animation { reduceMotion ? Self.ease : .spring(response: 0.28, dampingFraction: 1) }
 

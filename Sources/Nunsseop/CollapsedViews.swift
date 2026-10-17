@@ -2,9 +2,13 @@ import SwiftUI
 
 struct IdleValue {
     let symbol: String?
-    /// nil draws the symbol in its own colours.
+    /// nil draws the symbol in its own colours. With `brow`, the text's colour.
     let tint: Color?
     let text: String
+    /// The eyebrow in a mood, in place of a symbol.
+    var brow: BrowMood? = nil
+
+    static let browWidth: CGFloat = 18
 }
 
 extension NotchViewModel {
@@ -23,7 +27,7 @@ extension NotchViewModel {
         case .date:
             return IdleValue(symbol: nil, tint: nil, text: date.formatted(.dateTime.day().weekday(.abbreviated)))
         case .agents:
-            return Self.agentsValue(agents.counts)
+            return Self.agentsValue(agents.counts, brow: geometry.hasNotch)
         }
     }
 
@@ -41,10 +45,11 @@ extension NotchViewModel {
         IdleValue(symbol: WeatherModel.symbol(for: weather.code), tint: nil, text: "\(Int(weather.temperature.rounded()))°")
     }
 
-    /// Agents waiting for you come first, in yellow; otherwise how many are working. Nothing when none are.
-    nonisolated static func agentsValue(_ counts: AgentBoard.Counts) -> IdleValue? {
-        if counts.waiting > 0 { return IdleValue(symbol: "hand.raised.fill", tint: .yellow, text: "\(counts.waiting)") }
-        if counts.working > 0 { return IdleValue(symbol: "bolt.fill", tint: .green, text: "\(counts.working)") }
+    /// Agents waiting for you come first, in yellow; otherwise how many are working, in green. Nothing when none are.
+    /// Beside a camera the count has an eyebrow of its own; without one the app's eyebrow next to it already shows the mood.
+    nonisolated static func agentsValue(_ counts: AgentBoard.Counts, brow: Bool) -> IdleValue? {
+        if counts.waiting > 0 { return IdleValue(symbol: nil, tint: .yellow, text: "\(counts.waiting)", brow: brow ? .waiting : nil) }
+        if counts.working > 0 { return IdleValue(symbol: nil, tint: .green, text: "\(counts.working)", brow: brow ? .focused : nil) }
         return nil
     }
 
@@ -101,14 +106,16 @@ struct IdleEars: View {
     private func ear(_ value: IdleValue?) -> some View {
         if let value {
             HStack(spacing: 3) {
-                if let symbol = value.symbol {
+                if let mood = value.brow {
+                    BrowGlyph(mood: mood, width: IdleValue.browWidth)
+                } else if let symbol = value.symbol {
                     if let tint = value.tint {
                         Image(systemName: symbol).foregroundStyle(tint)
                     } else {
                         Image(systemName: symbol).symbolRenderingMode(.multicolor)
                     }
                 }
-                Text(value.text)
+                Text(value.text).foregroundStyle(value.symbol == nil ? value.tint ?? .white : .white)
             }
             .lineLimit(1)
             .fixedSize()
@@ -483,11 +490,24 @@ struct SpectrumBars: NSViewRepresentable {
 struct EyebrowMark: View {
     /// -1 lowered like a closing eye, 0 at rest, 1 raised.
     let lift: CGFloat
+    var mood: BrowMood = .rest
+    /// Counts the cheers: each new one hops the eyebrow twice.
+    var hops = 0
+
+    static let color = Color(red: 0.957, green: 0.957, blue: 0.945)
+    /// How far a cheer lifts the eyebrow, in points, at the hop's highest.
+    nonisolated static let hopHeight: CGFloat = 1.5
 
     var body: some View {
-        EyebrowArch(lift: lift)
-            .fill(Color(red: 0.957, green: 0.957, blue: 0.945))
+        EyebrowArch(lift: lift, pose: mood.pose)
+            .fill(Self.color)
             .frame(width: 24, height: 10)
+            .keyframeAnimator(initialValue: CGFloat(0), trigger: hops) { content, rise in
+                content.offset(y: -rise / 1.2 * Self.hopHeight)
+            } keyframes: { _ in
+                BrowGlyph.hop
+            }
+            .modifier(BrowTwitch(active: mood == .waiting))
             .accessibilityHidden(true)
     }
 }
@@ -498,10 +518,12 @@ struct EyebrowMark: View {
 struct EyebrowArch: Shape {
     /// -1 lowered, 0 at rest, 1 fully raised.
     var lift: CGFloat
+    /// The mood's bend, on top of the lift.
+    var pose = BrowPose()
 
-    var animatableData: CGFloat {
-        get { lift }
-        set { lift = newValue }
+    var animatableData: AnimatablePair<CGFloat, AnimatablePair<CGFloat, AnimatablePair<CGFloat, CGFloat>>> {
+        get { AnimatablePair(lift, AnimatablePair(pose.lift, AnimatablePair(pose.tilt, pose.arch))) }
+        set { (lift, pose.lift, pose.tilt, pose.arch) = (newValue.first, newValue.second.first, newValue.second.second.first, newValue.second.second.second) }
     }
 
     // A move and five cubic curves, as (x, y) pairs; both poses share the same structure so they blend point by point.
@@ -520,7 +542,7 @@ struct EyebrowArch: Shape {
         let amount = abs(lift)
         let point = { (i: Int) -> CGPoint in
             let x = Self.rest[2 * i] + (target[2 * i] - Self.rest[2 * i]) * amount
-            let y = Self.rest[2 * i + 1] + (target[2 * i + 1] - Self.rest[2 * i + 1]) * amount
+            let y = Self.rest[2 * i + 1] + (target[2 * i + 1] - Self.rest[2 * i + 1]) * amount - pose.rise(at: Self.rest[2 * i])
             return CGPoint(x: origin.x + x * scale, y: origin.y + y * scale)
         }
         var p = Path()

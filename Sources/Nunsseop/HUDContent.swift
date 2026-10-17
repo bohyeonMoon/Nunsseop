@@ -38,7 +38,7 @@ struct HUDContent: View {
     var body: some View {
         if singleLine, let width = Self.compactValueWidth(for: event) {
             HStack(spacing: Self.lineGap) {
-                Image(systemName: symbol)
+                NoticeGlyph(name: symbol, browWidth: Self.lineSymbolWidth - 2)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.white)
                     .frame(width: Self.lineSymbolWidth)
@@ -48,7 +48,7 @@ struct HUDContent: View {
             .frame(height: height)
         } else if singleLine, let line = Self.line(for: event) {
             HStack(spacing: Self.lineGap) {
-                Image(systemName: symbol)
+                NoticeGlyph(name: symbol, browWidth: Self.lineSymbolWidth - 2)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.white)
                     .frame(width: Self.lineSymbolWidth)
@@ -66,7 +66,7 @@ struct HUDContent: View {
     private var stacked: some View {
         VStack(spacing: 0) {
             HStack {
-                Image(systemName: symbol)
+                NoticeGlyph(name: symbol, browWidth: 22)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.white)
                     .frame(width: earWidth - 16, alignment: .leading)

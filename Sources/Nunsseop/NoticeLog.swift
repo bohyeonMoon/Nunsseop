@@ -30,7 +30,7 @@ final class NoticeLog: ObservableObject {
         if CommandLine.arguments.contains("--demo-notices") {
             add(symbol: "calendar", title: "Lunch", detail: "in 5 minutes", at: .now.addingTimeInterval(-3600))
             add(symbol: "terminal", title: "Pi · work", detail: "Finished · refactor the parser", action: {}, at: .now.addingTimeInterval(-900))
-            add(symbol: "sparkles", title: "Claude Code", detail: "Claude is waiting for your input", action: {}, at: .now.addingTimeInterval(-60))
+            add(symbol: BrowMood.waiting.symbol, title: "Claude Code", detail: "Claude is waiting for your input", action: {}, at: .now.addingTimeInterval(-60))
         }
         #endif
     }
@@ -88,7 +88,7 @@ struct NoticesTab: View {
         VStack(alignment: .leading, spacing: 8) {
             if let shown {
                 HStack(spacing: 10) {
-                    Image(systemName: shown.symbol).font(.system(size: 13, weight: .semibold)).frame(width: 28, height: 28)
+                    NoticeGlyph(name: shown.symbol, browWidth: 18).font(.system(size: 13, weight: .semibold)).frame(width: 28, height: 28)
                         .overlay(Circle().strokeBorder(.white.opacity(0.35), lineWidth: 0.75)).accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(verbatim: shown.title).font(.system(size: 14, weight: .semibold)).lineLimit(1)

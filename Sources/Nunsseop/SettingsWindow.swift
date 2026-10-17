@@ -509,6 +509,9 @@ private struct AlertsPane: View {
                 }
                 Text("The Agents tab lists their sessions and recent conversations with name, folder, model, context used, permission mode and last prompt, read from the tools' own session files on this Mac.")
                     .font(.caption).foregroundStyle(.secondary)
+                Toggle("Cheer when an agent finishes its turn", isOn: $settings.cheerFinished)
+                Text("The eyebrow hops and the notch says which agent is done, unless its terminal is already in front. Its face also follows the agents: raised while one waits for you, low and level while they work.")
+                    .font(.caption).foregroundStyle(.secondary)
                 Picker("Resume conversations in", selection: Binding(
                     get: { ResumeTerminal.effective(saved: settings.resumeTerminal, installed: terminals) },
                     set: { settings.resumeTerminal = $0.rawValue })) {

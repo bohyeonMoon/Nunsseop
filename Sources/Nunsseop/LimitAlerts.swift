@@ -61,13 +61,12 @@ struct LimitAlerts {
 
     // MARK: Wording
 
-    static func symbol(_ alert: Alert) -> String {
-        switch alert.threshold {
-        case nil: "arrow.counterclockwise"
-        case let threshold? where threshold >= 95: "gauge.with.dots.needle.100percent"
-        default: "gauge.with.dots.needle.67percent"
-        }
+    /// The eyebrow droops for a limit running low and lifts again when it resets.
+    static func mood(_ alert: Alert) -> BrowMood {
+        alert.threshold == nil ? .relieved : .tired
     }
+
+    static func symbol(_ alert: Alert) -> String { mood(alert).symbol }
 
     static func title(_ alert: Alert) -> String {
         let window = alert.kind == .session ? String(localized: "5-hour") : String(localized: "Weekly")
