@@ -603,3 +603,9 @@
 "Show diff" = "Ver diff";
 "Change %lld of %lld this turn" = "Cambio %1$lld de %2$lld en este turno";
 "← → the change before or after · Esc back to the list" = "← → cambio anterior o siguiente · Esc vuelve a la lista";
+"Now with feelings" = "Ahora con sentimientos";
+"Nunsseop %@ wears its mood on its brow. Also new: a Monday recap, more shortcuts and six more agents." = "Nunsseop %@ lleva el ánimo en la ceja. También llegan un resumen los lunes, más atajos y seis agentes más.";
+"A brow with moods" = "Una ceja con ánimo";
+"Raised when an agent waits, a hop when it's done" = "Se alza si un agente espera, salta al terminar";
+"What your agents are doing" = "Qué hacen tus agentes";
+"Their last step, and the diff a click away" = "Su último paso, y el diff a un clic";

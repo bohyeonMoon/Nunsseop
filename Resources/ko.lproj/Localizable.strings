@@ -628,3 +628,9 @@
 "Show diff" = "diff 보기";
 "Change %lld of %lld this turn" = "이번 턴 수정 %1$lld/%2$lld";
 "← → the change before or after · Esc back to the list" = "← → 이전·다음 수정 · Esc 목록으로";
+"Now with feelings" = "눈썹에 표정이 생겼어요";
+"Nunsseop %@ wears its mood on its brow. Also new: a Monday recap, more shortcuts and six more agents." = "Nunsseop %@부터 눈썹이 기분을 숨기지 않아요. 월요일 요약, 단축키, 새 에이전트 여섯 개도 함께 왔어요.";
+"A brow with moods" = "눈썹 표정";
+"Raised when an agent waits, a hop when it's done" = "기다리면 치켜뜨고, 끝나면 들썩";
+"What your agents are doing" = "에이전트가 하는 일";
+"Their last step, and the diff a click away" = "마지막 작업, 클릭 한 번이면 diff까지";

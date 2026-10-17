@@ -603,3 +603,9 @@
 "Show diff" = "差分を見る";
 "Change %lld of %lld this turn" = "このターンの変更 %1$lld/%2$lld";
 "← → the change before or after · Esc back to the list" = "← → 前後の変更 · Esc で一覧へ";
+"Now with feelings" = "眉に表情がつきました";
+"Nunsseop %@ wears its mood on its brow. Also new: a Monday recap, more shortcuts and six more agents." = "Nunsseop %@ では眉が気分を隠しません。月曜のまとめ、ショートカット、6つの新しいエージェントも加わりました。";
+"A brow with moods" = "眉の表情";
+"Raised when an agent waits, a hop when it's done" = "待つと上がり、終わるとぴょんと跳ねる";
+"What your agents are doing" = "エージェントの作業";
+"Their last step, and the diff a click away" = "直前の作業と、クリックひとつで差分";

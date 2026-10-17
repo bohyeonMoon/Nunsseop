@@ -603,3 +603,9 @@
 "Show diff" = "查看差异";
 "Change %lld of %lld this turn" = "本轮第 %1$lld/%2$lld 处修改";
 "← → the change before or after · Esc back to the list" = "← → 上一处或下一处修改 · Esc 返回列表";
+"Now with feelings" = "眉毛有表情了";
+"Nunsseop %@ wears its mood on its brow. Also new: a Monday recap, more shortcuts and six more agents." = "Nunsseop %@ 的眉毛不再掩饰心情。另外还有周一回顾、更多快捷键和六个新智能体。";
+"A brow with moods" = "眉毛表情";
+"Raised when an agent waits, a hop when it's done" = "等你时扬起，完成时跳一跳";
+"What your agents are doing" = "智能体在做什么";
+"Their last step, and the diff a click away" = "最近一步，点一下就能看差异";

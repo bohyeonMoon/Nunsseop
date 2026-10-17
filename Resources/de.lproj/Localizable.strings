@@ -603,3 +603,9 @@
 "Show diff" = "Diff zeigen";
 "Change %lld of %lld this turn" = "Änderung %1$lld von %2$lld in diesem Zug";
 "← → the change before or after · Esc back to the list" = "← → vorige oder nächste Änderung · Esc zurück zur Liste";
+"Now with feelings" = "Jetzt mit Gefühl";
+"Nunsseop %@ wears its mood on its brow. Also new: a Monday recap, more shortcuts and six more agents." = "In Nunsseop %@ trägt die Braue ihre Laune offen. Neu sind auch ein Rückblick am Montag, mehr Kurzbefehle und sechs weitere Agenten.";
+"A brow with moods" = "Eine Braue mit Laune";
+"Raised when an agent waits, a hop when it's done" = "Hoch, wenn einer wartet, ein Hüpfer am Ende";
+"What your agents are doing" = "Was deine Agenten tun";
+"Their last step, and the diff a click away" = "Letzter Schritt, Diff mit einem Klick";
