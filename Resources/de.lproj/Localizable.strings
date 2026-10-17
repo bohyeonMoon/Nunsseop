@@ -226,7 +226,6 @@
 "Privacy" = "Datenschutz";
 "Show events 5 minutes before they start" = "Termine 5 Minuten vor Beginn anzeigen";
 "Show when an app uses the camera or microphone" = "Anzeigen, wenn eine App Kamera oder Mikrofon verwendet";
-"Quick search" = "Schnellsuche";
 "Screen recording" = "Bildschirmaufnahme";
 "Record microphone audio" = "Mikrofonton aufnehmen";
 "Recordings are saved where screenshots go and added to the shelf. Screen Recording permission is needed the first time." = "Aufnahmen werden am Speicherort für Bildschirmfotos gesichert und zur Ablage hinzugefügt. Beim ersten Mal ist die Berechtigung für Bildschirmaufnahme nötig.";
@@ -250,8 +249,6 @@
 "%@ %@ limit reset" = "%1$@ %2$@: Limit zurückgesetzt";
 "Ready to use again" = "Wieder verfügbar";
 "Usage appears here once you have used Claude Code or Codex on this Mac." = "Die Nutzung erscheint hier, sobald du Claude Code oder Codex auf diesem Mac verwendest.";
-"Open Search from anywhere with a shortcut" = "Suche überall mit einem Kurzbefehl öffnen";
-"Shortcut" = "Kurzbefehl";
 "Another app is already using this shortcut. Pick a different one." = "Eine andere App verwendet diesen Kurzbefehl bereits. Wähle einen anderen.";
 "Turn off display" = "Display ausschalten";
 "Sleep" = "Ruhezustand";
@@ -590,3 +587,16 @@
 "This, once per update" = "Das hier, einmal pro Update";
 "Says what's new, then gets out of your way" = "Sagt, was neu ist, und verschwindet wieder";
 "Got it" = "Verstanden";
+"Open Search in the notch" = "Suche in der Notch öffnen";
+"Go to the agent that waits" = "Zum wartenden Agenten wechseln";
+"Brings the terminal of the session that has waited longest to the front" = "Holt das Terminal der Sitzung nach vorn, die am längsten wartet";
+"Open the Agents tab" = "Tab „Agenten“ öffnen";
+"Go to where the last notice came from" = "Zur Quelle der letzten Mitteilung wechseln";
+"Open or close the notch" = "Notch öffnen oder schließen";
+"Shortcuts" = "Kurzbefehle";
+"Record shortcut" = "Kurzbefehl aufnehmen";
+"Remove shortcut" = "Kurzbefehl entfernen";
+"No agent is waiting" = "Kein Agent wartet";
+"No notice to go back to" = "Keine Mitteilung, zu der man zurückkehren kann";
+"New actions start empty. You'll be told when another app already uses a combination." = "Neue Aktionen starten leer. Du wirst benachrichtigt, wenn eine andere App eine Kombination schon verwendet.";
+"Already used by “%@”. Pick a different combination." = "Wird bereits für „%@“ verwendet. Wähle eine andere Kombination.";

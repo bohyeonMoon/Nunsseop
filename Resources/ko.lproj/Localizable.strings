@@ -251,7 +251,6 @@
 "Privacy" = "개인정보 보호";
 "Show events 5 minutes before they start" = "일정 시작 5분 전에 표시";
 "Show when an app uses the camera or microphone" = "앱이 카메라나 마이크를 사용하면 표시";
-"Quick search" = "빠른 검색";
 "Screen recording" = "화면 녹화";
 "Record microphone audio" = "마이크 소리 녹음";
 "Recordings are saved where screenshots go and added to the shelf. Screen Recording permission is needed the first time." = "녹화 파일은 스크린샷 저장 위치에 저장되고 선반에 추가됩니다. 처음에는 화면 기록 권한이 필요합니다.";
@@ -275,8 +274,6 @@
 "%@ %@ limit reset" = "%1$@ %2$@ 한도 초기화";
 "Ready to use again" = "다시 쓸 수 있어요";
 "Usage appears here once you have used Claude Code or Codex on this Mac." = "이 Mac에서 Claude Code나 Codex를 쓰면 여기에 사용량이 표시됩니다.";
-"Open Search from anywhere with a shortcut" = "단축키로 어디서든 검색 열기";
-"Shortcut" = "단축키";
 "Another app is already using this shortcut. Pick a different one." = "다른 앱이 이미 이 단축키를 쓰고 있습니다. 다른 단축키를 고르세요.";
 "Turn off display" = "디스플레이 끄기";
 "Sleep" = "잠자기";
@@ -615,3 +612,16 @@
 "This, once per update" = "업데이트마다 딱 한 번, 이 화면";
 "Says what's new, then gets out of your way" = "새로 생긴 걸 알려 주고 조용히 빠져요";
 "Got it" = "알겠어요";
+"Open Search in the notch" = "노치에서 검색 열기";
+"Go to the agent that waits" = "기다리는 에이전트로 가기";
+"Brings the terminal of the session that has waited longest to the front" = "가장 오래 기다린 세션의 터미널을 앞으로";
+"Open the Agents tab" = "에이전트 탭 열기";
+"Go to where the last notice came from" = "마지막 알림이 온 곳으로 가기";
+"Open or close the notch" = "노치 열고 닫기";
+"Shortcuts" = "단축키";
+"Record shortcut" = "단축키 기록";
+"Remove shortcut" = "단축키 지우기";
+"No agent is waiting" = "기다리는 에이전트가 없어요";
+"No notice to go back to" = "돌아갈 알림이 없어요";
+"New actions start empty. You'll be told when another app already uses a combination." = "새로 생긴 동작은 비워 둡니다. 다른 앱이 이미 쓰는 조합이면 알려 드려요.";
+"Already used by “%@”. Pick a different combination." = "이미 “%@”에 쓰고 있어요. 다른 조합을 고르세요.";

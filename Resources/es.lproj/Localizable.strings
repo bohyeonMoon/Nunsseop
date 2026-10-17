@@ -226,7 +226,6 @@
 "Privacy" = "Privacidad";
 "Show events 5 minutes before they start" = "Mostrar eventos 5 minutos antes de que empiecen";
 "Show when an app uses the camera or microphone" = "Mostrar cuando una app use la cámara o el micrófono";
-"Quick search" = "Búsqueda rápida";
 "Screen recording" = "Grabación de pantalla";
 "Record microphone audio" = "Grabar audio del micrófono";
 "Recordings are saved where screenshots go and added to the shelf. Screen Recording permission is needed the first time." = "Las grabaciones se guardan donde van las capturas de pantalla y se añaden al estante. La primera vez se necesita el permiso de Grabación de pantalla.";
@@ -250,8 +249,6 @@
 "%@ %@ limit reset" = "%1$@ %2$@: límite restablecido";
 "Ready to use again" = "Ya puedes volver a usarlo";
 "Usage appears here once you have used Claude Code or Codex on this Mac." = "El uso aparecerá aquí cuando uses Claude Code o Codex en este Mac.";
-"Open Search from anywhere with a shortcut" = "Abrir Buscar desde cualquier lugar con un atajo";
-"Shortcut" = "Atajo";
 "Another app is already using this shortcut. Pick a different one." = "Otra app ya usa este atajo. Elige otro.";
 "Turn off display" = "Apagar pantalla";
 "Sleep" = "Reposo";
@@ -590,3 +587,16 @@
 "This, once per update" = "Esto, una vez por actualización";
 "Says what's new, then gets out of your way" = "Cuenta lo nuevo y se aparta";
 "Got it" = "Entendido";
+"Open Search in the notch" = "Abrir la búsqueda en el notch";
+"Go to the agent that waits" = "Ir al agente que espera";
+"Brings the terminal of the session that has waited longest to the front" = "Trae al frente el terminal de la sesión que lleva más tiempo esperando";
+"Open the Agents tab" = "Abrir la pestaña Agentes";
+"Go to where the last notice came from" = "Ir al origen del último aviso";
+"Open or close the notch" = "Abrir o cerrar el notch";
+"Shortcuts" = "Atajos";
+"Record shortcut" = "Grabar atajo";
+"Remove shortcut" = "Quitar atajo";
+"No agent is waiting" = "Ningún agente está esperando";
+"No notice to go back to" = "No hay ningún aviso al que volver";
+"New actions start empty. You'll be told when another app already uses a combination." = "Las acciones nuevas empiezan vacías. Se te avisará si otra app ya usa una combinación.";
+"Already used by “%@”. Pick a different combination." = "Ya se usa para «%@». Elige otra combinación.";
