@@ -145,7 +145,7 @@ struct HerdrOtherAgentsTests {
         #expect(Herdr.agentName(display: "Refactor the parser", agent: "omp") == "omp")
         #expect(Herdr.agentName(display: "Claude", agent: "claude") == "Claude")
         #expect(Herdr.agentName(display: nil, agent: "opencode") == "opencode")
-        #expect(Herdr.agentName(display: "Some label", agent: "hermes") == "Some label")
+        #expect(Herdr.agentName(display: "Some label", agent: "aider") == "Some label")
         #expect(Herdr.agentName(display: nil, agent: nil) == nil)
         let named: [String: Any] = ["pane_id": "p", "agent": "omp", "display_agent": "Refactor the parser", "agent_status": "working"]
         #expect(Herdr.panes(in: list([named]))?.first?.agent == "omp")

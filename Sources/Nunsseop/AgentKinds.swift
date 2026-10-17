@@ -55,6 +55,15 @@ extension AgentKind {
         }
     }
 
+    /// Whether Nunsseop reads the tool's own files for a session's folder, model and context (see `AgentTranscripts`). The tools that only
+    /// report through hooks and plugins have none that it reads.
+    var hasTranscript: Bool {
+        switch self {
+        case .claude, .codex, .pi, .omp, .gjc, .omo, .opencode: true
+        case .gemini, .copilot, .agy, .cursor, .hermes, .amp: false
+        }
+    }
+
     /// Whether its session files say how it handles permissions.
     var reportsMode: Bool { self == .claude || self == .codex }
 

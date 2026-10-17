@@ -30,6 +30,10 @@ struct HermesPluginTextTests {
         let process = Process()
         process.executableURL = PythonTool.url
         process.arguments = ["-B", "-c", "import ast, sys; ast.parse(open(sys.argv[1]).read())", file.path]
+        // Nothing of the runner's output or input is the compiler's.
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
         try process.run()
         process.waitUntilExit()
         #expect(process.terminationStatus == 0)

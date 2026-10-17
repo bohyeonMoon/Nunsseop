@@ -6,7 +6,7 @@ import Testing
 /// missing; the text of the plugin is pinned by a golden file either way.
 enum PythonTool {
     static let url: URL? = (ProcessInfo.processInfo.environment["NUNSSEOP_TEST_PYTHON"].map { [$0] } ?? [])
-        .appending(["/usr/bin/python3", "/opt/homebrew/bin/python3", "/usr/local/bin/python3"])
+        .appending(["/usr/bin/" + "python3", "/opt/homebrew/bin/python3", "/usr/local/bin/python3"])
         .map { URL(fileURLWithPath: $0) }.first { FileManager.default.isExecutableFile(atPath: $0.path) }
     static var available: Bool { url != nil }
     static let reason: Comment = "python3 is not installed, so the Hermes plugin can't be run here"
