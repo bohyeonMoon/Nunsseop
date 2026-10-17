@@ -13,6 +13,8 @@ extension NotifyIntegration {
         case "copilot", "github copilot", "github-copilot": .copilot
         case "agy", "antigravity": .antigravity
         case "cursor", "cursor-agent": .cursor
+        case "hermes", "hermes-agent": .hermes
+        case "amp": .amp
         default: nil
         }
     }

@@ -4,9 +4,9 @@ import Foundation
 /// Every change keeps the tool's other settings, and the JSON and TOML files are backed up first. omp, omo and pi are
 /// connected by a file of Nunsseop's in their extensions folder (see `PiExtension`), GitHub Copilot CLI by a hook file of its own in
 /// Copilot's hooks folder (`CopilotHooks`), Antigravity by a group of hooks in the file it shares with other tools (`AntigravityHooks`)
-/// and Cursor by entries in its (`CursorHooks`).
+/// and Cursor by entries in its (`CursorHooks`). Hermes and Amp are connected by a plugin of Nunsseop's (`HermesPlugin`, `AmpPlugin`).
 enum NotifyIntegration: String, CaseIterable, Identifiable {
-    case claudeCode, codex, gemini, openCode, omp, omo, pi, copilot, antigravity, cursor
+    case claudeCode, codex, gemini, openCode, omp, omo, pi, copilot, antigravity, cursor, hermes, amp
 
     enum IntegrationError: Error { case unreadableConfig, unreadableHooks }
 
@@ -21,6 +21,8 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
         case .copilot: "GitHub Copilot"
         case .antigravity: "Antigravity"
         case .cursor: "Cursor"
+        case .hermes: "Hermes"
+        case .amp: "Amp"
         case .omp, .omo, .pi: piAgent?.displayName ?? rawValue
         }
     }
@@ -31,7 +33,7 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
         case .omp: .omp
         case .omo: .omo
         case .pi: .pi
-        case .claudeCode, .codex, .gemini, .openCode, .copilot, .antigravity, .cursor: nil
+        case .claudeCode, .codex, .gemini, .openCode, .copilot, .antigravity, .cursor, .hermes, .amp: nil
         }
     }
 
@@ -46,6 +48,8 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
         case .copilot: .copilot
         case .antigravity: .agy
         case .cursor: .cursor
+        case .hermes: .hermes
+        case .amp: .amp
         }
     }
 
@@ -73,6 +77,8 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
         case .copilot: CopilotHooks.fileURL
         case .antigravity: Self.home.appendingPathComponent(".gemini/config/hooks.json")
         case .cursor: Self.home.appendingPathComponent(".cursor/hooks.json")
+        case .hermes: HermesPlugin.folder.appendingPathComponent("__init__.py")
+        case .amp: AmpPlugin.fileURL
         }
     }
 
@@ -87,6 +93,8 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
         // Its CLI keeps its settings in a folder of its own; the file of hooks is shared with the app and the IDE, and with other tools.
         case .antigravity: folders = [Self.home.appendingPathComponent(".gemini/antigravity-cli"), configURL]
         case .cursor: folders = [configURL.deletingLastPathComponent()]
+        case .hermes: folders = [Self.home.appendingPathComponent(".hermes")]
+        case .amp: folders = [Self.home.appendingPathComponent(".config/amp")]
         }
         return folders.contains { FileManager.default.fileExists(atPath: $0.path) }
     }
@@ -97,7 +105,7 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
     }
 
     /// The tools that report their sessions for the agents count, once connected.
-    static let reportingSessions: [NotifyIntegration] = [.claudeCode, .codex, .gemini, .openCode, .omp, .omo, .pi, .copilot, .antigravity, .cursor]
+    static let reportingSessions: [NotifyIntegration] = [.claudeCode, .codex, .gemini, .openCode, .omp, .omo, .pi, .copilot, .antigravity, .cursor, .hermes, .amp]
 
     /// Where Codex reads lifecycle hooks, next to its config. Its notices stay with the notify command in `configURL`.
     var hooksURL: URL { configURL.deletingLastPathComponent().appendingPathComponent("hooks.json") }
@@ -151,6 +159,10 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
             return (try? Self.loadJSON(at: configURL)).map(AntigravityHooks.isInstalled(in:)) ?? false
         case .cursor:
             return (try? Self.loadJSON(at: configURL)).map(CursorHooks.holdsAny(in:)) ?? false
+        case .hermes:
+            return HermesPlugin.isOurs(configURL)
+        case .amp:
+            return AmpPlugin.isOurs(configURL)
         }
     }
 
@@ -211,16 +223,22 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
             let table = CursorHooks.table(permissions: Self.answersPermissions)
             guard let updated = try CursorHooks.updating(table, in: Self.loadJSON(at: configURL)) else { return }
             try Self.writeJSON(updated, to: configURL)
+        case .hermes:
+            try installOwnFile(HermesPlugin.manifest, at: HermesPlugin.manifestURL, isOurs: HermesPlugin.isOurs)
+            try installOwnFile(HermesPlugin.source(), isOurs: HermesPlugin.isOurs)
+        case .amp:
+            try installOwnFile(AmpPlugin.source(), isOurs: AmpPlugin.isOurs)
         }
     }
 
     /// Writes a file that is Nunsseop's own (an extension, a plugin, a hook file), unless it is that already. A file of the same name that
     /// is not ours is kept as a backup. One of ours that differs is an older version or edited by hand: it is kept too, but only where no
     /// backup is yet (a foreign file's backup is not given up for an upgrade).
-    private func installOwnFile(_ text: String, isOurs: (URL) -> Bool) throws {
-        guard (try? String(contentsOf: configURL, encoding: .utf8)) != text else { return }
-        let backupExists = FileManager.default.fileExists(atPath: configURL.appendingPathExtension("nunsseop-backup").path)
-        try Self.write(Data(text.utf8), to: configURL, backup: !isOurs(configURL) || !backupExists)
+    private func installOwnFile(_ text: String, at url: URL? = nil, isOurs: (URL) -> Bool) throws {
+        let url = url ?? configURL
+        guard (try? String(contentsOf: url, encoding: .utf8)) != text else { return }
+        let backupExists = FileManager.default.fileExists(atPath: url.appendingPathExtension("nunsseop-backup").path)
+        try Self.write(Data(text.utf8), to: url, backup: !isOurs(url) || !backupExists)
     }
 
     /// Whether the extension file is there and Nunsseop's.
@@ -301,6 +319,14 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
             let settings = try Self.loadJSON(at: configURL)
             guard CursorHooks.holdsAny(in: settings) else { return }
             try Self.writeJSON(CursorHooks.removing(from: settings), to: configURL)
+        case .hermes:
+            // Python leaves its compiled copy beside the source; it goes with the plugin's own files, and the folder if nothing else is in it.
+            guard HermesPlugin.isOurs(configURL) else { return }
+            let fileManager = FileManager.default
+            for name in ["__init__.py", "plugin.yaml", "__pycache__"] { try? fileManager.removeItem(at: HermesPlugin.folder.appendingPathComponent(name)) }
+            if (try? fileManager.contentsOfDirectory(atPath: HermesPlugin.folder.path))?.isEmpty == true { try? fileManager.removeItem(at: HermesPlugin.folder) }
+        case .amp:
+            if AmpPlugin.isOurs(configURL) { try? FileManager.default.removeItem(at: configURL) }
         }
     }
 

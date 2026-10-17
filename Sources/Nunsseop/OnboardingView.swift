@@ -405,6 +405,8 @@ private extension NotifyIntegration {
         case .copilot: "GH"
         case .antigravity: "AG"
         case .cursor: "CU"
+        case .hermes: "HM"
+        case .amp: "AM"
         }
     }
 }
