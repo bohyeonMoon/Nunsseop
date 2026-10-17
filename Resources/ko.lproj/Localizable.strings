@@ -615,3 +615,11 @@
 "This, once per update" = "업데이트마다 딱 한 번, 이 화면";
 "Says what's new, then gets out of your way" = "새로 생긴 걸 알려 주고 조용히 빠져요";
 "Got it" = "알겠어요";
+"Gemini CLI, GitHub Copilot, Antigravity, Cursor, Hermes and Amp also report their sessions to the agents count and the Agents tab once connected." = "Gemini CLI, GitHub Copilot, Antigravity, Cursor, Hermes, Amp도 연결하면 세션을 에이전트 수와 에이전트 탭에 알립니다.";
+"Approvals from GitHub Copilot, Antigravity and Cursor show in the notch too, where you can allow or deny them. While the notch holds one, the tool waits for it; “Answer in terminal” (“Answer in Cursor” for Cursor) hands it back. If Nunsseop isn't running, the tool asks as before." = "GitHub Copilot, Antigravity, Cursor의 승인 요청도 노치에 표시되어 허용하거나 거부할 수 있습니다. 노치가 승인을 붙들고 있는 동안 도구는 기다립니다. “터미널에서 답하기”(Cursor는 “Cursor에서 답하기”)를 누르면 도구에 돌려줍니다. Nunsseop이 실행 중이 아니면 도구가 전처럼 직접 묻습니다.";
+"Hermes loads a plugin only after you enable it: run `hermes plugins enable nunsseop` in a terminal once." = "Hermes는 플러그인을 켠 뒤에만 불러옵니다. 터미널에서 `hermes plugins enable nunsseop`을 한 번 실행하세요.";
+"Copy Hermes enable command" = "Hermes 활성화 명령 복사";
+"Enabled in Hermes" = "Hermes에서 켜짐";
+"Not enabled in Hermes yet" = "Hermes에서 아직 꺼져 있음";
+"Amp's plugin API is experimental, so an Amp update may stop this from working." = "Amp의 플러그인 API는 실험 단계라서, Amp 업데이트 후 작동하지 않을 수 있습니다.";
+"Answer in Cursor" = "Cursor에서 답하기";

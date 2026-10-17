@@ -590,3 +590,11 @@
 "This, once per update" = "アップデートごとに一度だけ、この画面";
 "Says what's new, then gets out of your way" = "新しいことを伝えたら、すっと引っ込みます";
 "Got it" = "了解";
+"Gemini CLI, GitHub Copilot, Antigravity, Cursor, Hermes and Amp also report their sessions to the agents count and the Agents tab once connected." = "Gemini CLI、GitHub Copilot、Antigravity、Cursor、Hermes、Amp も、接続するとセッションをエージェント数とエージェントタブに知らせます。";
+"Approvals from GitHub Copilot, Antigravity and Cursor show in the notch too, where you can allow or deny them. While the notch holds one, the tool waits for it; “Answer in terminal” (“Answer in Cursor” for Cursor) hands it back. If Nunsseop isn't running, the tool asks as before." = "GitHub Copilot、Antigravity、Cursor の承認リクエストもノッチに表示され、許可または拒否できます。ノッチが承認を保留している間、ツールは待ちます。「ターミナルで答える」(Cursor は「Cursor で答える」)を押すとツールに戻します。Nunsseop が起動していないときは、これまでどおりツールが自分で尋ねます。";
+"Hermes loads a plugin only after you enable it: run `hermes plugins enable nunsseop` in a terminal once." = "Hermes はプラグインを有効にした後でないと読み込みません。ターミナルで `hermes plugins enable nunsseop` を一度実行してください。";
+"Copy Hermes enable command" = "Hermes の有効化コマンドをコピー";
+"Enabled in Hermes" = "Hermes で有効";
+"Not enabled in Hermes yet" = "Hermes ではまだ有効になっていません";
+"Amp's plugin API is experimental, so an Amp update may stop this from working." = "Amp のプラグイン API は実験的なので、Amp のアップデートで動かなくなることがあります。";
+"Answer in Cursor" = "Cursor で答える";

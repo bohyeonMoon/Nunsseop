@@ -448,6 +448,8 @@ private struct AlertsPane: View {
     @State private var terminals = ResumeTerminal.installed
     @State private var muxyBridge = MuxyBridge.status()
     @State private var paseo = PaseoStatus.current()
+    /// Whether Hermes has the plugin turned on, when it is connected and its config says.
+    @State private var hermesEnabled: Bool?
 
     var body: some View {
         Form {
@@ -507,6 +509,32 @@ private struct AlertsPane: View {
                     Text("Connecting omp, omo or pi adds a file to the extensions folder of the tool. Sessions started afterwards report to the agents count and the Agents tab; Disconnect removes the file. gjc needs no setup: its sessions are read from its own state files while the count or the Agents tab is showing.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
+                if NotifyIntegration.newerTools.contains(where: \.isPresent) {
+                    Text("Gemini CLI, GitHub Copilot, Antigravity, Cursor, Hermes and Amp also report their sessions to the agents count and the Agents tab once connected.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if NotifyIntegration.hermes.isPresent {
+                    if connected.contains(.hermes) {
+                        HStack {
+                            switch hermesEnabled {
+                            case true?: Label("Enabled in Hermes", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                            case false?: Text("Not enabled in Hermes yet").foregroundStyle(.orange)
+                            case nil: EmptyView()
+                            }
+                            Spacer()
+                            Button("Copy Hermes enable command") {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(HermesPlugin.enableCommand, forType: .string)
+                            }
+                        }
+                    }
+                    Text("Hermes loads a plugin only after you enable it: run `hermes plugins enable nunsseop` in a terminal once.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if NotifyIntegration.amp.isPresent {
+                    Text("Amp's plugin API is experimental, so an Amp update may stop this from working.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 Text("The Agents tab lists their sessions and recent conversations with name, folder, model, context used, permission mode and last prompt, read from the tools' own session files on this Mac.")
                     .font(.caption).foregroundStyle(.secondary)
                 Picker("Resume conversations in", selection: Binding(
@@ -532,6 +560,10 @@ private struct AlertsPane: View {
                     }
                     if asking.contains(.openCode) {
                         Text("OpenCode's permission prompts show in the notch too, where you can allow or deny them. OpenCode's own prompt stays in its terminal: answer in either place and the other lets go. Works with OpenCode connected above.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    if !asking.isDisjoint(with: [.copilot, .antigravity, .cursor]) {
+                        Text("Approvals from GitHub Copilot, Antigravity and Cursor show in the notch too, where you can allow or deny them. While the notch holds one, the tool waits for it; “Answer in terminal” (“Answer in Cursor” for Cursor) hands it back. If Nunsseop isn't running, the tool asks as before.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     if asking.contains(.codex) {
@@ -625,6 +657,7 @@ private struct AlertsPane: View {
     private func refreshConnections() {
         paseo = PaseoStatus.current()
         connected = Set(NotifyIntegration.allCases.filter(\.isInstalled))
+        hermesEnabled = connected.contains(.hermes) ? HermesPlugin.isEnabled() : nil
         terminals = ResumeTerminal.installed
         muxyBridge = MuxyBridge.status()
     }

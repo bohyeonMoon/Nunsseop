@@ -104,6 +104,9 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
         present.intersection([.claudeCode, .codex, .openCode, .copilot, .antigravity, .cursor])
     }
 
+    /// The tools that came after the first ones, which Settings explains together.
+    static let newerTools: [NotifyIntegration] = [.gemini, .copilot, .antigravity, .cursor, .hermes, .amp]
+
     /// The tools that report their sessions for the agents count, once connected.
     static let reportingSessions: [NotifyIntegration] = [.claudeCode, .codex, .gemini, .openCode, .omp, .omo, .pi, .copilot, .antigravity, .cursor, .hermes, .amp]
 
