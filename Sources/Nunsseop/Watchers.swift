@@ -112,6 +112,7 @@ enum AgentKind: String, CaseIterable {
     /// pi and the forks that share its session files and extension API (see `PiSessions`), and gajae-code, which has no extension.
     case pi, omp, gjc, omo
     case opencode
+    case gemini, copilot, agy, cursor, hermes, amp
 }
 
 /// One hook call (or extension or plugin event) from a session of one of the tools, reduced to what the count needs.
@@ -138,19 +139,21 @@ struct AgentEvent: Equatable {
 enum AgentHook {
     /// What an event means; nil for the ones that say nothing about work (`auth_success`). `SubagentStart` and `SubagentStop` are
     /// told by `event(headers:)`, which has the subagent's id.
-    /// `PermissionRequest` and `Interrupt` are Codex's.
+    /// `PermissionRequest` and `Interrupt` are Codex's, `BeforeAgent` and `AfterAgent` Gemini CLI's. The other tools' hooks, plugins and
+    /// extensions send Claude Code's names (a Copilot `agentStop` is a `Stop`), and the notification types of Claude Code, Gemini CLI
+    /// (`ToolPermission`) and Copilot (`agent_idle`).
     static func action(event: String, type: String?) -> AgentAction? {
         switch event {
-        case "UserPromptSubmit": return .working
-        case "Stop", "StopFailure": return .finished
+        case "UserPromptSubmit", "BeforeAgent": return .working
+        case "Stop", "StopFailure", "AfterAgent": return .finished
         case "SessionEnd": return .remove
         case "SessionStart": return .opened
         case "PermissionRequest": return .needsInput
         case "Interrupt": return .idle
         case "Notification":
             switch type {
-            case "permission_prompt", "elicitation_dialog", "elicitation_url_dialog", "agent_needs_input": return .needsInput
-            case "idle_prompt": return .idle
+            case "permission_prompt", "elicitation_dialog", "elicitation_url_dialog", "agent_needs_input", "ToolPermission": return .needsInput
+            case "idle_prompt", "agent_idle": return .idle
             case "elicitation_response", "elicitation_complete": return .working
             default: return nil
             }
@@ -336,15 +339,52 @@ final class NotifyServer: @unchecked Sendable {
             + "curl -s -m 1 --connect-timeout 1 -X POST http://127.0.0.1:\(port)/agent -d '' "
             + authHeaderOption + " "
             + "-H \"X-Session: $(k session_id)\" -H \"X-Event: $(k hook_event_name)\" -H \"X-Type: $(k notification_type)\" "
-            + "-H \"X-Subagent: $(k agent_id)\" -H \"X-App: $__CFBundleIdentifier\" -H \"X-Herdr: ${HERDR_PANE_ID:+1}\" "
-            + "-H \"X-Muxy: ${MUXY_SESSION_ID}\" -H \"X-Cmux: ${CMUX_SURFACE_ID}\" "
-            + "-H \"X-Mux: ${TMUX:+1}${ZELLIJ:+1}${STY:+1}\" "
-            + "-H \"X-Wezterm: ${WEZTERM_PANE}\" -H \"X-Wezterm-Socket: ${WEZTERM_UNIX_SOCKET}\" -H \"X-Kitty: ${KITTY_WINDOW_ID}\" -H \"X-Kitty-Socket: ${KITTY_LISTEN_ON}\" "
-            + "-H \"X-Iterm: ${ITERM_SESSION_ID}\" -H \"X-Orca: ${ORCA_PANE_KEY}\" "
+            + "-H \"X-Subagent: $(k agent_id)\" -H \"X-App: $__CFBundleIdentifier\" " + terminalHeaders
             + "-H \"X-Background: ${CLAUDE_JOB_DIR:+1}\" "
             + "-H \"X-Pid: $PPID\" "
             + (agent == .claude ? "-H \"X-Background-Tasks: $(k background_tasks)\" " : "-H 'X-Agent: \(agent.rawValue)' ")
             + ">/dev/null 2>&1 || true"
+    }
+
+    /// The headers that say which terminal a hook runs in, the same for every tool (see `AgentHook.input`).
+    private static let terminalHeaders =
+        "-H \"X-Herdr: ${HERDR_PANE_ID:+1}\" "
+        + "-H \"X-Muxy: ${MUXY_SESSION_ID}\" -H \"X-Cmux: ${CMUX_SURFACE_ID}\" "
+        + "-H \"X-Mux: ${TMUX:+1}${ZELLIJ:+1}${STY:+1}\" "
+        + "-H \"X-Wezterm: ${WEZTERM_PANE}\" -H \"X-Wezterm-Socket: ${WEZTERM_UNIX_SOCKET}\" -H \"X-Kitty: ${KITTY_WINDOW_ID}\" -H \"X-Kitty-Socket: ${KITTY_LISTEN_ON}\" "
+        + "-H \"X-Iterm: ${ITERM_SESSION_ID}\" -H \"X-Orca: ${ORCA_PANE_KEY}\" "
+
+    /// The hook of a tool whose events don't carry Claude Code's names or keys (Copilot's `agentStop`, Antigravity's `conversationId`,
+    /// Cursor's `conversation_id`): the same headers, with the event named by the hook itself. Nothing but the ids below leaves the
+    /// event JSON, and a closed or stuck Nunsseop costs the tool at most a second.
+    /// - session: the key of the session id in the event JSON (`plutil` keypath).
+    /// - event: shell text for `X-Event`, inside double quotes: a name of `AgentHook.action`, or a command substitution that picks one.
+    /// - type: the same for `X-Type`.
+    /// - only: a shell test that must hold for the event to be sent (`k` reads a key of the event JSON); nothing is sent otherwise.
+    /// - app: what `X-App` falls back to when macOS names no app, for a tool that runs in one of its own (Cursor).
+    /// - pid: whether the hook's parent is the tool's process, which `X-Pid` says; false for a tool whose hooks run in a process shared
+    ///   by sessions or by tools.
+    /// - after: what the hook prints once the event is sent, for a tool that wants an answer to every event.
+    static func toolHookCommand(for agent: AgentKind, session: String, event: String, type: String = "", only: String? = nil,
+                                app: String? = nil, pid: Bool = true, after: String? = nil, port: UInt16 = NotifyServer.port) -> String {
+        let send = "curl -s -m 1 --connect-timeout 1 -X POST http://127.0.0.1:\(port)/agent -d '' "
+            + authHeaderOption + " "
+            + "-H \"X-Session: $(k \(session))\" -H \"X-Event: \(event)\" -H \"X-Type: \(type)\" "
+            + "-H \"X-App: ${__CFBundleIdentifier\(app.map { ":-" + $0 } ?? "")}\" " + terminalHeaders
+            + (pid ? "-H \"X-Pid: $PPID\" " : "")
+            + "-H 'X-Agent: \(agent.rawValue)' >/dev/null 2>&1"
+        let guarded = only.map { "if \($0); then \(send); fi" } ?? send
+        return "in=$(cat); k() { printf '%s' \"$in\" | plutil -extract \"$1\" raw -o - - 2>/dev/null | tr -cd 'A-Za-z0-9_.-' | cut -c1-64; }; "
+            + guarded + (after.map { "; " + $0 } ?? "") + "; true"
+    }
+
+    /// A notice for a tool whose hook passes no message of its own, or only for some events: `message` is shown with `title` whenever
+    /// `only` holds (see `toolHookCommand`). `app` as there.
+    static func noticeCommand(title: String, message: String, only: String? = nil, app: String? = nil, port: UInt16 = NotifyServer.port) -> String {
+        let send = "curl -s -m 2 -X POST http://127.0.0.1:\(port)/notify " + authHeaderOption + " "
+            + "-H 'X-Title: \(title)' -H \"X-App: ${__CFBundleIdentifier\(app.map { ":-" + $0 } ?? "")}\" --data-binary '\(message)' >/dev/null 2>&1"
+        return "in=$(cat); k() { printf '%s' \"$in\" | plutil -extract \"$1\" raw -o - - 2>/dev/null | tr -cd 'A-Za-z0-9_.-' | cut -c1-64; }; "
+            + (only.map { "if \($0); then \(send); fi" } ?? send) + "; true"
     }
 
     /// Claude Code's PermissionRequest hook. It asks the notch about a permission prompt and prints the answer Claude Code

@@ -11,6 +11,12 @@ extension AgentKind {
         case "gjc", "gajae-code": self = .gjc
         case "omo": self = .omo
         case "opencode": self = .opencode
+        case "gemini", "gemini-cli", "gemini cli": self = .gemini
+        case "copilot", "github-copilot", "github copilot": self = .copilot
+        case "agy", "antigravity": self = .agy
+        case "cursor", "cursor-agent": self = .cursor
+        case "hermes", "hermes-agent": self = .hermes
+        case "amp": self = .amp
         default: return nil
         }
     }
@@ -21,6 +27,12 @@ extension AgentKind {
         case .claude: "Claude Code"
         case .codex: "Codex"
         case .opencode: "OpenCode"
+        case .gemini: "Gemini CLI"
+        case .copilot: "GitHub Copilot"
+        case .agy: "Antigravity"
+        case .cursor: "Cursor"
+        case .hermes: "Hermes"
+        case .amp: "Amp"
         case .pi, .omp, .gjc, .omo: rawValue
         }
     }
@@ -29,7 +41,17 @@ extension AgentKind {
     var isPiFamily: Bool {
         switch self {
         case .pi, .omp, .gjc, .omo: true
-        case .claude, .codex, .opencode: false
+        case .claude, .codex, .opencode, .gemini, .copilot, .agy, .cursor, .hermes, .amp: false
+        }
+    }
+
+    /// Whether one process of the tool can host several sessions at once (the server OpenCode's plugin lives in, a Cursor window with
+    /// several conversations, Amp's plugin process, a daemon that runs Antigravity's hooks), so a new session in a process is no sign that
+    /// the earlier one in it is over.
+    var sharesProcess: Bool {
+        switch self {
+        case .opencode, .agy, .cursor, .amp: true
+        case .claude, .codex, .pi, .omp, .gjc, .omo, .gemini, .copilot, .hermes: false
         }
     }
 
@@ -48,6 +70,12 @@ extension AgentKind {
         case .omp: return "omp --resume=\(quoted)"
         case .gjc: return "gjc --resume=\(quoted)"
         case .opencode: return "opencode -s \(quoted)"
+        case .gemini: return "gemini --resume=\(quoted)"
+        case .copilot: return "copilot --resume=\(quoted)"
+        case .agy: return "agy --resume \(quoted)"
+        case .cursor: return "cursor-agent --resume=\(quoted)"
+        case .hermes: return "hermes --resume \(quoted)"
+        case .amp: return "amp threads continue \(quoted)"
         }
     }
 }

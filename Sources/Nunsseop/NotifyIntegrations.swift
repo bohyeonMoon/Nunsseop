@@ -71,13 +71,14 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
     }
 
     /// The tools that report their sessions for the agents count, once connected.
-    static let reportingSessions: [NotifyIntegration] = [.claudeCode, .codex, .openCode, .omp, .omo, .pi]
+    static let reportingSessions: [NotifyIntegration] = [.claudeCode, .codex, .gemini, .openCode, .omp, .omo, .pi]
 
     /// Where Codex reads lifecycle hooks, next to its config. Its notices stay with the notify command in `configURL`.
     var hooksURL: URL { configURL.deletingLastPathComponent().appendingPathComponent("hooks.json") }
 
     /// The hooks Nunsseop keeps in a JSON tool's settings. Claude Code and Codex also report their sessions for the
-    /// agents count and ask for permission prompts; Gemini CLI's event names aren't known well enough for that.
+    /// agents count and ask for permission prompts; Gemini CLI reports its sessions only: its `Notification` hook is observational
+    /// and can't grant a permission.
     var hooks: JSONHook.Table {
         switch self {
         case .claudeCode:
@@ -92,6 +93,10 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
             return ["UserPromptSubmit", "PermissionRequest", "Stop", "Interrupt", "SessionEnd"].map { ($0, agent) }
                 // After the agent hooks, as a group of its own: Codex keys its trust of a hook by group and position.
                 + (Self.answersPermissions ? [("PermissionRequest", NotifyServer.permissionHookCommand)] : [])
+        case .gemini:
+            let agent = NotifyServer.agentHookCommand(for: .gemini)
+            return [("Notification", NotifyServer.hookCommand(title: name))]
+                + ["Notification", "BeforeAgent", "AfterAgent", "SessionStart", "SessionEnd"].map { ($0, agent) }
         default:
             return [("Notification", NotifyServer.hookCommand(title: name))]
         }
