@@ -102,7 +102,7 @@ enum PermissionDialect: String {
         // One name, one place for the arguments; and no other spelling of either.
         if let camel = json["toolName"], let snake = json["tool_name"], (camel as? String) != (snake as? String) { return nil }
         let places = ["toolInput", "tool_input", "toolArgs"]
-        guard json.keys.allSatisfy({ field in !["toolname", "toolinput", "toolargs"].contains(Self.spelled(field)) || ["toolName", "tool_name"].contains(field) || places.contains(field) }),
+        guard Self.hasNoRivalContainer(json, allowed: ["toolName", "tool_name"] + places),
               places.filter({ json[$0] != nil }).count <= 1 else { return nil }
         guard var input = Self.arguments(places.first { json[$0] != nil }.flatMap { json[$0] }) else { return nil }
         // Docs: a sandbox bypass can't be allowed in advance, only denied; Copilot asks for it itself.
@@ -126,6 +126,8 @@ enum PermissionDialect: String {
         guard var args = call["args"] as? [String: Any], args.keys.allSatisfy(known.all.contains),
               name != "multi_replace_file_content" || args["ReplacementChunks"] is [Any],
               known.text.allSatisfy({ (args[$0] as? String)?.isEmpty == false || (name == "write_to_file" && $0 == "CodeContent" && args[$0] is String) }) else { return nil }
+        // Nor does the request hold another toolCall or arguments beside the one read.
+        guard Self.hasNoRivalContainer(json, allowed: ["toolCall"]) else { return nil }
         // The folder it runs in is part of the call, and its arguments' own.
         let cwd = args["Cwd"] as? String ?? (json["workspacePaths"] as? [Any])?.first as? String
         let tool: String
@@ -147,6 +149,7 @@ enum PermissionDialect: String {
 
     private func cursorCall(_ json: [String: Any]) -> (tool: String, input: [String: Any], cwd: String?)? {
         let roots = (json["workspace_roots"] as? [Any])?.first as? String
+        guard Self.hasNoRivalContainer(json, allowed: ["tool_name", "tool_input"]) else { return nil }
         // The fields of the hook that are the call's own are listed, whatever they are, and none may be read as a command or a file.
         func rest(besides known: Set<String>) -> [String: Any]? {
             var extra: [String: Any] = [:]
@@ -210,17 +213,33 @@ enum PermissionDialect: String {
     /// A name without its case, underscores and hyphens: `CommandLine`, `command_line` and `command-line` are one.
     private static func spelled(_ name: String) -> String { name.lowercased().filter { $0.isLetter || $0.isNumber } }
 
-    /// Other names for what the card of a command or a file shows as its headline.
-    private static let aliases: Set<String> = [
-        "command", "cmd", "commandline", "commandtext", "fullcommand", "fullcommandtext", "shellcommand", "script", "args", "argv", "exec",
-        "filepath", "path", "file", "filename", "targetfile", "content", "contents", "text", "codecontent", "oldstring", "newstring",
-        "targetcontent", "replacementcontent", "newsource", "notebookpath"]
+    /// Names that stand for one kind of thing in a call, by spelling: what runs, the file it is about, what goes into it, what it replaces and what
+    /// it is replaced by. A call that has two names of one kind has two candidates for what runs.
+    private static let kinds: [Set<String>] = [
+        ["command", "cmd", "commandline", "commandtext", "fullcommand", "fullcommandtext", "shellcommand", "commandstring", "script", "args", "arguments", "argv", "exec",
+         "run", "shell"],
+        ["filepath", "path", "file", "filename", "targetfile", "notebookpath", "uri", "target"],
+        ["content", "contents", "text", "codecontent", "newsource", "body", "data"],
+        ["oldstring", "oldstr", "oldtext", "targetcontent", "search", "find"],
+        ["newstring", "newstr", "newtext", "replacementcontent", "replacement", "replace"],
+    ]
 
-    /// Whether a call that the card shows as a command or a file has a field of another spelling that the tool might read instead of the one
-    /// shown (`cmd`, `commandLine`, `Command` beside `command`).
+    /// Whether the call has two names of one kind, or, for a card that shows a command or a file as its headline, a name of any kind
+    /// besides the one it reads (`cmd`, `commandLine`, `Command` beside `command`); which one the tool runs is not for the card to guess.
+    /// A tool with no headline lists every field by its name, and a single `path` among them is just that.
     private static func isAmbiguous(tool: String, input: [String: Any]) -> Bool {
-        guard ["Bash", "Edit", "Write"].contains(tool) else { return false }
-        return input.keys.contains { !meaningful.contains($0) && aliases.contains(spelled($0)) }
+        let spellings = input.keys.filter { !meaningful.contains($0) }.map(spelled)
+        if ["Bash", "Edit", "Write"].contains(tool), spellings.contains(where: { name in kinds.contains { $0.contains(name) } }) { return true }
+        return kinds.contains { kind in input.keys.filter { kind.contains(spelled($0)) }.count > 1 }
+    }
+
+    /// The names under which a request holds the call or its arguments.
+    private static let containers: Set<String> = ["toolname", "toolinput", "toolargs", "toolcall", "args", "arguments", "input", "params", "parameters", "toolparams"]
+
+    /// Whether the request has no field that spells the name of the call or its arguments differently from the ones read (`ToolArgs`,
+    /// `arguments`): the tool might read that one.
+    private static func hasNoRivalContainer(_ json: [String: Any], allowed: [String]) -> Bool {
+        json.keys.allSatisfy { allowed.contains($0) || !containers.contains(spelled($0)) }
     }
 
     /// Renames `key` (when there is one); false when `name` is there already, which would hide one of the two.
