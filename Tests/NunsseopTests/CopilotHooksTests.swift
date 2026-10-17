@@ -241,9 +241,9 @@ struct CopilotApprovalTests {
 
     @Test func anyOtherToolIsItsOwnNameWithEverythingItWasGiven() throws {
         let prompt = try card(["toolName": "github-mcp-server-create_issue", "toolArgs": #"{"title":"Bug","labels":["a"]}"#,
-                               "requestSandboxBypass": true])
+                               "fullCommandText": "create issue Bug"])
         #expect(prompt.title == "github-mcp-server-create_issue" && prompt.symbol == "puzzlepiece.extension")
-        #expect(prompt.detail.contains("\"title\" : \"Bug\"") && prompt.detail.contains("\"requestSandboxBypass\" : true"))
+        #expect(prompt.detail.contains("\"title\" : \"Bug\"") && prompt.detail.contains("\"fullCommandText\" : \"create issue Bug\""))
         // Arguments that are no JSON object are shown as they came.
         let plain = try card(["toolName": "view", "toolArgs": "/Users/me/file.txt"])
         #expect(plain.title == "view" && plain.detail.contains("/Users/me/file.txt"))
