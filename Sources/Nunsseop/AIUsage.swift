@@ -160,7 +160,7 @@ final class AIUsageModel: ObservableObject {
 
     nonisolated private static let home = URL(fileURLWithPath: NSHomeDirectory())
 
-    nonisolated private static func files(under root: URL, modifiedSince date: Date, where match: (URL) -> Bool) -> [(URL, Date)] {
+    nonisolated static func files(under root: URL, modifiedSince date: Date, where match: (URL) -> Bool) -> [(URL, Date)] {
         guard let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey]) else { return [] }
         var result: [(URL, Date)] = []
         for case let url as URL in enumerator where match(url) {
@@ -171,7 +171,7 @@ final class AIUsageModel: ObservableObject {
     }
 
     /// Parses ISO 8601 times with or without fractional seconds.
-    nonisolated private static func isoParser() -> (String) -> Date? {
+    nonisolated static func isoParser() -> (String) -> Date? {
         let fractional = ISO8601DateFormatter(), whole = ISO8601DateFormatter()
         fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return { fractional.date(from: $0) ?? whole.date(from: $0) }
@@ -520,10 +520,12 @@ final class AIUsageModel: ObservableObject {
 struct AIUsageTab: View {
     @ObservedObject var usage: AIUsageModel
     @ObservedObject var settings = AppSettings.shared
+    let showRecap: () -> Void
 
     var body: some View {
         AIUsagePanels(providers: usage.providers, loading: usage.loading, countingTokens: usage.countingTokens,
-                      asksForLiveLimits: !settings.claudeLimitsAsked && !settings.claudeLimitsFromAnthropic, settings: settings) {
+                      asksForLiveLimits: !settings.claudeLimitsAsked && !settings.claudeLimitsFromAnthropic, settings: settings,
+                      showRecap: showRecap) {
             usage.refresh(includeTokens: false)
         }
         .task {
@@ -546,6 +548,8 @@ struct AIUsagePanels: View {
     let countingTokens: Bool
     let asksForLiveLimits: Bool
     let settings: AppSettings
+    /// The button that opens last week's recap, on the last panel or where the panels would be.
+    var showRecap: (() -> Void)?
     let turnedOnLiveLimits: () -> Void
 
     var body: some View {
@@ -564,6 +568,7 @@ struct AIUsagePanels: View {
                         if !loading {
                             Text("Usage appears here once you have used Claude Code or Codex on this Mac.")
                                 .font(.system(size: 11)).foregroundStyle(PanelInk.hint).multilineTextAlignment(.center)
+                            if let showRecap { RecapLink(action: showRecap).padding(.top, 4) }
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -573,7 +578,7 @@ struct AIUsagePanels: View {
             }
             ForEach(Array(providers.enumerated()), id: \.element.id) { index, provider in
                 if index > 0 { PanelVLine().padding(.vertical, 2) }
-                ProviderPanel(provider: provider, countingTokens: countingTokens)
+                ProviderPanel(provider: provider, countingTokens: countingTokens, showRecap: index == providers.count - 1 ? showRecap : nil)
                     .padding(.leading, index > 0 || asksForLiveLimits ? 14 : 0)
                     .padding(.trailing, index < providers.count - 1 ? 14 : 0)
             }
@@ -612,6 +617,7 @@ private struct LiveLimitsPrompt: View {
 private struct ProviderPanel: View {
     let provider: AIUsageModel.Provider
     let countingTokens: Bool
+    var showRecap: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -631,7 +637,7 @@ private struct ProviderPanel: View {
             }
             .frame(height: 18)
             // The tools whose logs are counted, e.g. "Claude Code · gjc"; the sign-in problem takes the line when there is one.
-            Group {
+            HStack(spacing: 6) {
                 if let problem = provider.signInProblem {
                     HStack(spacing: 4) {
                         Image(systemName: "exclamationmark").font(.system(size: 9, weight: .bold)).accessibilityHidden(true)
@@ -641,6 +647,10 @@ private struct ProviderPanel: View {
                     .help(Text(problem))
                 } else {
                     Text.panel(provider.tools.joined(separator: " · "), size: 11, opacity: 0.6).lineLimit(1)
+                }
+                if let showRecap {
+                    Spacer(minLength: 0)
+                    RecapLink(action: showRecap)
                 }
             }
             .frame(height: 13, alignment: .leading)

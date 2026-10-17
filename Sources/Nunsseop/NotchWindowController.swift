@@ -295,6 +295,14 @@ final class NotchWindowController {
         return model.onboarding.handle(keyCode: event.keyCode, modifiers: event.modifierFlags, isRepeat: event.isARepeat)
     }
 
+    /// Escape closes the recap, while the notch shows it and is the key window.
+    private func handlesRecapKey(_ event: NSEvent) -> Bool {
+        guard event.window === panel, model.recap.isShowing, model.approvals.current == nil, event.keyCode == 53,
+              event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty else { return false }
+        model.recap.close()
+        return true
+    }
+
     #if DEBUG
     private var snapshotter: DebugSnapshotter?
     #endif
@@ -446,6 +454,11 @@ final class NotchWindowController {
             self.model.collapse()
             self.panel.ignoresMouseEvents = true
         })
+        // The recap takes the keyboard for Escape.
+        settingsObservers.append(model.recap.$isShowing.removeDuplicates().sink { [weak self] showing in
+            guard showing, self?.panel.isVisible == true else { return }
+            self?.panel.makeKey()
+        })
         // The field needs the keyboard, which a panel that never activates gets by becoming key.
         settingsObservers.append(model.agentList.$composing.sink { [weak self] row in
             guard row != nil else { return }
@@ -477,7 +490,7 @@ final class NotchWindowController {
         }
         if let keys = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { [weak self] event in
             guard let self else { return event }
-            if MainActor.assumeIsolated({ self.handlesTourKey(event) }) { return nil }
+            if MainActor.assumeIsolated({ self.handlesTourKey(event) || self.handlesRecapKey(event) }) { return nil }
             guard event.keyCode == 53 else {
                 return MainActor.assumeIsolated { self.handlesAgentKey(event) || self.handlesPanelKey(event) } ? nil : event
             }

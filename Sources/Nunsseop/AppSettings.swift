@@ -130,6 +130,8 @@ final class AppSettings: ObservableObject {
     @Published var limitAlerts: Bool = AppSettings.load("limitAlerts", default: true) { didSet { save(limitAlerts, "limitAlerts") } }
     /// The notch cheers, eyebrow hopping, when a coding agent finishes its turn.
     @Published var cheerFinished: Bool = AppSettings.load("cheerFinished", default: true) { didSet { save(cheerFinished, "cheerFinished") } }
+    /// Shows last week's recap of the agents' work the first time the notch opens in a week; the AI tab shows it either way.
+    @Published var weeklyRecap: Bool = AppSettings.load("weeklyRecap", default: true) { didSet { save(weeklyRecap, "weeklyRecap") } }
     /// Shaking the pointer while dragging files shows a drop target that adds them to the shelf.
     @Published var shakeToShelf: Bool = AppSettings.load("shakeToShelf", default: true) { didSet { save(shakeToShelf, "shakeToShelf") } }
     @Published var downloadsToShelf: Bool = AppSettings.load("downloadsToShelf", default: false) { didSet { save(downloadsToShelf, "downloadsToShelf") } }

@@ -625,3 +625,35 @@
 "The current file is kept as %@." = "El archivo actual se conserva como %@.";
 "… %lld more lines" = "… %lld líneas más";
 "Hooks you already had stay as they are. Disconnecting takes out only Nunsseop's lines." = "Los hooks que ya tenías se quedan como están. Al desconectar solo se quitan las líneas de Nunsseop.";
+
+/* Weekly recap */
+"What your brow saw last week" = "Lo que tu ceja vio la semana pasada";
+"Agent working time" = "Tiempo de trabajo";
+"Sessions" = "Sesiones";
+"Lines changed" = "Líneas cambiadas";
+"Tokens" = "Tokens";
+"Most worked project" = "Proyecto más trabajado";
+"Longest session" = "Sesión más larga";
+"Busiest day: %@" = "Día más ocupado: %@";
+"Busiest day" = "Día más ocupado";
+"↑ %@ vs the week before" = "↑ %@ vs. sem. anterior";
+"↓ %@ vs the week before" = "↓ %@ vs. sem. anterior";
+"Same as the week before" = "Como la semana anterior";
+"Nothing the week before" = "Nada la semana anterior";
+"1 file" = "1 archivo";
+"%@ of the time" = "%@ del tiempo";
+"%@ morning" = "%@ por la mañana";
+"%@ afternoon" = "%@ por la tarde";
+"%@ evening" = "%@ al anochecer";
+"%@ night" = "%@ por la noche";
+"1 project" = "1 proyecto";
+"%lld projects" = "%lld proyectos";
+"Names hidden" = "Nombres ocultos";
+"Save image" = "Guardar imagen";
+"Saved to Downloads" = "Guardada en Descargas";
+"Couldn't save the image" = "No se pudo guardar la imagen";
+"A quiet week" = "Una semana tranquila";
+"No Claude Code or Codex sessions last week, so there is nothing to look back on." = "La semana pasada no hubo sesiones de Claude Code ni de Codex, así que no hay nada que repasar.";
+"Last week" = "Semana pasada";
+"Recap last week's agent work on Mondays" = "Resumir el trabajo de los agentes de la semana pasada los lunes";
+"Added up on this Mac from the session files of Claude Code and Codex, and never sent anywhere. The AI tab can show it any time." = "Se calcula en este Mac a partir de los archivos de sesión de Claude Code y Codex, y no se envía a ningún sitio. La pestaña de IA puede mostrarlo en cualquier momento.";

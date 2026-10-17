@@ -625,3 +625,35 @@
 "The current file is kept as %@." = "現在のファイルは %@ として保管されます。";
 "… %lld more lines" = "… さらに %lld 行";
 "Hooks you already had stay as they are. Disconnecting takes out only Nunsseop's lines." = "もともとあったフックはそのまま残ります。接続を解除すると、Nunsseop の行だけが取り除かれます。";
+
+/* Weekly recap */
+"What your brow saw last week" = "先週、眉が見ていたこと";
+"Agent working time" = "エージェントの作業時間";
+"Sessions" = "セッション";
+"Lines changed" = "変更した行";
+"Tokens" = "トークン";
+"Most worked project" = "最も作業したプロジェクト";
+"Longest session" = "最も長いセッション";
+"Busiest day: %@" = "最も忙しかった日：%@";
+"Busiest day" = "最も忙しかった日";
+"↑ %@ vs the week before" = "前の週より%@多い";
+"↓ %@ vs the week before" = "前の週より%@少ない";
+"Same as the week before" = "前の週とほぼ同じ";
+"Nothing the week before" = "前の週は記録なし";
+"1 file" = "1 個のファイル";
+"%@ of the time" = "全体の%@";
+"%@ morning" = "%@の朝";
+"%@ afternoon" = "%@の午後";
+"%@ evening" = "%@の夕方";
+"%@ night" = "%@の夜";
+"1 project" = "1 件のプロジェクト";
+"%lld projects" = "%lld 件のプロジェクト";
+"Names hidden" = "名前は非表示";
+"Save image" = "画像を保存";
+"Saved to Downloads" = "ダウンロードに保存しました";
+"Couldn't save the image" = "画像を保存できませんでした";
+"A quiet week" = "静かな一週間でした";
+"No Claude Code or Codex sessions last week, so there is nothing to look back on." = "先週は Claude Code や Codex のセッションがなく、振り返る内容がありません。";
+"Last week" = "先週";
+"Recap last week's agent work on Mondays" = "月曜日に先週のエージェントの作業をまとめて表示";
+"Added up on this Mac from the session files of Claude Code and Codex, and never sent anywhere. The AI tab can show it any time." = "Claude Code と Codex のセッションファイルからこの Mac 上で集計し、どこにも送信しません。AI タブからいつでも見られます。";
