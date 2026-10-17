@@ -117,7 +117,7 @@ final class NotchWindowController {
     private var settingsObservers: [AnyCancellable] = []
     /// Keeps the AI limits fresh while an idle ear shows them.
     private var aiUsageTimer: Timer?
-    private var hotKey: GlobalHotKey?
+    private var hotKeys: [ShortcutAction: GlobalHotKey] = [:]
     private var resignObserver: NSObjectProtocol?
     private lazy var shakeShelf = ShakeShelf(shelf: model.shelf, hud: model.hud)
 
@@ -183,21 +183,32 @@ final class NotchWindowController {
         model.notices.add(symbol: symbol, title: title, detail: detail, action: action)
     }
 
-    /// Opens the notch on the Search tab with the keyboard focus in the search field.
-    private func openSearch() {
+    /// What a global shortcut does: opens the notch on a tab with the keyboard, closes it, or goes to a session or the source of a notice.
+    private func perform(_ action: ShortcutAction) {
         // The tour has the notch, and shows the shortcut itself.
         guard panel.isVisible, !model.onboarding.isActive else { return }
-        if model.isExpanded && model.tab == .search {
+        switch action.step(expanded: model.isExpanded, tab: model.tab) {
+        case .collapse:
             model.collapse()
             panel.ignoresMouseEvents = true
-            return
+        case .open(let tab, let focusSearch):
+            if let tab { model.tab = tab }
+            model.expand()
+            model.pinned = true
+            panel.ignoresMouseEvents = false
+            panel.makeKey()
+            if focusSearch { model.search.focusToken += 1 }
+        case .goToWaitingAgent:
+            if !model.agentList.focusLongestWaiting() {
+                model.hud.show(.notice(symbol: "checkmark.circle", title: String(localized: "No agent is waiting"), detail: nil), duration: 3)
+            }
+        case .goToLastNotice:
+            if let action = model.notices.latestWithAction?.action {
+                action()
+            } else {
+                model.hud.show(.notice(symbol: "bell.slash", title: String(localized: "No notice to go back to"), detail: nil), duration: 3)
+            }
         }
-        model.tab = .search
-        model.expand()
-        model.pinned = true
-        panel.ignoresMouseEvents = false
-        panel.makeKey()
-        model.search.focusToken += 1
     }
 
     init() {
@@ -446,13 +457,18 @@ final class NotchWindowController {
             guard id != nil else { return }
             self?.panel.makeKey()
         })
-        settingsObservers.append(model.settings.$searchHotkey.combineLatest(model.settings.$searchHotKey, model.settings.$recordingShortcut)
-            .sink { [weak self] enabled, combo, recording in
+        let settings = model.settings
+        settingsObservers.append(Publishers.CombineLatest4(settings.$searchHotkey, settings.$searchHotKey, settings.$shortcuts, settings.$recordingShortcut)
+            .sink { [weak self] enabled, search, others, recording in
                 guard let self else { return }
-                self.hotKey = nil
-                guard enabled && !recording else { return }
-                self.hotKey = GlobalHotKey(combo: combo) { [weak self] in self?.openSearch() }
-                self.model.settings.searchShortcutTaken = self.hotKey?.isRegistered != true
+                self.hotKeys = [:]
+                guard !recording else { return }
+                var taken: Set<ShortcutAction> = []
+                for (action, combo) in ShortcutAction.active(searchEnabled: enabled, search: search, others: others) {
+                    let key = GlobalHotKey(combo: combo) { [weak self] in self?.perform(action) }
+                    if key.isRegistered { self.hotKeys[action] = key } else { taken.insert(action) }
+                }
+                self.model.settings.shortcutsTaken = taken
             })
         model.search.onFinish = { [weak self] in
             guard let self, self.model.isExpanded else { return }

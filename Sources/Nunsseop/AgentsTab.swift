@@ -818,6 +818,24 @@ final class AgentsTabModel: ObservableObject {
         }
     }
 
+    /// The session that has been waiting for you longest; one that doesn't say since when comes last.
+    static func longestWaiting(in rows: [AgentRow]) -> AgentRow? {
+        rows.filter { $0.state == .waiting }.min { ($0.since ?? .distantFuture) < ($1.since ?? .distantFuture) }
+    }
+
+    /// Goes to the session that has waited longest, as a double click on its row does. False when none waits. With the tab not showing
+    /// nothing keeps the rows current, so they are made again first.
+    @discardableResult
+    func focusLongestWaiting(now: Date = .now) -> Bool {
+        if !isShowing {
+            asOf = now
+            rebuild(board.entries(now: now))
+        }
+        guard let row = Self.longestWaiting(in: rows) else { return false }
+        focus(row)
+        return true
+    }
+
     /// The app comes forward whatever the calls came to. One that failed means the session may be gone, so its target is verified again;
     /// one macOS refused leaves the note that says where to allow it.
     private func focused(_ outcome: SendOutcome, _ id: String, _ app: String) {

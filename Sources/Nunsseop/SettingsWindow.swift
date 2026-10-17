@@ -241,8 +241,67 @@ private struct GeneralPane: View {
                 Toggle("Swipe down on the notch to open, up to close", isOn: $settings.swipeToOpen)
                 Toggle("Swipe left or right on the Home tab to skip tracks", isOn: $settings.swipeForTracks)
             }
+            ShortcutsSection(settings: settings)
         }
         .formStyle(.grouped)
+    }
+}
+
+/// One recordable shortcut for each thing the notch can be told to do from anywhere.
+struct ShortcutsSection: View {
+    @ObservedObject var settings: AppSettings
+    /// The action a recording was refused for, and the one that already has the combination.
+    @State private var refused: (action: ShortcutAction, by: ShortcutAction)?
+
+    var body: some View {
+        Section {
+            ForEach(ShortcutAction.allCases) { action in
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(verbatim: action.title)
+                            if let subtitle = action.subtitle {
+                                Text(verbatim: subtitle).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        Spacer(minLength: 8)
+                        ShortcutRecorder(settings: settings, action: action, refused: $refused)
+                    }
+                    notes(for: action)
+                }
+            }
+        } header: {
+            Text("Shortcuts")
+        } footer: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("New actions start empty. You'll be told when another app already uses a combination.")
+                Text("To use Search in place of Spotlight, record ⌘Space here and turn off Spotlight’s shortcut in Keyboard Shortcuts.")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func notes(for action: ShortcutAction) -> some View {
+        if let refused, refused.action == action {
+            Text("Already used by “\(refused.by.title)”. Pick a different combination.")
+                .font(.caption).foregroundStyle(.orange)
+        } else if !settings.recordingShortcut, let combo = settings.shortcut(for: action) {
+            if let conflict = combo.systemConflict {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("macOS uses this shortcut for “\(conflict)”. Turn that off in Keyboard Shortcuts so Nunsseop gets it.")
+                        .font(.caption).foregroundStyle(.orange)
+                    Button("Open Keyboard Shortcuts") {
+                        if let url = URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                    .controlSize(.small)
+                }
+            } else if settings.shortcutsTaken.contains(action) {
+                Text("Another app is already using this shortcut. Pick a different one.")
+                    .font(.caption).foregroundStyle(.orange)
+            }
+        }
     }
 }
 
@@ -445,6 +504,7 @@ private struct AlertsPane: View {
     @ObservedObject var settings: AppSettings
     @State private var connected: Set<NotifyIntegration> = []
     @State private var failed: URL?
+    @State private var connecting: ConnectRequest?
     @State private var terminals = ResumeTerminal.installed
     @State private var muxyBridge = MuxyBridge.status()
     @State private var paseo = PaseoStatus.current()
@@ -623,6 +683,12 @@ private struct AlertsPane: View {
             }
         }
         .formStyle(.grouped)
+        .sheet(item: $connecting) { request in
+            ConnectSheet(request: request, cancel: { connecting = nil }, connect: {
+                connecting = nil
+                connect(request.tool)
+            })
+        }
     }
 
     private func refreshConnections() {
@@ -638,9 +704,31 @@ private struct AlertsPane: View {
         muxyBridge = MuxyBridge.status()
     }
 
+    /// Connecting asks first, with the lines it would change; disconnecting doesn't.
     private func toggle(_ tool: NotifyIntegration) {
+        guard !connected.contains(tool) else {
+            do {
+                try tool.uninstall()
+                failed = nil
+            } catch {
+                failed = tool.file(failing: error)
+            }
+            return refreshConnections()
+        }
         do {
-            if connected.contains(tool) { try tool.uninstall() } else { try tool.install() }
+            if let request = ConnectRequest(tool: tool, changes: try tool.changes()) {
+                connecting = request
+            } else {
+                connect(tool)
+            }
+        } catch {
+            failed = tool.file(failing: error)
+        }
+    }
+
+    private func connect(_ tool: NotifyIntegration) {
+        do {
+            try tool.install()
             failed = nil
         } catch {
             failed = tool.file(failing: error)
@@ -698,32 +786,6 @@ private struct ServicesPane: View {
             Section("Weather") {
                 TextField("Weather city (e.g. Seoul)", text: $settings.weatherCity)
                 Text("Weather comes from Open-Meteo. Leave the city empty to hide it.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Section("Quick search") {
-                Toggle("Open Search from anywhere with a shortcut", isOn: $settings.searchHotkey)
-                LabeledContent("Shortcut") {
-                    ShortcutRecorder(settings: settings)
-                }
-                .disabled(!settings.searchHotkey)
-                if settings.searchHotkey && !settings.recordingShortcut {
-                    if let conflict = settings.searchHotKey.systemConflict {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("macOS uses this shortcut for “\(conflict)”. Turn that off in Keyboard Shortcuts so Nunsseop gets it.")
-                                .font(.caption).foregroundStyle(.orange)
-                            Button("Open Keyboard Shortcuts") {
-                                if let url = URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension") {
-                                    NSWorkspace.shared.open(url)
-                                }
-                            }
-                            .controlSize(.small)
-                        }
-                    } else if settings.searchShortcutTaken {
-                        Text("Another app is already using this shortcut. Pick a different one.")
-                            .font(.caption).foregroundStyle(.orange)
-                    }
-                }
-                Text("To use Search in place of Spotlight, record ⌘Space here and turn off Spotlight’s shortcut in Keyboard Shortcuts.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("Clipboard") {
@@ -901,26 +963,51 @@ private struct ChevronRow: View {
 /// Click, then press the keys to use. Escape cancels.
 private struct ShortcutRecorder: View {
     @ObservedObject var settings: AppSettings
+    let action: ShortcutAction
+    @Binding var refused: (action: ShortcutAction, by: ShortcutAction)?
+    @State private var recording = false
     @State private var monitor: Any?
 
     var body: some View {
-        Button {
-            settings.recordingShortcut ? stop() : start()
-        } label: {
-            Text(settings.recordingShortcut ? String(localized: "Press keys…") : settings.searchHotKey.label)
-                .font(.system(size: 12, weight: .medium).monospaced())
-                .frame(minWidth: 96)
+        let combo = settings.shortcut(for: action)
+        HStack(spacing: 4) {
+            Button {
+                recording ? stop() : start()
+            } label: {
+                if let combo, !recording {
+                    Text(verbatim: combo.label).font(.system(size: 12, weight: .medium).monospaced()).frame(minWidth: 104)
+                } else {
+                    Text(recording ? String(localized: "Press keys…") : String(localized: "Record shortcut"))
+                        .font(.system(size: 12)).foregroundStyle(recording ? .primary : .secondary).frame(minWidth: 104)
+                }
+            }
+            // Always there, so the buttons line up whether or not there is a shortcut to remove.
+            let removable = combo != nil && !recording
+            Button {
+                refused = nil
+                settings.clearShortcut(action)
+            } label: {
+                Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .opacity(removable ? 1 : 0)
+            .disabled(!removable)
+            .accessibilityHidden(!removable)
+            .help(Text("Remove shortcut"))
+            .accessibilityLabel(Text("Remove shortcut"))
         }
         .onDisappear { stop() }
     }
 
     private func start() {
+        refused = nil
         settings.recordingShortcut = true
+        recording = true
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             if event.keyCode == 53 {
                 stop()
             } else if let combo = HotKeyCombo(event: event) {
-                settings.searchHotKey = combo
+                if case .takenBy(let other) = settings.assign(combo, to: action) { refused = (action, other) }
                 stop()
             }
             return nil
@@ -930,6 +1017,7 @@ private struct ShortcutRecorder: View {
     private func stop() {
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
-        settings.recordingShortcut = false
+        if recording { settings.recordingShortcut = false }
+        recording = false
     }
 }

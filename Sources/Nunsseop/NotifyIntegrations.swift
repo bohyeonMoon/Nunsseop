@@ -129,11 +129,47 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
     func installNow() throws {
         // The hooks name this file; it has to be there before a tool runs one.
         NotifyServer.syncAuthHeader()
+        let changes = try changes()
+        if self == .codex {
+            let script = CodexNotify.scriptURL
+            if (try? String(contentsOf: script, encoding: .utf8)) != CodexNotify.script {
+                try FileManager.default.createDirectory(at: script.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try Data(CodexNotify.script.utf8).write(to: script, options: .atomic)
+                try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+            }
+        }
+        for change in changes { try Self.write(Data(change.after.utf8), to: change.url, backup: change.backup) }
+    }
+
+    /// A file that connecting writes: what it holds now and what it will hold, whole.
+    struct FileChange: Equatable {
+        let url: URL
+        /// Nil when the file isn't there yet, or isn't text.
+        let before: String?
+        let after: String
+        /// Whether a file that is there is kept as `<name>.nunsseop-backup` first.
+        let backup: Bool
+        let existed: Bool
+
+        init(url: URL, after: String, backup: Bool = true) {
+            self.url = url
+            self.after = after
+            self.backup = backup
+            existed = FileManager.default.fileExists(atPath: url.path)
+            before = existed ? try? String(contentsOf: url, encoding: .utf8) : nil
+        }
+
+        var makesBackup: Bool { existed && backup }
+    }
+
+    /// What connecting would write, without writing: the files whose contents change, none when the tool is connected and current.
+    /// `installNow` writes exactly these; Codex's own script in Application Support is not among them.
+    func changes() throws -> [FileChange] {
         switch self {
         case .claudeCode, .gemini:
             let settings = try Self.loadJSON(at: configURL)
-            guard let updated = try JSONHook.updating(hooks, in: settings) else { return }
-            try Self.writeJSON(updated, to: configURL)
+            guard let updated = try JSONHook.updating(hooks, in: settings) else { return [] }
+            return [FileChange(url: configURL, after: try Self.jsonText(updated))]
         case .codex:
             // Both files are read and the changes worked out before anything is written, so one that can't be read
             // changes nothing. A connection that's already there is only refreshed, and doesn't wait for a hooks file
@@ -148,28 +184,28 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
                 guard connected else { throw IntegrationError.unreadableHooks }
                 agentHooks = nil
             }
-            let script = CodexNotify.scriptURL
-            if (try? String(contentsOf: script, encoding: .utf8)) != CodexNotify.script {
-                try FileManager.default.createDirectory(at: script.deletingLastPathComponent(), withIntermediateDirectories: true)
-                try Data(CodexNotify.script.utf8).write(to: script, options: .atomic)
-                try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
-            }
-            if let notify { try Self.writeText(notify, to: configURL) }
-            if let agentHooks { try Self.writeJSON(agentHooks, to: hooksURL) }
+            var changes: [FileChange] = []
+            if let notify { changes.append(FileChange(url: configURL, after: notify)) }
+            if let agentHooks { changes.append(FileChange(url: hooksURL, after: try Self.jsonText(agentHooks))) }
+            return changes
         case .openCode:
-            guard (try? String(contentsOf: configURL, encoding: .utf8)) != Self.openCodePlugin else { return }
+            guard (try? String(contentsOf: configURL, encoding: .utf8)) != Self.openCodePlugin else { return [] }
             // Through write(), so a plugin edited by hand is kept as a backup.
-            try Self.write(Data(Self.openCodePlugin.utf8), to: configURL)
+            return [FileChange(url: configURL, after: Self.openCodePlugin)]
         case .omp, .omo, .pi:
-            guard let agent = piAgent else { return }
+            guard let agent = piAgent else { return [] }
             let extensionText = PiExtension.source(agent: agent)
-            guard (try? String(contentsOf: configURL, encoding: .utf8)) != extensionText else { return }
+            guard (try? String(contentsOf: configURL, encoding: .utf8)) != extensionText else { return [] }
             // A file of the same name that is not ours is kept as a backup. One of ours that differs is an older version or edited by
             // hand: it is kept too, but only where no backup is yet (a foreign file's backup is not given up for an upgrade).
             let backupExists = FileManager.default.fileExists(atPath: configURL.appendingPathExtension("nunsseop-backup").path)
-            try Self.write(Data(extensionText.utf8), to: configURL, backup: !Self.isOurs(extension: configURL) || !backupExists)
+            return [FileChange(url: configURL, after: extensionText, backup: !Self.isOurs(extension: configURL) || !backupExists)]
         }
     }
+
+    /// Whether the tool's settings file holds the tool's other settings and hooks too, which connecting leaves as they are, and
+    /// disconnecting takes only Nunsseop's lines out of.
+    var sharesItsFile: Bool { [.claudeCode, .codex, .gemini].contains(self) }
 
     /// Whether the extension file is there and Nunsseop's.
     private static func isOurs(extension url: URL) -> Bool {
@@ -257,10 +293,14 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
         return try String(contentsOf: url, encoding: .utf8)
     }
 
-    static func writeJSON(_ settings: [String: Any], to url: URL) throws {
+    static func jsonText(_ settings: [String: Any]) throws -> String {
         let data = try JSONSerialization.data(withJSONObject: settings,
                                               options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
-        try write(data, to: url)
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    static func writeJSON(_ settings: [String: Any], to url: URL) throws {
+        try write(Data(jsonText(settings).utf8), to: url)
     }
 
     private static func writeText(_ text: String, to url: URL) throws {
