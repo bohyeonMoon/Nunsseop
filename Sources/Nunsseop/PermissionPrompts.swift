@@ -860,10 +860,10 @@ struct PermissionPrompt: Identifiable, Equatable {
     ///   like in place of "Always allow".
     /// - dialect: the tool whose hook sent it, when it is none of Claude Code, Codex and OpenCode (see `PermissionDialect`).
     static func parse(_ body: Data, tag: String? = nil, dialect: PermissionDialect? = nil) -> Parsed? {
-        guard var json = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else { return nil }
+        // A key twice is read one way here and maybe the other by the tool that sent it; and two keys that differ only in how their
+        // letters are composed are one key to Swift, which a dictionary bridged from Foundation's can't hold. Looked for before parsing.
+        guard !StrictJSON.hasDuplicateKeys(body), var json = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else { return nil }
         if let dialect {
-            // A key twice is read one way here and maybe the other by the tool that sent it.
-            guard !StrictJSON.hasDuplicateKeys(body) else { return nil }
             guard let request = dialect.normalized(json) else { return nil }
             json = request
         } else if json["hook_event_name"] as? String == "PreToolUse" {

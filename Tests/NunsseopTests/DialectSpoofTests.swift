@@ -114,8 +114,8 @@ struct DialectSpoofTests {
         for value in values {
             #expect(parse(cursorShell(["sandbox": value]), .cursor) == nil, "\(value)")
         }
-        // Not said at all: the call is shown as it is.
-        #expect(parse(cursorShell([:]), .cursor) != nil)
+        // Not said at all is not known either.
+        #expect(parse(cursorShell([:]), .cursor) == nil)
     }
 
     @MainActor
@@ -227,7 +227,8 @@ struct DialectSpoofTests {
         #expect(prompt.detail == "make" && prompt.folder == "web")
         #expect(prompt.secondary == "cwd: /Users/me/a/web\nenv: {\"PATH\":\"/evil\"}\nsandbox: true\ntimeout: 5")
         // The other fields of the hook, which say who and where, are not part of the call.
-        #expect(parse(cursorShell(["conversation_id": "c", "generation_id": "g", "workspace_roots": ["/a"], "model": "m"]), .cursor)?.prompt.secondary == "cwd: /Users/me/p")
+        #expect(parse(cursorShell(["sandbox": true, "conversation_id": "c", "generation_id": "g", "workspace_roots": ["/a"], "model": "m"]), .cursor)?.prompt.secondary
+                == "cwd: /Users/me/p\nsandbox: true")
         for key in ["cmd", "Command", "commandLine", "script", "args", "path"] {
             #expect(parse(cursorShell([key: "rm -rf ~"]), .cursor) == nil, "\(key)")
         }
@@ -309,9 +310,8 @@ struct DialectSpoofTests {
         #expect(suggested.prompt.grant == nil && suggested.suggestion == nil)
         #expect(PermissionWire.decision(.always, suggestion: PermissionTestServer.addRules, dialect: .copilot) == nil)
         for dialect in [PermissionDialect.copilot, .agy, .cursor] { #expect(PermissionWire.decision(.always, suggestion: nil, dialect: dialect) == nil) }
-        // A sandbox flag of Claude Code's is the warning chip it is for them.
-        let off = try #require(parse(copilot(["toolName": "bash", "toolArgs": ["command": "ls", "dangerouslyDisableSandbox": true]]), .copilot)).prompt
-        #expect(off.flags.contains { $0.text == "Sandbox off" && $0.warns })
+        // A sandbox flag, Claude Code's included, is more than the warning chip it is for Claude Code: Copilot asks for it itself.
+        #expect(parse(copilot(["toolName": "bash", "toolArgs": ["command": "ls", "dangerouslyDisableSandbox": true]]), .copilot) == nil)
         // What is too long to show whole is not shown.
         let long = String(repeating: "x", count: PermissionPrompt.detailLimit + 1)
         #expect(parse(copilot(["toolName": "bash", "toolArgs": ["command": long]]), .copilot) == nil)
@@ -361,5 +361,59 @@ struct DialectSpoofTests {
         // The tool's own name is judged as it is for any tool of Claude Code's that is no known one.
         let named = try #require(parse(copilot(["toolName": "to\u{043E}l", "toolArgs": ["x": "1"]]), .copilot))
         #expect(named.prompt.title.contains("⟨U+043E⟩") || named.prompt.flags.contains { $0.text == "Unusual characters" })
+    }
+
+    // MARK: Second review
+
+    @Test func aCursorMCPCallNeedsItsServerSoItCantPassForABuiltInTool() throws {
+        let call: [String: Any] = ["hook_event_name": "beforeMCPExecution", "tool_name": "Bash", "tool_input": #"{"command":"ls"}"#,
+                                   "command": "npx some-server"]
+        #expect(parse(call, .cursor) == nil)
+        #expect(parse(call.merging(["mcp_server_name": ""]) { $1 }, .cursor) == nil)
+        let named = try #require(parse(call.merging(["mcp_server_name": "tools"]) { $1 }, .cursor))
+        #expect(named.prompt.title == "mcp__tools__Bash")
+    }
+
+    @Test func anHTTPServersAddressSentTwiceIsOneAddress() {
+        let call: [String: Any] = ["hook_event_name": "beforeMCPExecution", "tool_name": "search", "tool_input": [String: Any](),
+                                   "mcp_server_name": "web", "url": "https://example.test/mcp", "mcp_server_url": "https://example.test/mcp"]
+        #expect(parse(call, .cursor) != nil)
+        #expect(parse(call.merging(["url": "https://other.test/mcp"]) { $1 }, .cursor) == nil)
+    }
+
+    @Test func aCopilotCallNamedLikeAClaudeCodeToolHasNoCard() {
+        for name in ["Write", "Edit", "Bash", "Read", "WebFetch"] {
+            #expect(parse(["toolName": name, "toolInput": ["file_path": "/a", "content": "x"]], .copilot) == nil, Comment(rawValue: name))
+        }
+        #expect(parse(["toolName": "bash", "toolInput": ["command": "ls"]], .copilot) != nil)
+    }
+
+    @Test func anySpellingOfASandboxBypassIsLeftToCopilot() {
+        for key in ["requestSandboxBypass", "RequestSandboxBypass", "request_sandbox_bypass", "sandbox"] {
+            #expect(parse(["toolName": "bash", "toolInput": ["command": "ls", key: true]], .copilot) == nil, Comment(rawValue: key))
+            #expect(parse(["toolName": "bash", "toolInput": ["command": "ls"], key: true], .copilot) == nil, Comment(rawValue: key))
+        }
+    }
+
+    @Test func aCursorCommandWithoutSandboxTrueIsLeftToCursor() {
+        let call: [String: Any] = ["hook_event_name": "beforeShellExecution", "command": "ls", "cwd": "/p"]
+        #expect(parse(call, .cursor) == nil)
+        #expect(parse(call.merging(["sandbox": false]) { $1 }, .cursor) == nil)
+        #expect(parse(call.merging(["sandbox": 1]) { $1 }, .cursor) == nil)
+        #expect(parse(call.merging(["sandbox": true]) { $1 }, .cursor) != nil)
+    }
+
+    @Test func aToolNameThatIsNoTextHasNoCard() {
+        #expect(parse(["toolName": 5, "tool_name": 6, "kind": "bash", "toolInput": ["command": "ls"]], .copilot) == nil)
+        #expect(parse(["toolName": "bash", "kind": 3, "toolInput": ["command": "ls"]], .copilot) == nil)
+    }
+
+    /// "é" composed and decomposed are two keys to Foundation and one to Swift: no card, and no crash, on any path.
+    @Test func keysThatDifferOnlyInComposedLettersAreReadAsAKeyTwice() {
+        let text = #"{"hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{"command":"ls","\#u{E9}":1,"e\#u{301}":2}}"#
+        #expect(PermissionPrompt.parse(Data(text.utf8)) == nil)
+        #expect(StrictJSON.object(from: #"{"\#u{E9}":1,"e\#u{301}":2}"#) == nil)
+        let copilot = #"{"toolName":"bash","toolInput":{"command":"ls","\#u{E9}":1,"e\#u{301}":2}}"#
+        #expect(PermissionPrompt.parse(Data(copilot.utf8), dialect: .copilot) == nil)
     }
 }

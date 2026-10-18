@@ -8,7 +8,7 @@ enum StrictJSON {
     static func object(from text: String) -> [String: Any]? { object(from: Data(text.utf8)) }
 
     static func object(from data: Data) -> [String: Any]? {
-        guard let value = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], !hasDuplicateKeys(data) else { return nil }
+        guard !hasDuplicateKeys(data), let value = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
         return value
     }
 

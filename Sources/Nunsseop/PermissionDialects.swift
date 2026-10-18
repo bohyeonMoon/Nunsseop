@@ -100,13 +100,18 @@ enum PermissionDialect: String {
         let nameKeys = ["toolName", "tool_name", "kind"]
         guard let key = nameKeys.first(where: { (json[$0] as? String)?.isEmpty == false }), let name = json[key] as? String else { return nil }
         // One name, one place for the arguments; and no other spelling of either.
+        guard ["toolName", "tool_name", "kind"].allSatisfy({ json[$0] == nil || json[$0] is String }) else { return nil }
         if let camel = json["toolName"], let snake = json["tool_name"], (camel as? String) != (snake as? String) { return nil }
+        // Copilot's own tools are lower case (`bash`, `edit`); a call named as one of Claude Code's comes from elsewhere (an MCP server, say)
+        // and would be drawn as Claude Code's own tool.
+        guard !Self.claudeTools.contains(name) else { return nil }
         let places = ["toolInput", "tool_input", "toolArgs"]
         guard Self.hasNoRivalContainer(json, allowed: ["toolName", "tool_name"] + places),
               places.filter({ json[$0] != nil }).count <= 1 else { return nil }
         guard var input = Self.arguments(places.first { json[$0] != nil }.flatMap { json[$0] }) else { return nil }
-        // Docs: a sandbox bypass can't be allowed in advance, only denied; Copilot asks for it itself.
-        guard input["requestSandboxBypass"] == nil, json["requestSandboxBypass"] == nil else { return nil }
+        // Docs: a sandbox bypass can't be allowed in advance, only denied; Copilot asks for it itself. Any spelling of a sandbox field is taken
+        // for one.
+        guard !(Array(input.keys) + Array(json.keys)).contains(where: { Self.spelled($0).contains("sandbox") }) else { return nil }
         // Whatever else the request carries is part of the call, and is listed after the arguments, as long as it is not the same field as
         // one of them, nor one that the card would read as the command or the file of the call.
         let envelope: Set<String> = [key, "sessionId", "session_id", "timestamp", "cwd", "hook_event_name", "toolInput", "tool_input", "toolArgs"]
@@ -162,22 +167,26 @@ enum PermissionDialect: String {
         switch json["hook_event_name"] as? String {
         case "beforeShellExecution":
             guard let command = json["command"] as? String, !command.isEmpty, let extra = rest(besides: ["command", "cwd", "sandbox"]) else { return nil }
-            // The docs don't say what `sandbox` means for this hook; a false (or anything but a true) may be a command that runs outside
-            // the sandbox, which an allow may not govern. Cursor asks for itself.
-            guard json["sandbox"] == nil || (json["sandbox"] as? NSNumber).map({ CFGetTypeID($0) == CFBooleanGetTypeID() && $0.boolValue }) == true else { return nil }
+            // The docs don't say what `sandbox` means for this hook; a false, a missing one or anything but a true may be a command that runs
+            // outside the sandbox, which an allow may not govern. Cursor asks for itself.
+            guard (json["sandbox"] as? NSNumber).map({ CFGetTypeID($0) == CFBooleanGetTypeID() && $0.boolValue }) == true else { return nil }
             // Where the command runs is part of it, and shown whole, not by the name of its last folder.
             var input = extra.merging(["command": command]) { $1 }
             input["sandbox"] = json["sandbox"]
             input["cwd"] = json["cwd"]
             return ("Bash", input, json["cwd"] as? String ?? roots)
         case "beforeMCPExecution":
-            guard let tool = json["tool_name"] as? String, !tool.isEmpty, var input = Self.arguments(json["tool_input"]),
+            // The server is what tells an MCP tool from Cursor's own; without its name a tool called `Bash` would read as a command run here.
+            guard let tool = json["tool_name"] as? String, !tool.isEmpty, let server = json["mcp_server_name"] as? String, !server.isEmpty,
+                  var input = Self.arguments(json["tool_input"]),
                   let extra = rest(besides: ["tool_name", "tool_input", "mcp_server_name", "url", "mcp_server_url", "command", "cwd"]) else { return nil }
             // Where the call goes is part of it. A name the input has already, or two fields for one name, leave it open which one is where
             // the call goes.
+            // Cursor sends an HTTP server's address as both `url` and `mcp_server_url`: the same text twice is one address.
             var added: [String: Any] = [:]
             for (field, name) in [("mcp_server_url", "mcp_server_url"), ("url", "mcp_server_url"), ("command", "mcp_server_command"), ("cwd", "cwd")] {
                 guard let value = json[field] else { continue }
+                if field == "url", let first = added[name] as? String, value as? String == first { continue }
                 guard input[name] == nil, added[name] == nil else { return nil }
                 added[name] = value
             }
@@ -186,8 +195,7 @@ enum PermissionDialect: String {
                 added[field] = value
             }
             input.merge(added) { $1 }
-            let server = (json["mcp_server_name"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-            return (server.map { "mcp__\($0)__\(tool)" } ?? tool, input, json["cwd"] as? String ?? roots)
+            return ("mcp__\(server)__\(tool)", input, json["cwd"] as? String ?? roots)
         default:
             return nil
         }
@@ -205,6 +213,10 @@ enum PermissionDialect: String {
         default: return nil
         }
     }
+
+    /// Claude Code's own tools, which the card describes by name (see `PermissionPrompt.describe`).
+    private static let claudeTools: Set<String> = ["Bash", "Edit", "MultiEdit", "Write", "NotebookEdit", "Read", "WebFetch", "WebSearch", "Glob",
+                                                   "Grep", "Task", "Agent", "AskUserQuestion", "ExitPlanMode"]
 
     /// The names the card reads as the command, the file or what goes into it (see `PermissionPrompt.describe`).
     private static let meaningful: Set<String> = ["command", "file_path", "content", "old_string", "new_string", "edits", "notebook_path", "new_source",

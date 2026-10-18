@@ -261,7 +261,7 @@ struct CursorApprovalTests {
         #expect(prompt.tag == "Cursor" && prompt.grant == nil && prompt.secondary == "cwd: /Users/me/secret-project/web\nsandbox: true")
         #expect(PermissionLayout.hasThirdButton(prompt, .card))
         // Without a folder in the call, the first root of the workspace is it.
-        let bare = try #require(PermissionPrompt.parse(try JSONSerialization.data(withJSONObject: Cur.payload("beforeShellExecution", ["command": "ls"])), dialect: .cursor))
+        let bare = try #require(PermissionPrompt.parse(try JSONSerialization.data(withJSONObject: Cur.payload("beforeShellExecution", ["command": "ls", "sandbox": true])), dialect: .cursor))
         #expect(bare.prompt.folder == "secret-project")
     }
 
