@@ -53,9 +53,22 @@ struct BrowMoodTests {
     @Test func everyFaceStaysInsideThePill() {
         let frame = CGRect(x: 0, y: 4, width: 24, height: 10)
         for mood in BrowMood.allCases {
-            let box = EyebrowArch(lift: 0, pose: mood.pose).path(in: frame).boundingRect
+            let shift = (BrowPose().middle - mood.pose.middle) * EyebrowMark.scale
+            let box = EyebrowArch(lift: 0, pose: mood.pose).path(in: frame).boundingRect.offsetBy(dx: 0, dy: shift)
             #expect(box.minY - EyebrowMark.hopHeight >= 0 && box.maxY <= 18, Comment(rawValue: "\(mood): \(box)"))
         }
+    }
+
+    /// A low face looked as if it had fallen beside the agents count: every face sits with its middle where the resting one's is.
+    @Test func everyFaceKeepsItsMiddleWhereItWas() {
+        let frame = CGRect(x: 0, y: 4, width: 24, height: 10)
+        let rest = EyebrowArch(lift: 0).path(in: frame).boundingRect.midY
+        for mood in BrowMood.allCases {
+            let shift = (BrowPose().middle - mood.pose.middle) * EyebrowMark.scale
+            let middle = EyebrowArch(lift: 0, pose: mood.pose).path(in: frame).boundingRect.midY + shift
+            #expect(abs(middle - rest) < 0.01, Comment(rawValue: "\(mood)"))
+        }
+        #expect(abs(BrowMood.focused.pose.middle - BrowPose().middle) > 3)
     }
 
     @Test func theFacesDifferEnoughToTell() {

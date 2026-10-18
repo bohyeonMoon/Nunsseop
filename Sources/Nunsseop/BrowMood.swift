@@ -57,8 +57,8 @@ struct BrowPose: Equatable {
         lift + tilt * (x - 50) / 50 + arch * sin(.pi * x / 100)
     }
 
-    /// How far the stroke moves up on average, which an icon takes back so the face sits in the middle of its slot.
-    var meanRise: CGFloat { lift + arch * 2 / .pi }
+    /// The middle of the stroke's height in this pose, on `EyebrowArch`'s 100 × 40 grid (20 is the grid's own middle).
+    var middle: CGFloat { EyebrowArch(lift: 0, pose: self).path(in: CGRect(x: 0, y: 0, width: 100, height: 40)).boundingRect.midY }
 }
 
 /// Which agents just finished a turn, for the eyebrow's cheer: a session seen working that now waits because its turn ended.
@@ -83,7 +83,8 @@ struct BrowGlyph: View {
         EyebrowArch(lift: 0, pose: mood.pose)
             .fill(EyebrowMark.color)
             .frame(width: width, height: width * 0.42)
-            .offset(y: mood.pose.meanRise * width / 100)
+            // In the middle of its slot whatever the face, beside a figure: a low pose would look like it fell.
+            .offset(y: (20 - mood.pose.middle) * width / 100)
             .keyframeAnimator(initialValue: CGFloat(0), trigger: hops) { content, rise in
                 content.offset(y: -rise * width / 10)
             } keyframes: { _ in

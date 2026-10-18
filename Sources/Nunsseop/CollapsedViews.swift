@@ -495,6 +495,8 @@ struct EyebrowMark: View {
     var hops = 0
 
     static let color = Color(red: 0.957, green: 0.957, blue: 0.945)
+    /// Points per unit of `EyebrowArch`'s grid in this 24 × 10 frame.
+    nonisolated static let scale: CGFloat = 0.24
     /// How far a cheer lifts the eyebrow, in points, at the hop's highest.
     nonisolated static let hopHeight: CGFloat = 1.5
 
@@ -502,6 +504,9 @@ struct EyebrowMark: View {
         EyebrowArch(lift: lift, pose: mood.pose)
             .fill(Self.color)
             .frame(width: 24, height: 10)
+            // A face changes the stroke's shape, not where it sits: its middle stays where the resting one's is, in the middle of the
+            // pill, so a low pose doesn't look as if it dropped.
+            .offset(y: (BrowPose().middle - mood.pose.middle) * Self.scale)
             .keyframeAnimator(initialValue: CGFloat(0), trigger: hops) { content, rise in
                 content.offset(y: -rise / 1.2 * Self.hopHeight)
             } keyframes: { _ in
