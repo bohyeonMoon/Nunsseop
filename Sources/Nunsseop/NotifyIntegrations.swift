@@ -122,7 +122,7 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
             let agent = NotifyServer.agentHookCommand
             return [("Notification", NotifyServer.hookCommand(title: name))]
                 + ["Notification", "UserPromptSubmit", "Stop", "StopFailure", "SessionEnd", "SessionStart",
-                                                                  "SubagentStart", "SubagentStop"].map { ($0, agent) }
+                                                                  "SubagentStart", "SubagentStop", "PostToolUse"].map { ($0, agent) }
                 + (Self.answersPermissions ? [("PermissionRequest", NotifyServer.permissionHookCommand),
                                               ("PreToolUse", NotifyServer.permissionHookCommand)] : [])
         case .codex:

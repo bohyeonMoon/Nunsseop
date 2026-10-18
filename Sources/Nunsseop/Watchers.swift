@@ -91,6 +91,8 @@ enum AgentAction: Equatable {
     case working
     /// Asking for permission or an answer.
     case needsInput
+    /// A tool has run (`PostToolUse`): whatever was asked is answered, and the turn goes on.
+    case toolRan
     /// A turn ended.
     case finished
     /// Waiting at the prompt: a turn that was cut short no longer works and nothing is being asked, but a finished hand stays.
@@ -149,6 +151,7 @@ enum AgentHook {
         case "SessionEnd": return .remove
         case "SessionStart": return .opened
         case "PermissionRequest": return .needsInput
+        case "PostToolUse": return .toolRan
         case "Interrupt": return .idle
         case "Notification":
             switch type {
