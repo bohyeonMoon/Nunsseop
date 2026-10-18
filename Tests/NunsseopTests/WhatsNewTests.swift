@@ -133,4 +133,11 @@ struct WhatsNewTests {
             }
         }
     }
+
+    @Test func aPreReleaseShowsTheNotesOfItsRelease() throws {
+        let notes = try #require(WhatsNew.notes(for: "\(version)-beta.1"))
+        #expect(notes.title == WhatsNew.notes(for: version)?.title)
+        #expect(notes.text.contains("\(version)-beta.1"))
+        #expect(WhatsNew.notes(for: "9.9.9-beta.1") == nil)
+    }
 }
