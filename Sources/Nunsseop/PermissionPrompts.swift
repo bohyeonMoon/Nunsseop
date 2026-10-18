@@ -43,11 +43,21 @@ enum PermissionWire {
     }
 
     static let denyMessage = "Denied in Nunsseop"
+    static let allowMessage = "Allowed in Nunsseop"
 
     /// What Claude Code reads from the hook's stdout. `always` echoes the one suggestion the prompt offered. `questionInput` is
     /// the `tool_input` of a question: it takes `answered` and nothing else, and an approval takes everything but `answered`.
     static func decision(_ answer: PermissionAnswer, suggestion: [String: Any]?, questionInput: [String: Any]? = nil,
-                         openCode: Bool = false) -> Data? {
+                         openCode: Bool = false, dialect: PermissionDialect? = nil) -> Data? {
+        if let dialect {
+            let object: [String: Any]
+            switch answer {
+            case .allow: object = dialect.allowed
+            case .deny: object = dialect.denied
+            case .always, .answered, .terminal: return nil
+            }
+            return try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])
+        }
         // OpenCode's plugin reads only the behavior; "Always allow" isn't offered for it.
         if openCode {
             let behavior: String
@@ -838,6 +848,8 @@ struct PermissionPrompt: Identifiable, Equatable {
         var questionInput: [String: Any]?
         /// The call is OpenCode's, whose plugin reads a smaller answer (see `PermissionWire.decision`).
         var openCode = false
+        /// The call is Copilot's, Antigravity's or Cursor's, which read each their own answer.
+        var dialect: PermissionDialect?
     }
 
     /// Plan approvals are answered in the terminal, and so is anything unreadable. A question is no approval: it comes as a
@@ -846,9 +858,17 @@ struct PermissionPrompt: Identifiable, Equatable {
 
     /// - tag: the program the call comes through, named on the card as Codex and OpenCode are; such a card has "Answer in terminal" or its
     ///   like in place of "Always allow".
-    static func parse(_ body: Data, tag: String? = nil) -> Parsed? {
-        guard let json = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else { return nil }
-        if json["hook_event_name"] as? String == "PreToolUse" { return parseQuestion(json) }
+    /// - dialect: the tool whose hook sent it, when it is none of Claude Code, Codex and OpenCode (see `PermissionDialect`).
+    static func parse(_ body: Data, tag: String? = nil, dialect: PermissionDialect? = nil) -> Parsed? {
+        // A key twice is read one way here and maybe the other by the tool that sent it; and two keys that differ only in how their
+        // letters are composed are one key to Swift, which a dictionary bridged from Foundation's can't hold. Looked for before parsing.
+        guard !StrictJSON.hasDuplicateKeys(body), var json = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else { return nil }
+        if let dialect {
+            guard let request = dialect.normalized(json) else { return nil }
+            json = request
+        } else if json["hook_event_name"] as? String == "PreToolUse" {
+            return parseQuestion(json)
+        }
         guard json["hook_event_name"] as? String == "PermissionRequest",
               let tool = json["tool_name"] as? String, !tool.isEmpty, !terminalOnly.contains(tool) else { return nil }
         let input = json["tool_input"] as? [String: Any] ?? [:]
@@ -874,8 +894,8 @@ struct PermissionPrompt: Identifiable, Equatable {
         let suggestion = codex || openCode ? nil : addRulesSuggestion(in: json["permission_suggestions"])
         let grant = suggestion.flatMap(grant(from:))
         let prompt = PermissionPrompt(id: UUID(), title: shownTitle, symbol: described.symbol, detail: detail, flags: flags,
-                                      secondary: secondary, folder: folder, grant: grant, codex: codex, tag: tag ?? (openCode ? "OpenCode" : nil))
-        return Parsed(prompt: prompt, suggestion: grant == nil ? nil : suggestion, openCode: openCode)
+                                      secondary: secondary, folder: folder, grant: grant, codex: codex, tag: tag ?? dialect?.tag ?? (openCode ? "OpenCode" : nil))
+        return Parsed(prompt: prompt, suggestion: grant == nil ? nil : suggestion, openCode: openCode, dialect: dialect)
     }
 
     /// Whether the body is OpenCode's plugin's (see `OpenCodePlugin`): it says so in `agent`, which no other tool's hook does.

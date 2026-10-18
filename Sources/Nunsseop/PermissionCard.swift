@@ -183,8 +183,8 @@ struct PermissionBody: View {
 
     @ViewBuilder private var thirdButton: some View {
         if prompt.tag != nil {
-            // Paseo's request stays pending in Paseo: there is no terminal to hand it back to.
-            pill(prompt.tag == Paseo.name ? "Answer in Paseo" : "Answer in terminal", fill: .white.opacity(0.15), text: .white, shrinks: true) { answer(.terminal) }
+            // Paseo's request stays pending in Paseo: there is no terminal to hand it back to. Nor has Cursor's IDE agent one.
+            pill(prompt.tag == Paseo.name ? "Answer in Paseo" : prompt.tag == PermissionDialect.cursor.tag ? "Answer in Cursor" : "Answer in terminal", fill: .white.opacity(0.15), text: .white, shrinks: true) { answer(.terminal) }
         } else {
             pill("Always allow", fill: .white.opacity(0.15), text: .white) { answer(.always) }
         }

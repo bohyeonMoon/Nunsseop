@@ -241,8 +241,67 @@ private struct GeneralPane: View {
                 Toggle("Swipe down on the notch to open, up to close", isOn: $settings.swipeToOpen)
                 Toggle("Swipe left or right on the Home tab to skip tracks", isOn: $settings.swipeForTracks)
             }
+            ShortcutsSection(settings: settings)
         }
         .formStyle(.grouped)
+    }
+}
+
+/// One recordable shortcut for each thing the notch can be told to do from anywhere.
+struct ShortcutsSection: View {
+    @ObservedObject var settings: AppSettings
+    /// The action a recording was refused for, and the one that already has the combination.
+    @State private var refused: (action: ShortcutAction, by: ShortcutAction)?
+
+    var body: some View {
+        Section {
+            ForEach(ShortcutAction.allCases) { action in
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(verbatim: action.title)
+                            if let subtitle = action.subtitle {
+                                Text(verbatim: subtitle).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        Spacer(minLength: 8)
+                        ShortcutRecorder(settings: settings, action: action, refused: $refused)
+                    }
+                    notes(for: action)
+                }
+            }
+        } header: {
+            Text("Shortcuts")
+        } footer: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("New actions start empty. You'll be told when another app already uses a combination.")
+                Text("To use Search in place of Spotlight, record ⌘Space here and turn off Spotlight’s shortcut in Keyboard Shortcuts.")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func notes(for action: ShortcutAction) -> some View {
+        if let refused, refused.action == action {
+            Text("Already used by “\(refused.by.title)”. Pick a different combination.")
+                .font(.caption).foregroundStyle(.orange)
+        } else if !settings.recordingShortcut, let combo = settings.shortcut(for: action) {
+            if let conflict = combo.systemConflict {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("macOS uses this shortcut for “\(conflict)”. Turn that off in Keyboard Shortcuts so Nunsseop gets it.")
+                        .font(.caption).foregroundStyle(.orange)
+                    Button("Open Keyboard Shortcuts") {
+                        if let url = URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                    .controlSize(.small)
+                }
+            } else if settings.shortcutsTaken.contains(action) {
+                Text("Another app is already using this shortcut. Pick a different one.")
+                    .font(.caption).foregroundStyle(.orange)
+            }
+        }
     }
 }
 
@@ -445,9 +504,12 @@ private struct AlertsPane: View {
     @ObservedObject var settings: AppSettings
     @State private var connected: Set<NotifyIntegration> = []
     @State private var failed: URL?
+    @State private var connecting: ConnectRequest?
     @State private var terminals = ResumeTerminal.installed
     @State private var muxyBridge = MuxyBridge.status()
     @State private var paseo = PaseoStatus.current()
+    /// Whether Hermes has the plugin turned on, when it is connected and its config says.
+    @State private var hermesEnabled: Bool?
 
     var body: some View {
         Form {
@@ -479,6 +541,9 @@ private struct AlertsPane: View {
                 Toggle("Tell me when Claude or Codex limits are nearly used up, and when they reset", isOn: $settings.limitAlerts)
                 Text("At \(LimitAlerts.share(80)) and \(LimitAlerts.share(95)) of the 5-hour or weekly limit, once each, and again when a limit that got that far resets.")
                     .font(.caption).foregroundStyle(.secondary)
+                Toggle("Recap last week's agent work on Mondays", isOn: $settings.weeklyRecap)
+                Text("Added up on this Mac from the session files of Claude Code and Codex, and never sent anywhere. The AI tab can show it any time.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Section("Files") {
                 Toggle("Add new screenshots to the shelf", isOn: $settings.screenshotsToShelf)
@@ -507,7 +572,36 @@ private struct AlertsPane: View {
                     Text("Connecting omp, omo or pi adds a file to the extensions folder of the tool. Sessions started afterwards report to the agents count and the Agents tab; Disconnect removes the file. gjc needs no setup: its sessions are read from its own state files while the count or the Agents tab is showing.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
+                if NotifyIntegration.newerTools.contains(where: \.isPresent) {
+                    Text("Gemini CLI, GitHub Copilot, Antigravity, Cursor, Hermes and Amp also report their sessions to the agents count and the Agents tab once connected.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if NotifyIntegration.hermes.isPresent {
+                    if connected.contains(.hermes) {
+                        HStack {
+                            switch hermesEnabled {
+                            case true?: Label("Enabled in Hermes", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                            case false?: Text("Not enabled in Hermes yet").foregroundStyle(.orange)
+                            case nil: EmptyView()
+                            }
+                            Spacer()
+                            Button("Copy Hermes enable command") {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(HermesPlugin.enableCommand, forType: .string)
+                            }
+                        }
+                    }
+                    Text("Hermes loads a plugin only after you enable it: run `hermes plugins enable nunsseop` in a terminal once.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if NotifyIntegration.amp.isPresent {
+                    Text("Amp's plugin API is experimental, so an Amp update may stop this from working.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 Text("The Agents tab lists their sessions and recent conversations with name, folder, model, context used, permission mode and last prompt, read from the tools' own session files on this Mac.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Toggle("Cheer when an agent finishes its turn", isOn: $settings.cheerFinished)
+                Text("The eyebrow hops and the notch says which agent is done, unless its terminal is already in front. Its face also follows the agents: raised while one waits for you, low and level while they work.")
                     .font(.caption).foregroundStyle(.secondary)
                 Picker("Resume conversations in", selection: Binding(
                     get: { ResumeTerminal.effective(saved: settings.resumeTerminal, installed: terminals) },
@@ -532,6 +626,10 @@ private struct AlertsPane: View {
                     }
                     if asking.contains(.openCode) {
                         Text("OpenCode's permission prompts show in the notch too, where you can allow or deny them. OpenCode's own prompt stays in its terminal: answer in either place and the other lets go. Works with OpenCode connected above.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    if !asking.isDisjoint(with: [.copilot, .antigravity, .cursor]) {
+                        Text("Approvals from GitHub Copilot, Antigravity and Cursor show in the notch too, where you can allow or deny them. While the notch holds one, the tool waits for it; “Answer in terminal” (“Answer in Cursor” for Cursor) hands it back. If Nunsseop isn't running, the tool asks as before.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     if asking.contains(.codex) {
@@ -620,11 +718,18 @@ private struct AlertsPane: View {
             }
         }
         .formStyle(.grouped)
+        .sheet(item: $connecting) { request in
+            ConnectSheet(request: request, cancel: { connecting = nil }, connect: {
+                connecting = nil
+                connect(request.tool)
+            })
+        }
     }
 
     private func refreshConnections() {
         paseo = PaseoStatus.current()
         connected = Set(NotifyIntegration.allCases.filter(\.isInstalled))
+        hermesEnabled = connected.contains(.hermes) ? HermesPlugin.isEnabled() : nil
         terminals = ResumeTerminal.installed
         muxyBridge = MuxyBridge.status()
     }
@@ -635,9 +740,31 @@ private struct AlertsPane: View {
         muxyBridge = MuxyBridge.status()
     }
 
+    /// Connecting asks first, with the lines it would change; disconnecting doesn't.
     private func toggle(_ tool: NotifyIntegration) {
+        guard !connected.contains(tool) else {
+            do {
+                try tool.uninstall()
+                failed = nil
+            } catch {
+                failed = tool.file(failing: error)
+            }
+            return refreshConnections()
+        }
         do {
-            if connected.contains(tool) { try tool.uninstall() } else { try tool.install() }
+            if let request = ConnectRequest(tool: tool, changes: try tool.changes()) {
+                connecting = request
+            } else {
+                connect(tool)
+            }
+        } catch {
+            failed = tool.file(failing: error)
+        }
+    }
+
+    private func connect(_ tool: NotifyIntegration) {
+        do {
+            try tool.install()
             failed = nil
         } catch {
             failed = tool.file(failing: error)
@@ -695,32 +822,6 @@ private struct ServicesPane: View {
             Section("Weather") {
                 TextField("Weather city (e.g. Seoul)", text: $settings.weatherCity)
                 Text("Weather comes from Open-Meteo. Leave the city empty to hide it.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Section("Quick search") {
-                Toggle("Open Search from anywhere with a shortcut", isOn: $settings.searchHotkey)
-                LabeledContent("Shortcut") {
-                    ShortcutRecorder(settings: settings)
-                }
-                .disabled(!settings.searchHotkey)
-                if settings.searchHotkey && !settings.recordingShortcut {
-                    if let conflict = settings.searchHotKey.systemConflict {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("macOS uses this shortcut for “\(conflict)”. Turn that off in Keyboard Shortcuts so Nunsseop gets it.")
-                                .font(.caption).foregroundStyle(.orange)
-                            Button("Open Keyboard Shortcuts") {
-                                if let url = URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension") {
-                                    NSWorkspace.shared.open(url)
-                                }
-                            }
-                            .controlSize(.small)
-                        }
-                    } else if settings.searchShortcutTaken {
-                        Text("Another app is already using this shortcut. Pick a different one.")
-                            .font(.caption).foregroundStyle(.orange)
-                    }
-                }
-                Text("To use Search in place of Spotlight, record ⌘Space here and turn off Spotlight’s shortcut in Keyboard Shortcuts.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("Clipboard") {
@@ -898,26 +999,51 @@ private struct ChevronRow: View {
 /// Click, then press the keys to use. Escape cancels.
 private struct ShortcutRecorder: View {
     @ObservedObject var settings: AppSettings
+    let action: ShortcutAction
+    @Binding var refused: (action: ShortcutAction, by: ShortcutAction)?
+    @State private var recording = false
     @State private var monitor: Any?
 
     var body: some View {
-        Button {
-            settings.recordingShortcut ? stop() : start()
-        } label: {
-            Text(settings.recordingShortcut ? String(localized: "Press keys…") : settings.searchHotKey.label)
-                .font(.system(size: 12, weight: .medium).monospaced())
-                .frame(minWidth: 96)
+        let combo = settings.shortcut(for: action)
+        HStack(spacing: 4) {
+            Button {
+                recording ? stop() : start()
+            } label: {
+                if let combo, !recording {
+                    Text(verbatim: combo.label).font(.system(size: 12, weight: .medium).monospaced()).frame(minWidth: 104)
+                } else {
+                    Text(recording ? String(localized: "Press keys…") : String(localized: "Record shortcut"))
+                        .font(.system(size: 12)).foregroundStyle(recording ? .primary : .secondary).frame(minWidth: 104)
+                }
+            }
+            // Always there, so the buttons line up whether or not there is a shortcut to remove.
+            let removable = combo != nil && !recording
+            Button {
+                refused = nil
+                settings.clearShortcut(action)
+            } label: {
+                Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .opacity(removable ? 1 : 0)
+            .disabled(!removable)
+            .accessibilityHidden(!removable)
+            .help(Text("Remove shortcut"))
+            .accessibilityLabel(Text("Remove shortcut"))
         }
         .onDisappear { stop() }
     }
 
     private func start() {
+        refused = nil
         settings.recordingShortcut = true
+        recording = true
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             if event.keyCode == 53 {
                 stop()
             } else if let combo = HotKeyCombo(event: event) {
-                settings.searchHotKey = combo
+                if case .takenBy(let other) = settings.assign(combo, to: action) { refused = (action, other) }
                 stop()
             }
             return nil
@@ -927,6 +1053,7 @@ private struct ShortcutRecorder: View {
     private func stop() {
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
-        settings.recordingShortcut = false
+        if recording { settings.recordingShortcut = false }
+        recording = false
     }
 }

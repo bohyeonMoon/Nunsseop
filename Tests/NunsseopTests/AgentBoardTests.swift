@@ -75,11 +75,14 @@ struct AgentBoardTests {
     }
 
     @Test func closedNotchShowsWaitingFirst() {
-        #expect(NotchViewModel.agentsValue(AgentBoard.Counts()) == nil)
-        let working = NotchViewModel.agentsValue(AgentBoard.Counts(working: 3))
-        #expect(working?.text == "3" && working?.symbol == "bolt.fill")
-        let waiting = NotchViewModel.agentsValue(AgentBoard.Counts(working: 3, waiting: 1))
-        #expect(waiting?.text == "1" && waiting?.symbol == "hand.raised.fill")
+        #expect(NotchViewModel.agentsValue(AgentBoard.Counts(), brow: true) == nil)
+        let working = NotchViewModel.agentsValue(AgentBoard.Counts(working: 3), brow: true)
+        #expect(working?.text == "3" && working?.brow == .focused && working?.tint == .green)
+        let waiting = NotchViewModel.agentsValue(AgentBoard.Counts(working: 3, waiting: 1), brow: true)
+        #expect(waiting?.text == "1" && waiting?.brow == .waiting && waiting?.tint == .yellow)
+        // Without a camera the app's own eyebrow beside the count shows the mood.
+        let flat = NotchViewModel.agentsValue(AgentBoard.Counts(waiting: 2), brow: false)
+        #expect(flat?.text == "2" && flat?.brow == nil && flat?.symbol == nil)
     }
 
     @Test func finishedPanesStopWaitingAfterAWhile() {

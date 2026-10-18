@@ -32,8 +32,8 @@ enum AgentMode: Equatable {
     var warns: Bool { self == .bypass || self == .fullAccess }
 }
 
-/// What a session's transcript on disk says about it, for the Agents tab. Only these five values are kept: the
-/// hooks send no folder, model, token count, mode or name, and what the sessions say stays in the tools' own files.
+/// What a session's transcript on disk says about it, for the Agents tab: the hooks send no folder, model, token count, mode or
+/// name. Of what the session did, only its last step and the edits of its current turn are kept, in memory, for the row and its diff.
 struct AgentTranscript: Equatable {
     var cwd: String? = nil
     var model: String? = nil
@@ -42,6 +42,22 @@ struct AgentTranscript: Equatable {
     var mode: AgentMode? = nil
     /// What the user (or the tool) called the session; not part of `parse`, which reads a window of the file.
     var name: String? = nil
+    /// The last tool the agent used, if its turn has used one.
+    var activity: AgentActivity? = nil
+    /// The file changes since the last prompt, oldest first, at most `AgentActivity.editLimit`.
+    var edits: [AgentActivity.Edit] = []
+
+    /// A new prompt starts a turn: what the agent did before it is no longer what it is doing.
+    private mutating func startTurn() {
+        activity = nil
+        edits = []
+    }
+
+    private mutating func did(_ steps: [AgentActivity]) {
+        guard let last = steps.last else { return }
+        activity = last
+        edits = Array((edits + steps.compactMap(\.edit)).suffix(AgentActivity.editLimit))
+    }
 
     /// A name for display: control characters and newlines as spaces, whitespace collapsed, trimmed, at most 80
     /// characters; nil when nothing is left.
@@ -67,8 +83,9 @@ struct AgentTranscript: Equatable {
                 case .claude: result.absorbClaude(object)
                 case .codex: result.absorbCodex(object)
                 case .pi, .omp, .gjc, .omo: result.absorbPi(object)
-                // OpenCode keeps no file to read; its database is (see `OpenCodeDB`).
-                case .opencode: break
+                // OpenCode keeps no file to read; its database is (see `OpenCodeDB`). The tools that only report through hooks and
+                // plugins have none that Nunsseop reads.
+                case .opencode, .gemini, .copilot, .agy, .cursor, .hermes, .amp: break
                 }
             }
         }
@@ -80,13 +97,27 @@ struct AgentTranscript: Equatable {
         guard object["isSidechain"] as? Bool != true else { return }
         if let raw = object["permissionMode"] as? String { mode = AgentMode(claude: raw) }
         if self.cwd == nil, let cwd = object["cwd"] as? String, !cwd.isEmpty { self.cwd = cwd }
-        guard object["type"] as? String == "assistant", let message = object["message"] as? [String: Any],
-              let model = message["model"] as? String, !model.isEmpty, model != "<synthetic>" else { return }
+        if object["type"] as? String == "user", let message = object["message"] as? [String: Any], Self.isPrompt(message["content"]) {
+            startTurn()
+        }
+        guard object["type"] as? String == "assistant", let message = object["message"] as? [String: Any] else { return }
+        for block in message["content"] as? [[String: Any]] ?? [] where block["type"] as? String == "tool_use" {
+            guard let name = block["name"] as? String else { continue }
+            did(AgentActivity.claude(name: name, input: block["input"] as? [String: Any] ?? [:]))
+        }
+        guard let model = message["model"] as? String, !model.isEmpty, model != "<synthetic>" else { return }
         self.model = model
         guard let usage = message["usage"] as? [String: Any] else { return }
         let keys = ["input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"]
         guard keys.contains(where: { usage[$0] != nil }) else { return }
         tokens = keys.reduce(0) { $0 + ((usage[$1] as? NSNumber)?.intValue ?? 0) }
+    }
+
+    /// A user line that is a prompt, not the result of a tool the agent ran (those come back as user lines too).
+    private static func isPrompt(_ content: Any?) -> Bool {
+        if content is String { return true }
+        guard let blocks = content as? [[String: Any]] else { return false }
+        return !blocks.isEmpty && !blocks.contains { $0["type"] as? String == "tool_result" }
     }
 
     private mutating func absorbCodex(_ object: [String: Any]) {
@@ -100,7 +131,19 @@ struct AgentTranscript: Equatable {
                 let sandbox = (payload["sandbox_policy"] as? [String: Any])?["type"] as? String
                 mode = planning ? .plan : sandbox == "danger-full-access" ? .fullAccess : .standard
             }
+        case "response_item":
+            switch payload["type"] as? String {
+            case "function_call":
+                guard let name = payload["name"] as? String else { return }
+                did(AgentActivity.codex(name: name, arguments: payload["arguments"] as? String, input: nil))
+            case "custom_tool_call":
+                guard let name = payload["name"] as? String else { return }
+                did(AgentActivity.codex(name: name, arguments: nil, input: payload["input"] as? String))
+            default:
+                break
+            }
         case "event_msg":
+            if payload["type"] as? String == "user_message" { return startTurn() }
             // The first token_count of a session has no `info`; its input tokens include the cached ones.
             guard payload["type"] as? String == "token_count", let info = payload["info"] as? [String: Any],
                   let last = info["last_token_usage"] as? [String: Any],
@@ -466,7 +509,7 @@ struct AgentTranscripts {
         switch key.kind {
         case .pi, .omp, .gjc, .omo:
             return PiSessions.locate(key.kind, session: key.session, home: home)
-        case .opencode:
+        case .opencode, .gemini, .copilot, .agy, .cursor, .hermes, .amp:
             return nil
         case .claude:
             let candidates = children(home.appendingPathComponent(".claude/projects"))

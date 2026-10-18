@@ -637,20 +637,29 @@ final class GlobalHotKey {
     private var reference: EventHotKeyRef?
     private var handler: EventHandlerRef?
     private let action: () -> Void
+    /// Every hotkey's handler is told of every press, so each looks for its own id.
+    private let id: UInt32
     private(set) var isRegistered = false
+    private static var lastID: UInt32 = 0
 
     init(combo: HotKeyCombo, action: @escaping () -> Void) {
         self.action = action
+        Self.lastID += 1
+        id = Self.lastID
         var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
         let context = Unmanaged.passUnretained(self).toOpaque()
-        InstallEventHandler(GetApplicationEventTarget(), { _, _, context in
-            guard let context else { return noErr }
+        InstallEventHandler(GetApplicationEventTarget(), { _, event, context in
+            guard let event, let context else { return OSStatus(eventNotHandledErr) }
+            var pressed = EventHotKeyID()
+            GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), nil,
+                              MemoryLayout<EventHotKeyID>.size, nil, &pressed)
             let me = Unmanaged<GlobalHotKey>.fromOpaque(context).takeUnretainedValue()
+            guard pressed.id == me.id else { return OSStatus(eventNotHandledErr) }
             DispatchQueue.main.async { me.action() }
             return noErr
         }, 1, &spec, context, &handler)
-        let id = EventHotKeyID(signature: OSType(0x4E534550), id: 1)
-        isRegistered = RegisterEventHotKey(combo.keyCode, combo.modifiers, id, GetApplicationEventTarget(), 0, &reference) == noErr
+        let hotKeyID = EventHotKeyID(signature: OSType(0x4E534550), id: id)
+        isRegistered = RegisterEventHotKey(combo.keyCode, combo.modifiers, hotKeyID, GetApplicationEventTarget(), 0, &reference) == noErr
     }
 
     deinit {

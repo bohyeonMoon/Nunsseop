@@ -2,9 +2,11 @@ import Foundation
 
 /// Command-line tools whose notifications Nunsseop can show, each wired up by editing that tool's own config.
 /// Every change keeps the tool's other settings, and the JSON and TOML files are backed up first. omp, omo and pi are
-/// connected by a file of Nunsseop's in their extensions folder (see `PiExtension`).
+/// connected by a file of Nunsseop's in their extensions folder (see `PiExtension`), GitHub Copilot CLI by a hook file of its own in
+/// Copilot's hooks folder (`CopilotHooks`), Antigravity by a group of hooks in the file it shares with other tools (`AntigravityHooks`)
+/// and Cursor by entries in its (`CursorHooks`). Hermes and Amp are connected by a plugin of Nunsseop's (`HermesPlugin`, `AmpPlugin`).
 enum NotifyIntegration: String, CaseIterable, Identifiable {
-    case claudeCode, codex, gemini, openCode, omp, omo, pi
+    case claudeCode, codex, gemini, openCode, omp, omo, pi, copilot, antigravity, cursor, hermes, amp
 
     enum IntegrationError: Error { case unreadableConfig, unreadableHooks }
 
@@ -16,6 +18,11 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
         case .codex: "Codex"
         case .gemini: "Gemini CLI"
         case .openCode: "OpenCode"
+        case .copilot: "GitHub Copilot"
+        case .antigravity: "Antigravity"
+        case .cursor: "Cursor"
+        case .hermes: "Hermes"
+        case .amp: "Amp"
         case .omp, .omo, .pi: piAgent?.displayName ?? rawValue
         }
     }
@@ -26,7 +33,23 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
         case .omp: .omp
         case .omo: .omo
         case .pi: .pi
-        case .claudeCode, .codex, .gemini, .openCode: nil
+        case .claudeCode, .codex, .gemini, .openCode, .copilot, .antigravity, .cursor, .hermes, .amp: nil
+        }
+    }
+
+    /// The tool's session kind: what its hooks name in `X-Agent`.
+    var agentKind: AgentKind? {
+        switch self {
+        case .claudeCode: .claude
+        case .codex: .codex
+        case .gemini: .gemini
+        case .openCode: .opencode
+        case .omp, .omo, .pi: piAgent
+        case .copilot: .copilot
+        case .antigravity: .agy
+        case .cursor: .cursor
+        case .hermes: .hermes
+        case .amp: .amp
         }
     }
 
@@ -51,33 +74,48 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
         case .gemini: Self.home.appendingPathComponent(".gemini/settings.json")
         case .openCode: Self.home.appendingPathComponent(".config/opencode/plugins/nunsseop.js")
         case .omp, .omo, .pi: Self.home.appendingPathComponent(".\(rawValue)/agent/extensions/nunsseop.ts")
+        case .copilot: CopilotHooks.fileURL
+        case .antigravity: Self.home.appendingPathComponent(".gemini/config/hooks.json")
+        case .cursor: Self.home.appendingPathComponent(".cursor/hooks.json")
+        case .hermes: HermesPlugin.folder.appendingPathComponent("__init__.py")
+        case .amp: AmpPlugin.fileURL
         }
     }
 
     /// Shown only when the tool has been used on this Mac.
     var isPresent: Bool {
-        let folder: URL
+        let folders: [URL]
         switch self {
-        case .openCode: folder = Self.home.appendingPathComponent(".config/opencode")
-        case .omp, .omo, .pi: folder = Self.home.appendingPathComponent(".\(rawValue)/agent")
-        case .claudeCode, .codex, .gemini: folder = configURL.deletingLastPathComponent()
+        case .openCode: folders = [Self.home.appendingPathComponent(".config/opencode")]
+        case .omp, .omo, .pi: folders = [Self.home.appendingPathComponent(".\(rawValue)/agent")]
+        case .claudeCode, .codex, .gemini: folders = [configURL.deletingLastPathComponent()]
+        case .copilot: folders = [CopilotHooks.folder]
+        // Its CLI keeps its settings in a folder of its own; the file of hooks is shared with the app and the IDE, and with other tools.
+        case .antigravity: folders = [Self.home.appendingPathComponent(".gemini/antigravity-cli"), configURL]
+        case .cursor: folders = [configURL.deletingLastPathComponent()]
+        case .hermes: folders = [Self.home.appendingPathComponent(".hermes")]
+        case .amp: folders = [Self.home.appendingPathComponent(".config/amp")]
         }
-        return FileManager.default.fileExists(atPath: folder.path)
+        return folders.contains { FileManager.default.fileExists(atPath: $0.path) }
     }
 
     /// The tools among `present` whose permission prompts can be answered in the notch; each is explained under the setting.
     static func askingForPermission(present: Set<NotifyIntegration>) -> Set<NotifyIntegration> {
-        present.intersection([.claudeCode, .codex, .openCode])
+        present.intersection([.claudeCode, .codex, .openCode, .copilot, .antigravity, .cursor])
     }
 
+    /// The tools that came after the first ones, which Settings explains together.
+    static let newerTools: [NotifyIntegration] = [.gemini, .copilot, .antigravity, .cursor, .hermes, .amp]
+
     /// The tools that report their sessions for the agents count, once connected.
-    static let reportingSessions: [NotifyIntegration] = [.claudeCode, .codex, .openCode, .omp, .omo, .pi]
+    static let reportingSessions: [NotifyIntegration] = [.claudeCode, .codex, .gemini, .openCode, .omp, .omo, .pi, .copilot, .antigravity, .cursor, .hermes, .amp]
 
     /// Where Codex reads lifecycle hooks, next to its config. Its notices stay with the notify command in `configURL`.
     var hooksURL: URL { configURL.deletingLastPathComponent().appendingPathComponent("hooks.json") }
 
     /// The hooks Nunsseop keeps in a JSON tool's settings. Claude Code and Codex also report their sessions for the
-    /// agents count and ask for permission prompts; Gemini CLI's event names aren't known well enough for that.
+    /// agents count and ask for permission prompts; Gemini CLI reports its sessions only: its `Notification` hook is observational
+    /// and can't grant a permission.
     var hooks: JSONHook.Table {
         switch self {
         case .claudeCode:
@@ -92,6 +130,10 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
             return ["UserPromptSubmit", "PermissionRequest", "Stop", "Interrupt", "SessionEnd"].map { ($0, agent) }
                 // After the agent hooks, as a group of its own: Codex keys its trust of a hook by group and position.
                 + (Self.answersPermissions ? [("PermissionRequest", NotifyServer.permissionHookCommand)] : [])
+        case .gemini:
+            let agent = NotifyServer.agentHookCommand(for: .gemini)
+            return [("Notification", NotifyServer.hookCommand(title: name))]
+                + ["Notification", "BeforeAgent", "AfterAgent", "SessionStart", "SessionEnd"].map { ($0, agent) }
         default:
             return [("Notification", NotifyServer.hookCommand(title: name))]
         }
@@ -114,6 +156,16 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
             return FileManager.default.fileExists(atPath: configURL.path)
         case .omp, .omo, .pi:
             return Self.isOurs(extension: configURL)
+        case .copilot:
+            return (try? String(contentsOf: configURL, encoding: .utf8)).map(CopilotHooks.isOurs(text:)) ?? false
+        case .antigravity:
+            return (try? Self.loadJSON(at: configURL)).map(AntigravityHooks.isInstalled(in:)) ?? false
+        case .cursor:
+            return (try? Self.loadJSON(at: configURL)).map(CursorHooks.holdsAny(in:)) ?? false
+        case .hermes:
+            return HermesPlugin.isOurs(configURL)
+        case .amp:
+            return AmpPlugin.isOurs(configURL)
         }
     }
 
@@ -129,11 +181,47 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
     func installNow() throws {
         // The hooks name this file; it has to be there before a tool runs one.
         NotifyServer.syncAuthHeader()
+        let changes = try changes()
+        if self == .codex {
+            let script = CodexNotify.scriptURL
+            if (try? String(contentsOf: script, encoding: .utf8)) != CodexNotify.script {
+                try FileManager.default.createDirectory(at: script.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try Data(CodexNotify.script.utf8).write(to: script, options: .atomic)
+                try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+            }
+        }
+        for change in changes { try Self.write(Data(change.after.utf8), to: change.url, backup: change.backup) }
+    }
+
+    /// A file that connecting writes: what it holds now and what it will hold, whole.
+    struct FileChange: Equatable {
+        let url: URL
+        /// Nil when the file isn't there yet, or isn't text.
+        let before: String?
+        let after: String
+        /// Whether a file that is there is kept as `<name>.nunsseop-backup` first.
+        let backup: Bool
+        let existed: Bool
+
+        init(url: URL, after: String, backup: Bool = true) {
+            self.url = url
+            self.after = after
+            self.backup = backup
+            existed = FileManager.default.fileExists(atPath: url.path)
+            before = existed ? try? String(contentsOf: url, encoding: .utf8) : nil
+        }
+
+        var makesBackup: Bool { existed && backup }
+    }
+
+    /// What connecting would write, without writing: the files whose contents change, none when the tool is connected and current.
+    /// `installNow` writes exactly these; Codex's own script in Application Support is not among them.
+    func changes() throws -> [FileChange] {
         switch self {
         case .claudeCode, .gemini:
             let settings = try Self.loadJSON(at: configURL)
-            guard let updated = try JSONHook.updating(hooks, in: settings) else { return }
-            try Self.writeJSON(updated, to: configURL)
+            guard let updated = try JSONHook.updating(hooks, in: settings) else { return [] }
+            return [FileChange(url: configURL, after: try Self.jsonText(updated))]
         case .codex:
             // Both files are read and the changes worked out before anything is written, so one that can't be read
             // changes nothing. A connection that's already there is only refreshed, and doesn't wait for a hooks file
@@ -148,28 +236,48 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
                 guard connected else { throw IntegrationError.unreadableHooks }
                 agentHooks = nil
             }
-            let script = CodexNotify.scriptURL
-            if (try? String(contentsOf: script, encoding: .utf8)) != CodexNotify.script {
-                try FileManager.default.createDirectory(at: script.deletingLastPathComponent(), withIntermediateDirectories: true)
-                try Data(CodexNotify.script.utf8).write(to: script, options: .atomic)
-                try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
-            }
-            if let notify { try Self.writeText(notify, to: configURL) }
-            if let agentHooks { try Self.writeJSON(agentHooks, to: hooksURL) }
+            var changes: [FileChange] = []
+            if let notify { changes.append(FileChange(url: configURL, after: notify)) }
+            if let agentHooks { changes.append(FileChange(url: hooksURL, after: try Self.jsonText(agentHooks))) }
+            return changes
         case .openCode:
-            guard (try? String(contentsOf: configURL, encoding: .utf8)) != Self.openCodePlugin else { return }
+            guard (try? String(contentsOf: configURL, encoding: .utf8)) != Self.openCodePlugin else { return [] }
             // Through write(), so a plugin edited by hand is kept as a backup.
-            try Self.write(Data(Self.openCodePlugin.utf8), to: configURL)
+            return [FileChange(url: configURL, after: Self.openCodePlugin)]
         case .omp, .omo, .pi:
-            guard let agent = piAgent else { return }
-            let extensionText = PiExtension.source(agent: agent)
-            guard (try? String(contentsOf: configURL, encoding: .utf8)) != extensionText else { return }
-            // A file of the same name that is not ours is kept as a backup. One of ours that differs is an older version or edited by
-            // hand: it is kept too, but only where no backup is yet (a foreign file's backup is not given up for an upgrade).
-            let backupExists = FileManager.default.fileExists(atPath: configURL.appendingPathExtension("nunsseop-backup").path)
-            try Self.write(Data(extensionText.utf8), to: configURL, backup: !Self.isOurs(extension: configURL) || !backupExists)
+            guard let agent = piAgent else { return [] }
+            return Self.ownFile(PiExtension.source(agent: agent), at: configURL, isOurs: Self.isOurs(extension:))
+        case .copilot:
+            return Self.ownFile(CopilotHooks.source(permissions: Self.answersPermissions), at: configURL) { url in
+                (try? String(contentsOf: url, encoding: .utf8)).map(CopilotHooks.isOurs(text:)) ?? false
+            }
+        case .antigravity:
+            guard let updated = try AntigravityHooks.updating(Self.loadJSON(at: configURL), permissions: Self.answersPermissions) else { return [] }
+            return [FileChange(url: configURL, after: try Self.jsonText(updated))]
+        case .cursor:
+            let table = CursorHooks.table(permissions: Self.answersPermissions)
+            guard let updated = try CursorHooks.updating(table, in: Self.loadJSON(at: configURL)) else { return [] }
+            return [FileChange(url: configURL, after: try Self.jsonText(updated))]
+        case .hermes:
+            return Self.ownFile(HermesPlugin.manifest, at: HermesPlugin.manifestURL, isOurs: HermesPlugin.isOurs)
+                + Self.ownFile(HermesPlugin.source(), at: configURL, isOurs: HermesPlugin.isOurs)
+        case .amp:
+            return Self.ownFile(AmpPlugin.source(), at: configURL, isOurs: AmpPlugin.isOurs)
         }
     }
+
+    /// A file that is Nunsseop's own (an extension, a plugin, a hook file), written unless it is that already. A file of the same name
+    /// that is not ours is kept as a backup. One of ours that differs is an older version or edited by hand: it is kept too, but only
+    /// where no backup is yet (a foreign file's backup is not given up for an upgrade).
+    private static func ownFile(_ text: String, at url: URL, isOurs: (URL) -> Bool) -> [FileChange] {
+        guard (try? String(contentsOf: url, encoding: .utf8)) != text else { return [] }
+        let backupExists = FileManager.default.fileExists(atPath: url.appendingPathExtension("nunsseop-backup").path)
+        return [FileChange(url: url, after: text, backup: !isOurs(url) || !backupExists)]
+    }
+
+    /// Whether the tool's settings file holds the tool's other settings and hooks too, which connecting leaves as they are, and
+    /// disconnecting takes only Nunsseop's lines out of.
+    var sharesItsFile: Bool { [.claudeCode, .codex, .gemini, .antigravity, .cursor].contains(self) }
 
     /// Whether the extension file is there and Nunsseop's.
     private static func isOurs(extension url: URL) -> Bool {
@@ -239,6 +347,24 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
             try? FileManager.default.removeItem(at: configURL)
         case .omp, .omo, .pi:
             if Self.isOurs(extension: configURL) { try? FileManager.default.removeItem(at: configURL) }
+        case .copilot:
+            if isInstalled { try? FileManager.default.removeItem(at: configURL) }
+        case .antigravity:
+            let settings = try Self.loadJSON(at: configURL)
+            guard AntigravityHooks.isInstalled(in: settings) else { return }
+            try Self.writeJSON(AntigravityHooks.removing(from: settings), to: configURL)
+        case .cursor:
+            let settings = try Self.loadJSON(at: configURL)
+            guard CursorHooks.holdsAny(in: settings) else { return }
+            try Self.writeJSON(CursorHooks.removing(from: settings), to: configURL)
+        case .hermes:
+            // Python leaves its compiled copy beside the source; it goes with the plugin's own files, and the folder if nothing else is in it.
+            guard HermesPlugin.isOurs(configURL) else { return }
+            let fileManager = FileManager.default
+            for name in ["__init__.py", "plugin.yaml", "__pycache__"] { try? fileManager.removeItem(at: HermesPlugin.folder.appendingPathComponent(name)) }
+            if (try? fileManager.contentsOfDirectory(atPath: HermesPlugin.folder.path))?.isEmpty == true { try? fileManager.removeItem(at: HermesPlugin.folder) }
+        case .amp:
+            if AmpPlugin.isOurs(configURL) { try? FileManager.default.removeItem(at: configURL) }
         }
     }
 
@@ -257,10 +383,14 @@ enum NotifyIntegration: String, CaseIterable, Identifiable {
         return try String(contentsOf: url, encoding: .utf8)
     }
 
-    static func writeJSON(_ settings: [String: Any], to url: URL) throws {
+    static func jsonText(_ settings: [String: Any]) throws -> String {
         let data = try JSONSerialization.data(withJSONObject: settings,
                                               options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
-        try write(data, to: url)
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    static func writeJSON(_ settings: [String: Any], to url: URL) throws {
+        try write(Data(jsonText(settings).utf8), to: url)
     }
 
     private static func writeText(_ text: String, to url: URL) throws {

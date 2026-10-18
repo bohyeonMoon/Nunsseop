@@ -110,7 +110,7 @@ struct AgentHookEventTests {
             #expect(AgentHook.event(headers: ["x-session": "parent", "x-event": event, "x-subagent": String(repeating: "a", count: 65)]) == nil)
         }
         #expect(AgentHook.event(headers: base.merging(["x-session": ""]) { $1 }) == nil)
-        #expect(AgentHook.event(headers: base.merging(["x-agent": "gemini"]) { $1 }) == nil)
+        #expect(AgentHook.event(headers: base.merging(["x-agent": "nobody"]) { $1 }) == nil)
     }
 
     @Test func codexEventsAsTheCountReadsThem() {
@@ -135,7 +135,7 @@ struct AgentHookEventTests {
             #expect(AgentHook.event(headers: headers)?.agent == .claude, "\(agent ?? "nil")")
         }
         // Whatever else is refused, so a stray value can't open a source of its own.
-        for agent in ["gemini", "Codex", "codex\n", "codex ", String(repeating: "a", count: 65)] {
+        for agent in ["nobody", "Gemini", "Codex", "codex\n", "codex ", String(repeating: "a", count: 65)] {
             #expect(AgentHook.event(headers: base.merging(["x-agent": agent]) { $1 }) == nil, "\(agent)")
         }
     }

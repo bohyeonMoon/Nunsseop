@@ -131,6 +131,7 @@ final class NotchViewModel: ObservableObject {
     let appMenus = AppMenuWatcher()
     let emoji = EmojiModel()
     let aiUsage = AIUsageModel()
+    let recap = RecapCard()
     lazy var search = QuickSearchModel(clipboard: clipboard, emoji: emoji, tools: tools)
     let recorder = ScreenRecorder()
     /// Set when opened by the hotkey; the notch then stays open until the pointer visits it or Escape is pressed.
@@ -158,6 +159,14 @@ final class NotchViewModel: ObservableObject {
     var browFaded: Bool {
         browHidden && !isExpanded && hud.event == nil && approvals.current == nil && !showsLiveActivity && !showsSneakPeek
     }
+    /// The eyebrow's mood: a moment's (a finished turn, a limit) while it lasts, otherwise the agents'.
+    @Published private(set) var browMood: BrowMood = .rest
+    /// Counts the cheers for finished turns; each one hops the eyebrow.
+    @Published private(set) var browHops = 0
+    private var agentsMood: BrowMood = .rest
+    private var momentMood: BrowMood?
+    private var momentWork: DispatchWorkItem?
+    private var finishWatch = FinishWatch()
     private var cancellables: Set<AnyCancellable> = []
     private var limitAlerts = LimitAlerts()
     private var sneakPeekWork: DispatchWorkItem?
@@ -266,6 +275,22 @@ final class NotchViewModel: ObservableObject {
         onboarding.objectWillChange
             .sink { [weak self] in self?.objectWillChange.send() }
             .store(in: &cancellables)
+        recap.objectWillChange
+            .sink { [weak self] in self?.objectWillChange.send() }
+            .store(in: &cancellables)
+        $isExpanded.removeDuplicates()
+            .sink { [weak self] expanded in
+                guard let self else { return }
+                if expanded {
+                    recap.notchOpened(enabled: settings.weeklyRecap) { [weak self] in self?.canShowRecap == true }
+                } else {
+                    recap.close()
+                }
+            }
+            .store(in: &cancellables)
+        $tab.removeDuplicates().dropFirst()
+            .sink { [weak self] _ in self?.recap.close() }
+            .store(in: &cancellables)
         approvals.$drafts
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
@@ -282,6 +307,9 @@ final class NotchViewModel: ObservableObject {
         agents.$counts
             .removeDuplicates()
             .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
+        agents.$revision
+            .sink { [weak self] _ in self?.followAgents() }
             .store(in: &cancellables)
         // The tab's badge counts unseen notices.
         notices.$unseen
@@ -365,6 +393,7 @@ final class NotchViewModel: ObservableObject {
         guard settings.limitAlerts else { return }
         let alerts = limitAlerts.step(providers, now: .now)
         if let first = alerts.first {
+            showMoment(LimitAlerts.mood(first))
             _ = hud.showLasting(duration: CalendarModel.alertSpacing) {
                 .notice(symbol: LimitAlerts.symbol(first), title: LimitAlerts.title(first), detail: LimitAlerts.detail(first))
             }
@@ -372,6 +401,49 @@ final class NotchViewModel: ObservableObject {
         for alert in alerts {
             notices.add(symbol: LimitAlerts.symbol(alert), title: LimitAlerts.title(alert), detail: LimitAlerts.detail(alert))
         }
+    }
+
+    /// Keeps the eyebrow's face with the agents, and cheers for the turns that just finished.
+    private func followAgents() {
+        let entries = agents.entries()
+        agentsMood = BrowMood.steady(entries)
+        let finished = finishWatch.step(entries)
+        if settings.cheerFinished, let done = finished.first(where: { !Self.isInFront(app: $0.agent.app) }) {
+            showMoment(.happy)
+            let row = agentList.rows.first { $0.id == done.key }
+            let place = (row?.name ?? row?.path.map { URL(fileURLWithPath: $0).lastPathComponent })
+            hud.show(.notice(symbol: BrowMood.happy.symbol, title: Self.finishedTitle(AgentRow.toolName(done.agent.tool)), detail: place),
+                     duration: BrowMood.happy.lasts ?? 2.6, action: { [agentList] in if let row { agentList.focus(row) } })
+        }
+        updateBrowMood()
+    }
+
+    nonisolated static func finishedTitle(_ tool: String) -> String { String(localized: "\(tool) is done") }
+
+    /// Whether the agent's terminal is the app in front, where its end was seen already.
+    private static func isInFront(app: String?) -> Bool {
+        app != nil && NSWorkspace.shared.frontmostApplication?.bundleIdentifier == app
+    }
+
+    /// Shows a mood for its moment, then goes back to the agents'.
+    private func showMoment(_ mood: BrowMood) {
+        momentWork?.cancel()
+        momentMood = mood
+        if mood == .happy { browHops &+= 1 }
+        updateBrowMood()
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                self?.momentMood = nil
+                self?.updateBrowMood()
+            }
+        }
+        momentWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + (mood.lasts ?? 0), execute: work)
+    }
+
+    private func updateBrowMood() {
+        let mood = momentMood ?? agentsMood
+        if mood != browMood { browMood = mood }
     }
 
     /// "in 5 minutes", and "in 5 minutes · Click to join" when the event has a meeting link.
@@ -385,6 +457,10 @@ final class NotchViewModel: ObservableObject {
         if settings.widenForTabs { width = Self.widened(width, fitting: widthFittingTabs, limit: geometry.maxExpandedWidth) }
         // A permission prompt shows its command in full, so it takes all the height the panel has.
         var height = approvals.current == nil ? settings.expandedHeight : max(settings.expandedHeight, AppSettings.expandedHeightRange.upperBound)
+        if recap.isShowing {
+            width = max(width, RecapView.minimumSize.width)
+            height = max(height, RecapView.minimumSize.height)
+        }
         // The tour is laid out for this much room.
         if onboarding.isActive {
             let frame = OnboardingTour.minimumFrame(notchHeight: geometry.collapsedSize.height)
@@ -658,7 +734,7 @@ final class NotchViewModel: ObservableObject {
     nonisolated static func idleEarWidth(for value: IdleValue) -> CGFloat {
         let font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
         let text = (value.text as NSString).size(withAttributes: [.font: font]).width
-        let symbol = value.symbol
+        let symbol = value.brow.map { _ in IdleValue.browWidth + 3 } ?? value.symbol
             .flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: 11, weight: .semibold)) }
             .map { $0.size.width + 3 } ?? 0
         return ceil(symbol + text) + 8
@@ -845,6 +921,11 @@ final class NotchViewModel: ObservableObject {
     /// one that is hidden.
     nonisolated static func tabAfterCollapse(_ tab: NotchTab, isVisible: (NotchTab) -> Bool) -> NotchTab {
         visibleTab(tab == .mirror ? .home : tab, isVisible: isVisible)
+    }
+
+    /// The recap waits for the tour and for a permission prompt, which have the notch first.
+    private var canShowRecap: Bool {
+        isExpanded && !onboarding.isActive && !onboarding.isPending && approvals.current == nil
     }
 
     func expand() {

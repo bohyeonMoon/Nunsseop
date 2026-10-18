@@ -307,6 +307,7 @@ struct PermissionSettingToolsTests {
         #expect(NotifyIntegration.askingForPermission(present: [.openCode]) == [.openCode])
         #expect(NotifyIntegration.askingForPermission(present: [.claudeCode, .codex, .openCode, .gemini, .omp, .omo, .pi])
                 == [.claudeCode, .codex, .openCode])
-        #expect(NotifyIntegration.askingForPermission(present: [.gemini, .omp, .omo, .pi]).isEmpty)
+        #expect(NotifyIntegration.askingForPermission(present: [.copilot, .antigravity, .cursor]) == [.copilot, .antigravity, .cursor])
+        #expect(NotifyIntegration.askingForPermission(present: [.gemini, .omp, .omo, .pi, .hermes, .amp]).isEmpty)
     }
 }

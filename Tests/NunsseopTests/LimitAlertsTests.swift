@@ -87,16 +87,17 @@ struct LimitAlertsTests {
         let warning = LimitAlerts.Alert(family: .claude, kind: .session, threshold: 80, resetsAt: nil)
         #expect(LimitAlerts.title(warning) == "Claude 5-hour: \(LimitAlerts.share(80)) used")
         #expect(LimitAlerts.detail(warning) == nil)
-        #expect(LimitAlerts.symbol(warning) == "gauge.with.dots.needle.67percent")
+        #expect(LimitAlerts.mood(warning) == .tired)
         let urgent = LimitAlerts.Alert(family: .codex, kind: .weekly, threshold: 95, resetsAt: now)
         #expect(LimitAlerts.title(urgent) == "Codex Weekly: \(LimitAlerts.share(95)) used")
         #expect(LimitAlerts.detail(urgent)?.hasPrefix("Resets ") == true)
-        #expect(LimitAlerts.symbol(urgent) == "gauge.with.dots.needle.100percent")
+        #expect(LimitAlerts.mood(urgent) == .tired)
         let reset = LimitAlerts.Alert(family: .claude, kind: .weekly, threshold: nil, resetsAt: nil)
         #expect(LimitAlerts.title(reset) == "Claude Weekly limit reset")
         #expect(LimitAlerts.detail(reset) == "Ready to use again")
+        #expect(LimitAlerts.mood(reset) == .relieved)
         for alert in [warning, urgent, reset] {
-            #expect(NSImage(systemSymbolName: LimitAlerts.symbol(alert), accessibilityDescription: nil) != nil, Comment(rawValue: LimitAlerts.symbol(alert)))
+            #expect(BrowMood(symbol: LimitAlerts.symbol(alert)) == LimitAlerts.mood(alert))
         }
     }
 

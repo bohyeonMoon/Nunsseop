@@ -87,16 +87,14 @@ final class AppSettings: ObservableObject {
     @Published var glassTint: Double = AppSettings.load("glassTint", default: 55.0, in: glassTintRange) { didSet { save(glassTint, "glassTint") } }
     /// A system-wide shortcut opens the Search tab from anywhere.
     @Published var searchHotkey: Bool = AppSettings.load("searchHotkey", default: true) { didSet { save(searchHotkey, "searchHotkey") } }
-    @Published var searchHotKey: HotKeyCombo = AppSettings.loadSearchHotKey() {
-        didSet {
-            defaults.set(Int(searchHotKey.keyCode), forKey: "searchHotKeyCode")
-            defaults.set(Int(searchHotKey.modifiers), forKey: "searchHotKeyModifiers")
-            defaults.set(searchHotKey.key, forKey: "searchHotKeyName")
-        }
+    @Published var searchHotKey: HotKeyCombo = AppSettings.loadSearchHotKey() { didSet { ShortcutAction.search.saveCombo(searchHotKey) } }
+    /// The shortcuts of the other actions; one that has none is missing.
+    @Published var shortcuts: [ShortcutAction: HotKeyCombo] = ShortcutAction.loadOthers() {
+        didSet { for action in ShortcutAction.allCases where action != .search { action.saveCombo(shortcuts[action]) } }
     }
-    /// Set when another app already holds the chosen shortcut.
-    @Published var searchShortcutTaken = false
-    /// While a new shortcut is being recorded the current one is released.
+    /// The actions whose shortcut another app already holds.
+    @Published var shortcutsTaken: Set<ShortcutAction> = []
+    /// While a new shortcut is being recorded the current ones are released.
     @Published var recordingShortcut = false
     @Published var peripheralBatteries: Bool = AppSettings.load("peripheralBatteries", default: true) { didSet { save(peripheralBatteries, "peripheralBatteries") } }
     /// Shows when any app uses the camera or microphone.
@@ -130,6 +128,10 @@ final class AppSettings: ObservableObject {
     @Published var weatherCity: String = AppSettings.load("weatherCity", default: "") { didSet { save(weatherCity, "weatherCity") } }
     @Published var downloadAlerts: Bool = AppSettings.load("downloadAlerts", default: true) { didSet { save(downloadAlerts, "downloadAlerts") } }
     @Published var limitAlerts: Bool = AppSettings.load("limitAlerts", default: true) { didSet { save(limitAlerts, "limitAlerts") } }
+    /// The notch cheers, eyebrow hopping, when a coding agent finishes its turn.
+    @Published var cheerFinished: Bool = AppSettings.load("cheerFinished", default: true) { didSet { save(cheerFinished, "cheerFinished") } }
+    /// Shows last week's recap of the agents' work the first time the notch opens in a week; the AI tab shows it either way.
+    @Published var weeklyRecap: Bool = AppSettings.load("weeklyRecap", default: true) { didSet { save(weeklyRecap, "weeklyRecap") } }
     /// Shaking the pointer while dragging files shows a drop target that adds them to the shelf.
     @Published var shakeToShelf: Bool = AppSettings.load("shakeToShelf", default: true) { didSet { save(shakeToShelf, "shakeToShelf") } }
     @Published var downloadsToShelf: Bool = AppSettings.load("downloadsToShelf", default: false) { didSet { save(downloadsToShelf, "downloadsToShelf") } }
@@ -195,6 +197,34 @@ final class AppSettings: ObservableObject {
         guard let name = defaults.string(forKey: "searchHotKeyName") else { return .defaultSearch }
         return HotKeyCombo(keyCode: UInt32(defaults.integer(forKey: "searchHotKeyCode")),
                            modifiers: UInt32(defaults.integer(forKey: "searchHotKeyModifiers")), key: name)
+    }
+
+    /// The combination the action answers to, if any.
+    func shortcut(for action: ShortcutAction) -> HotKeyCombo? {
+        ShortcutAction.active(searchEnabled: searchHotkey, search: searchHotKey, others: shortcuts)[action]
+    }
+
+    /// Records the combination for the action unless another action answers to it, which is then named and nothing is saved.
+    @discardableResult
+    func assign(_ combo: HotKeyCombo, to action: ShortcutAction) -> ShortcutAssignment {
+        let result = ShortcutAction.assignment(of: combo, to: action, active: ShortcutAction.active(searchEnabled: searchHotkey, search: searchHotKey, others: shortcuts))
+        guard result == .saved else { return result }
+        if action == .search {
+            searchHotKey = combo
+            searchHotkey = true
+        } else {
+            shortcuts[action] = combo
+        }
+        return result
+    }
+
+    /// Leaves the action without a shortcut. Search keeps the combination it had, for when it is switched on again.
+    func clearShortcut(_ action: ShortcutAction) {
+        if action == .search {
+            searchHotkey = false
+        } else {
+            shortcuts[action] = nil
+        }
     }
 
     /// Every tab after Home in the user's order, including tabs added in newer versions.

@@ -4,7 +4,7 @@ import Testing
 
 /// A shell run with a stand-in `curl` that records what it was given, a stand-in `prev.sh` (the user's own notify
 /// command), a scratch home holding the notify token, and a pinned `__CFBundleIdentifier`.
-private struct ShellRun {
+struct ShellRun {
     var args: [String] = []
     var body = ""
     var curlCalls = 0

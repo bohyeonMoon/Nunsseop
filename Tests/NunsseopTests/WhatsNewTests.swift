@@ -17,7 +17,7 @@ private func makeTour(_ defaults: UserDefaults) -> OnboardingTour {
 
 @MainActor
 struct WhatsNewTests {
-    private let version = "0.34.0"
+    private let version = "0.35.0"
 
     @Test func theNotesShowOnceAfterAnUpdateToAVersionThatHasThem() {
         withDefaults { defaults in
@@ -113,8 +113,9 @@ struct WhatsNewTests {
     @Test func theNotesAreTranslatedIntoEveryLanguage() throws {
         let resources = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Resources")
-        let keys = ["What's new in %@", "Freshly groomed", "Nunsseop %@ brings two new things, and there's nothing to set up.", "Limit alerts",
-                    "A nudge at %@ and %@, a cheer at the reset", "This, once per update", "Says what's new, then gets out of your way", "Got it"]
+        let keys = ["What's new in %@", "Now with feelings", "Nunsseop %@ wears its mood on its brow. Also new: a Monday recap, more shortcuts and six more agents.",
+                    "A brow with moods", "Raised when an agent waits, a hop when it's done", "What your agents are doing",
+                    "Their last step, and the diff a click away", "Got it"]
         for language in ["de", "es", "fr", "ja", "ko", "zh-Hans"] {
             let table = try #require(NSDictionary(contentsOfFile: resources.appendingPathComponent("\(language).lproj/Localizable.strings").path), Comment(rawValue: language))
             for key in keys {
@@ -126,10 +127,17 @@ struct WhatsNewTests {
             }
             // A row's line under its title is one line of about 286 points (the visual column less the icon and padding).
             let font = NSFont.systemFont(ofSize: 11)
-            for key in ["A nudge at %@ and %@, a cheer at the reset", "Says what's new, then gets out of your way"] {
+            for key in ["Raised when an agent waits, a hop when it's done", "Their last step, and the diff a click away"] {
                 let text = (table[key] as? String ?? "").replacingOccurrences(of: "%1$@", with: "80 %").replacingOccurrences(of: "%2$@", with: "95 %")
                 #expect((text as NSString).size(withAttributes: [.font: font]).width <= 280, Comment(rawValue: "\(language): \(text)"))
             }
         }
+    }
+
+    @Test func aPreReleaseShowsTheNotesOfItsRelease() throws {
+        let notes = try #require(WhatsNew.notes(for: "\(version)-beta.1"))
+        #expect(notes.title == WhatsNew.notes(for: version)?.title)
+        #expect(notes.text.contains("\(version)-beta.1"))
+        #expect(WhatsNew.notes(for: "9.9.9-beta.1") == nil)
     }
 }

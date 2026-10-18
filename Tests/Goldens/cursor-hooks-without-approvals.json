@@ -1,0 +1,33 @@
+{
+  "hooks" : {
+    "beforeSubmitPrompt" : [
+      {
+        "command" : "in=$(cat); k() { printf '%s' \"$in\" | plutil -extract \"$1\" raw -o - - 2>/dev/null | tr -cd 'A-Za-z0-9_.-' | cut -c1-64; }; curl -s -m 1 --connect-timeout 1 -X POST http://127.0.0.1:47750/agent -d '' -H @\"$HOME/Library/Application Support/Nunsseop/notify-auth\" -H \"X-Session: $(k conversation_id)\" -H \"X-Event: UserPromptSubmit\" -H \"X-Type: \" -H \"X-App: ${__CFBundleIdentifier:-com.todesktop.230313mzl4w4u92}\" -H \"X-Herdr: ${HERDR_PANE_ID:+1}\" -H \"X-Muxy: ${MUXY_SESSION_ID}\" -H \"X-Cmux: ${CMUX_SURFACE_ID}\" -H \"X-Mux: ${TMUX:+1}${ZELLIJ:+1}${STY:+1}\" -H \"X-Wezterm: ${WEZTERM_PANE}\" -H \"X-Wezterm-Socket: ${WEZTERM_UNIX_SOCKET}\" -H \"X-Kitty: ${KITTY_WINDOW_ID}\" -H \"X-Kitty-Socket: ${KITTY_LISTEN_ON}\" -H \"X-Iterm: ${ITERM_SESSION_ID}\" -H \"X-Orca: ${ORCA_PANE_KEY}\" -H 'X-Agent: cursor' >/dev/null 2>&1; printf '{\"continue\":true}'; true",
+        "timeout" : 10
+      }
+    ],
+    "sessionEnd" : [
+      {
+        "command" : "in=$(cat); k() { printf '%s' \"$in\" | plutil -extract \"$1\" raw -o - - 2>/dev/null | tr -cd 'A-Za-z0-9_.-' | cut -c1-64; }; curl -s -m 1 --connect-timeout 1 -X POST http://127.0.0.1:47750/agent -d '' -H @\"$HOME/Library/Application Support/Nunsseop/notify-auth\" -H \"X-Session: $(k conversation_id)\" -H \"X-Event: SessionEnd\" -H \"X-Type: \" -H \"X-App: ${__CFBundleIdentifier:-com.todesktop.230313mzl4w4u92}\" -H \"X-Herdr: ${HERDR_PANE_ID:+1}\" -H \"X-Muxy: ${MUXY_SESSION_ID}\" -H \"X-Cmux: ${CMUX_SURFACE_ID}\" -H \"X-Mux: ${TMUX:+1}${ZELLIJ:+1}${STY:+1}\" -H \"X-Wezterm: ${WEZTERM_PANE}\" -H \"X-Wezterm-Socket: ${WEZTERM_UNIX_SOCKET}\" -H \"X-Kitty: ${KITTY_WINDOW_ID}\" -H \"X-Kitty-Socket: ${KITTY_LISTEN_ON}\" -H \"X-Iterm: ${ITERM_SESSION_ID}\" -H \"X-Orca: ${ORCA_PANE_KEY}\" -H 'X-Agent: cursor' >/dev/null 2>&1; true",
+        "timeout" : 10
+      }
+    ],
+    "sessionStart" : [
+      {
+        "command" : "in=$(cat); k() { printf '%s' \"$in\" | plutil -extract \"$1\" raw -o - - 2>/dev/null | tr -cd 'A-Za-z0-9_.-' | cut -c1-64; }; curl -s -m 1 --connect-timeout 1 -X POST http://127.0.0.1:47750/agent -d '' -H @\"$HOME/Library/Application Support/Nunsseop/notify-auth\" -H \"X-Session: $(k conversation_id)\" -H \"X-Event: SessionStart\" -H \"X-Type: \" -H \"X-App: ${__CFBundleIdentifier:-com.todesktop.230313mzl4w4u92}\" -H \"X-Herdr: ${HERDR_PANE_ID:+1}\" -H \"X-Muxy: ${MUXY_SESSION_ID}\" -H \"X-Cmux: ${CMUX_SURFACE_ID}\" -H \"X-Mux: ${TMUX:+1}${ZELLIJ:+1}${STY:+1}\" -H \"X-Wezterm: ${WEZTERM_PANE}\" -H \"X-Wezterm-Socket: ${WEZTERM_UNIX_SOCKET}\" -H \"X-Kitty: ${KITTY_WINDOW_ID}\" -H \"X-Kitty-Socket: ${KITTY_LISTEN_ON}\" -H \"X-Iterm: ${ITERM_SESSION_ID}\" -H \"X-Orca: ${ORCA_PANE_KEY}\" -H 'X-Agent: cursor' >/dev/null 2>&1; true",
+        "timeout" : 10
+      }
+    ],
+    "stop" : [
+      {
+        "command" : "in=$(cat); k() { printf '%s' \"$in\" | plutil -extract \"$1\" raw -o - - 2>/dev/null | tr -cd 'A-Za-z0-9_.-' | cut -c1-64; }; curl -s -m 1 --connect-timeout 1 -X POST http://127.0.0.1:47750/agent -d '' -H @\"$HOME/Library/Application Support/Nunsseop/notify-auth\" -H \"X-Session: $(k conversation_id)\" -H \"X-Event: $([ \"$(k status)\" = completed ] && echo Stop || echo Interrupt)\" -H \"X-Type: \" -H \"X-App: ${__CFBundleIdentifier:-com.todesktop.230313mzl4w4u92}\" -H \"X-Herdr: ${HERDR_PANE_ID:+1}\" -H \"X-Muxy: ${MUXY_SESSION_ID}\" -H \"X-Cmux: ${CMUX_SURFACE_ID}\" -H \"X-Mux: ${TMUX:+1}${ZELLIJ:+1}${STY:+1}\" -H \"X-Wezterm: ${WEZTERM_PANE}\" -H \"X-Wezterm-Socket: ${WEZTERM_UNIX_SOCKET}\" -H \"X-Kitty: ${KITTY_WINDOW_ID}\" -H \"X-Kitty-Socket: ${KITTY_LISTEN_ON}\" -H \"X-Iterm: ${ITERM_SESSION_ID}\" -H \"X-Orca: ${ORCA_PANE_KEY}\" -H 'X-Agent: cursor' >/dev/null 2>&1; true",
+        "timeout" : 10
+      },
+      {
+        "command" : "in=$(cat); k() { printf '%s' \"$in\" | plutil -extract \"$1\" raw -o - - 2>/dev/null | tr -cd 'A-Za-z0-9_.-' | cut -c1-64; }; if [ \"$(k status)\" = completed ]; then curl -s -m 2 -X POST http://127.0.0.1:47750/notify -H @\"$HOME/Library/Application Support/Nunsseop/notify-auth\" -H 'X-Title: Cursor' -H \"X-App: ${__CFBundleIdentifier:-com.todesktop.230313mzl4w4u92}\" --data-binary 'Finished' >/dev/null 2>&1; fi; true",
+        "timeout" : 10
+      }
+    ]
+  },
+  "version" : 1
+}

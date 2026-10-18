@@ -117,7 +117,7 @@ final class NotchWindowController {
     private var settingsObservers: [AnyCancellable] = []
     /// Keeps the AI limits fresh while an idle ear shows them.
     private var aiUsageTimer: Timer?
-    private var hotKey: GlobalHotKey?
+    private var hotKeys: [ShortcutAction: GlobalHotKey] = [:]
     private var resignObserver: NSObjectProtocol?
     private lazy var shakeShelf = ShakeShelf(shelf: model.shelf, hud: model.hud)
 
@@ -183,21 +183,32 @@ final class NotchWindowController {
         model.notices.add(symbol: symbol, title: title, detail: detail, action: action)
     }
 
-    /// Opens the notch on the Search tab with the keyboard focus in the search field.
-    private func openSearch() {
+    /// What a global shortcut does: opens the notch on a tab with the keyboard, closes it, or goes to a session or the source of a notice.
+    private func perform(_ action: ShortcutAction) {
         // The tour has the notch, and shows the shortcut itself.
         guard panel.isVisible, !model.onboarding.isActive else { return }
-        if model.isExpanded && model.tab == .search {
+        switch action.step(expanded: model.isExpanded, tab: model.tab) {
+        case .collapse:
             model.collapse()
             panel.ignoresMouseEvents = true
-            return
+        case .open(let tab, let focusSearch):
+            if let tab { model.tab = tab }
+            model.expand()
+            model.pinned = true
+            panel.ignoresMouseEvents = false
+            panel.makeKey()
+            if focusSearch { model.search.focusToken += 1 }
+        case .goToWaitingAgent:
+            if !model.agentList.focusLongestWaiting() {
+                model.hud.show(.notice(symbol: "checkmark.circle", title: String(localized: "No agent is waiting"), detail: nil), duration: 3)
+            }
+        case .goToLastNotice:
+            if let action = model.notices.latestWithAction?.action {
+                action()
+            } else {
+                model.hud.show(.notice(symbol: "bell.slash", title: String(localized: "No notice to go back to"), detail: nil), duration: 3)
+            }
         }
-        model.tab = .search
-        model.expand()
-        model.pinned = true
-        panel.ignoresMouseEvents = false
-        panel.makeKey()
-        model.search.focusToken += 1
     }
 
     init() {
@@ -282,6 +293,14 @@ final class NotchWindowController {
         guard event.window === panel, model.onboarding.shows(expanded: model.isExpanded, approvalShowing: model.approvals.current != nil)
         else { return false }
         return model.onboarding.handle(keyCode: event.keyCode, modifiers: event.modifierFlags, isRepeat: event.isARepeat)
+    }
+
+    /// Escape closes the recap, while the notch shows it and is the key window.
+    private func handlesRecapKey(_ event: NSEvent) -> Bool {
+        guard event.window === panel, model.recap.isShowing, model.approvals.current == nil, event.keyCode == 53,
+              event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty else { return false }
+        model.recap.close()
+        return true
     }
 
     #if DEBUG
@@ -435,6 +454,11 @@ final class NotchWindowController {
             self.model.collapse()
             self.panel.ignoresMouseEvents = true
         })
+        // The recap takes the keyboard for Escape.
+        settingsObservers.append(model.recap.$isShowing.removeDuplicates().sink { [weak self] showing in
+            guard showing, self?.panel.isVisible == true else { return }
+            self?.panel.makeKey()
+        })
         // The field needs the keyboard, which a panel that never activates gets by becoming key.
         settingsObservers.append(model.agentList.$composing.sink { [weak self] row in
             guard row != nil else { return }
@@ -446,13 +470,18 @@ final class NotchWindowController {
             guard id != nil else { return }
             self?.panel.makeKey()
         })
-        settingsObservers.append(model.settings.$searchHotkey.combineLatest(model.settings.$searchHotKey, model.settings.$recordingShortcut)
-            .sink { [weak self] enabled, combo, recording in
+        let settings = model.settings
+        settingsObservers.append(Publishers.CombineLatest4(settings.$searchHotkey, settings.$searchHotKey, settings.$shortcuts, settings.$recordingShortcut)
+            .sink { [weak self] enabled, search, others, recording in
                 guard let self else { return }
-                self.hotKey = nil
-                guard enabled && !recording else { return }
-                self.hotKey = GlobalHotKey(combo: combo) { [weak self] in self?.openSearch() }
-                self.model.settings.searchShortcutTaken = self.hotKey?.isRegistered != true
+                self.hotKeys = [:]
+                guard !recording else { return }
+                var taken: Set<ShortcutAction> = []
+                for (action, combo) in ShortcutAction.active(searchEnabled: enabled, search: search, others: others) {
+                    let key = GlobalHotKey(combo: combo) { [weak self] in self?.perform(action) }
+                    if key.isRegistered { self.hotKeys[action] = key } else { taken.insert(action) }
+                }
+                self.model.settings.shortcutsTaken = taken
             })
         model.search.onFinish = { [weak self] in
             guard let self, self.model.isExpanded else { return }
@@ -461,13 +490,14 @@ final class NotchWindowController {
         }
         if let keys = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { [weak self] event in
             guard let self else { return event }
-            if MainActor.assumeIsolated({ self.handlesTourKey(event) }) { return nil }
+            if MainActor.assumeIsolated({ self.handlesTourKey(event) || self.handlesRecapKey(event) }) { return nil }
             guard event.keyCode == 53 else {
                 return MainActor.assumeIsolated { self.handlesAgentKey(event) || self.handlesPanelKey(event) } ? nil : event
             }
             MainActor.assumeIsolated {
-                // Escape closes the message field first, and the notch only the next time.
+                // Escape closes the message field or the diff first, and the notch only the next time.
                 if self.model.agentList.composing != nil { self.model.agentList.cancelCompose(); return }
+                if self.model.agentList.diffing != nil, self.model.agentList.isShowing { self.model.agentList.closeDiff(); return }
                 self.model.collapse()
                 self.panel.ignoresMouseEvents = true
             }
@@ -504,7 +534,7 @@ final class NotchWindowController {
         // A click on a notice goes to the terminal, and where possible the pane, it came from. Every one is also kept
         // in the Notifications tab, in case it went by unseen.
         model.notifyServer.onNotify = { [weak self] notice in
-            self?.announce(symbol: "sparkles", title: notice.title, detail: notice.message,
+            self?.announce(symbol: BrowMood.waiting.symbol, title: notice.title, detail: notice.message,
                            action: TerminalFocus.action(app: notice.app, target: notice.target))
         }
         model.cmux.onNotice = { [weak self] notice in
@@ -518,7 +548,8 @@ final class NotchWindowController {
             let detail = [state, notice.title].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
             // A named session shows its name beside the agent.
             let title = session.map { "\(notice.agent) · \($0)" } ?? notice.agent
-            self?.announce(symbol: "terminal", title: String(title.prefix(80)), detail: String(detail.prefix(200)),
+            let mood: BrowMood = notice.status == "blocked" ? .waiting : .happy
+            self?.announce(symbol: mood.symbol, title: String(title.prefix(80)), detail: String(detail.prefix(200)),
                            action: { Herdr.focus(notice) })
         }
         model.paseoWatcher.onNotice = { [weak self] notice in

@@ -23,8 +23,16 @@ enum WhatsNew {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
     }
 
+    /// A pre-release ("0.35.0-beta.1") shows the notes of the release it leads to.
     static func notes(for version: String) -> Notes? {
-        switch version {
+        switch version.split(separator: "-").first.map(String.init) ?? version {
+        case "0.35.0":
+            Notes(version: version, title: String(localized: "Now with feelings"),
+                  text: String(localized: "Nunsseop \(version) wears its mood on its brow. Also new: a Monday recap, more shortcuts and six more agents."),
+                  items: [Item(symbol: "face.smiling", title: String(localized: "A brow with moods"),
+                               detail: String(localized: "Raised when an agent waits, a hop when it's done")),
+                          Item(symbol: "list.bullet.rectangle", title: String(localized: "What your agents are doing"),
+                               detail: String(localized: "Their last step, and the diff a click away"))])
         case "0.34.0":
             Notes(version: version, title: String(localized: "Freshly groomed"),
                   text: String(localized: "Nunsseop \(version) brings two new things, and there's nothing to set up."),
