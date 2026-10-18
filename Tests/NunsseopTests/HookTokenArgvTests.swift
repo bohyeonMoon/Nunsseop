@@ -358,7 +358,7 @@ struct TokenMigrationTests {
         claudeHooks["Notification"] = [group("muxy-hook Notification"), group(TokenInArgvFixtures.notice(title: "Claude Code"))]
         for event in events { claudeHooks[event] = (claudeHooks[event] as! [Any]) + [group(TokenInArgvFixtures.agent(codex: false))] }
         // Pasted by the user from "Copy command for scripts" into a hook of their own: not Nunsseop's to touch.
-        claudeHooks["PostToolUse"] = [group(TokenInArgvFixtures.script())]
+        claudeHooks["PreCompact"] = [group(TokenInArgvFixtures.script())]
         claudeHooks["PermissionRequest"] = [["hooks": [["type": "command", "command": NotifyServer.permissionHookCommand, "timeout": 600]]]]
         try NotifyIntegration.writeJSON(["model": "opus", "hooks": claudeHooks], to: claude.configURL)
 
@@ -401,7 +401,7 @@ struct TokenMigrationTests {
                 #expect(JSONHook.isCurrent(claude.hooks, in: settings))
                 #expect(settings["model"] as? String == "opus")
                 for event in events { #expect(commands(settings, event).contains("muxy-hook \(event)"), "\(event)") }
-                #expect(commands(settings, "PostToolUse") == [TokenInArgvFixtures.script()])
+                #expect(commands(settings, "PreCompact") == [TokenInArgvFixtures.script()])
                 #expect(commands(settings, "PermissionRequest") == [NotifyServer.permissionHookCommand])
                 #expect(!events.contains { commands(settings, $0).contains { $0.contains("Bearer") } })
 

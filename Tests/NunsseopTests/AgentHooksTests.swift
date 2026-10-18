@@ -21,7 +21,8 @@ struct AgentHookEventTests {
         }
         // The subagent events need the subagent's id, which only `event(headers:)` has.
         #expect(AgentHook.action(event: "SubagentStop", type: nil) == nil && AgentHook.action(event: "SubagentStart", type: nil) == nil)
-        #expect(AgentHook.action(event: "PostToolUse", type: nil) == nil)
+        // A tool that has run means whatever was asked is answered.
+        #expect(AgentHook.action(event: "PostToolUse", type: nil) == .toolRan)
         // A type means something only on a Notification.
         #expect(AgentHook.action(event: "Stop", type: "idle_prompt") == .finished)
     }
@@ -120,7 +121,7 @@ struct AgentHookEventTests {
         #expect(AgentHook.action(event: "Interrupt", type: nil) == .idle)
         #expect(AgentHook.action(event: "SessionEnd", type: nil) == .remove)
         // The rest of Codex's events say nothing about the turn as a whole.
-        for event in ["PreToolUse", "PostToolUse", "PreCompact", "PostCompact", "SubagentStart", "SubagentStop"] {
+        for event in ["PreToolUse", "PreCompact", "PostCompact", "SubagentStart", "SubagentStop"] {
             #expect(AgentHook.action(event: event, type: nil) == nil, "\(event)")
         }
     }
@@ -237,6 +238,50 @@ struct AgentHooksTests {
 
     private func listed(_ board: AgentBoard, at now: Date, _ id: String? = nil) -> [AgentBoard.Entry] {
         board.entries(now: now).filter { id == nil || $0.id == id }.sorted { $0.id < $1.id }
+    }
+
+    // MARK: A tool that has run
+
+    @Test func aToolRunningAfterAQuestionOrAPermissionPutsTheSessionBackToWork() {
+        let (hooks, board) = make()
+        hooks.apply(event("a", .working, pid: 7), now: start)
+        hooks.apply(event("a", .needsInput, pid: 7), now: start.addingTimeInterval(10))
+        #expect(board.counts == AgentBoard.Counts(waiting: 1))
+        // Answered in the notch or the terminal: the next tool to finish says so.
+        hooks.apply(event("a", .toolRan, pid: 7), now: start.addingTimeInterval(40))
+        let row = listed(board, at: start.addingTimeInterval(41))[0].agent
+        #expect(board.counts == AgentBoard.Counts(working: 1))
+        #expect(row.state == .working && !row.finished && row.since == start.addingTimeInterval(40))
+    }
+
+    @Test func toolsRunningKeepALongTurnFromTurningIdle() {
+        let (hooks, board) = make()
+        hooks.apply(event("a", .working), now: start)
+        let late = start.addingTimeInterval(AgentHooks.activeWindow - 10)
+        hooks.apply(event("a", .toolRan), now: late)
+        let row = listed(board, at: start.addingTimeInterval(AgentHooks.activeWindow + 10))[0].agent
+        #expect(row.state == .working && row.since == start)
+    }
+
+    @Test func aToolRunningOutsideATurnChangesNothing() {
+        let (hooks, board) = make()
+        // Done and not looked at: a subagent's tool after the Stop leaves the hand.
+        hooks.apply(event("a", .working), now: start)
+        hooks.apply(event("a", .finished), now: start.addingTimeInterval(5))
+        hooks.apply(event("a", .toolRan), now: start.addingTimeInterval(6))
+        #expect(listed(board, at: start.addingTimeInterval(7))[0].agent.finished)
+        // Idle at the prompt.
+        hooks.apply(event("b", .opened), now: start)
+        hooks.apply(event("b", .toolRan), now: start.addingTimeInterval(6))
+        #expect(listed(board, at: start.addingTimeInterval(7), "b")[0].agent.state == .idle)
+        // Not listed at all: nothing to put back to work.
+        hooks.apply(event("c", .toolRan), now: start.addingTimeInterval(6))
+        #expect(listed(board, at: start.addingTimeInterval(7), "c").isEmpty)
+        // A turn over that only background work keeps going stays as it is.
+        hooks.apply(event("d", .working), now: start)
+        hooks.apply(event("d", .finished, tasks: 2), now: start.addingTimeInterval(5))
+        hooks.apply(event("d", .toolRan), now: start.addingTimeInterval(6))
+        #expect(listed(board, at: start.addingTimeInterval(7), "d")[0].agent.background == 2)
     }
 
     // MARK: Background subagents

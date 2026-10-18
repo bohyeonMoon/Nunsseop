@@ -39,7 +39,7 @@ struct JSONHookTests {
 struct AgentHookInstallTests {
     private let claude = NotifyIntegration.$permissionPromptsOverride.withValue(true) { NotifyIntegration.claudeCode.hooks }
     private let events = ["Notification", "UserPromptSubmit", "Stop", "StopFailure", "SessionEnd", "SessionStart",
-                                "SubagentStart", "SubagentStop"]
+                                "SubagentStart", "SubagentStop", "PostToolUse"]
 
     private func commands(_ settings: [String: Any], _ event: String) -> [[String]] {
         (((settings["hooks"] as? [String: Any])?[event] as? [[String: Any]]) ?? []).map { group in
@@ -49,8 +49,8 @@ struct AgentHookInstallTests {
 
     @Test func claudeCodeGetsTheNoticeHookAndTheAgentHooks() throws {
         let notice = NotifyServer.hookCommand(title: "Claude Code"), agent = NotifyServer.agentHookCommand
-        // The notice hook, then the agent hook under Notification and the seven events, then the permission hook, twice (for approvals and for questions).
-        #expect(claude.count == 11)
+        // The notice hook, then the agent hook under Notification and the eight events, then the permission hook, twice (for approvals and for questions).
+        #expect(claude.count == 12)
         let settings = try JSONHook.adding(claude, to: [:])
         #expect(JSONHook.isInstalled(in: settings))
         #expect(JSONHook.isCurrent(claude, in: settings))
@@ -188,15 +188,15 @@ struct AgentHookInstallTests {
 
     @Test func aPastedScriptCommandOutsideNotificationIsNotOurs() throws {
         let pasted: [String: Any] = ["hooks": [["type": "command", "command": NotifyServer.scriptCommand]]]
-        let settings: [String: Any] = ["hooks": ["Stop": [pasted], "PostToolUse": [pasted]]]
+        let settings: [String: Any] = ["hooks": ["Stop": [pasted], "PreCompact": [pasted]]]
         #expect(!JSONHook.holdsAny(in: settings))
         let updated = try #require(try JSONHook.updating(claude, in: settings))
         #expect(JSONHook.isCurrent(claude, in: updated))
         #expect(commands(updated, "Stop") == [[NotifyServer.scriptCommand], [NotifyServer.agentHookCommand]])
-        #expect(commands(updated, "PostToolUse") == [[NotifyServer.scriptCommand]])
+        #expect(commands(updated, "PreCompact") == [[NotifyServer.scriptCommand]])
         let removed = JSONHook.removing(from: updated)
         #expect(commands(removed, "Stop") == [[NotifyServer.scriptCommand]])
-        #expect(commands(removed, "PostToolUse") == [[NotifyServer.scriptCommand]])
+        #expect(commands(removed, "PreCompact") == [[NotifyServer.scriptCommand]])
         // Under Notification the notice command is ours, as it always was.
         let notice = try JSONHook.adding(NotifyServer.hookCommand(title: "Claude Code"), to: [:])
         #expect(JSONHook.removing(from: notice).isEmpty)

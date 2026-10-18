@@ -7,9 +7,9 @@ import AppKit
 /// soon as that process is gone. One instance per tool, each a source of its own, so two tools' session ids can't meet.
 ///
 /// A session counts as working, or as asking for input, for `activeWindow` after its event and is idle from then on, as
-/// a finished hand nobody looked at is after `Herdr.doneWindow`. Known limit: approving a permission sends no event
-/// either (PostToolUse isn't installed, to spare a process per tool call), so an approved turn that then works silently
-/// keeps its hand until the next event, and turns idle after `activeWindow` while it still runs, until its Stop.
+/// a finished hand nobody looked at is after `Herdr.doneWindow`. Claude Code's `PostToolUse` comes once a tool has run, so after a
+/// permission or a question is answered (in the notch or the terminal) the first tool to finish puts the session back to work; while
+/// it works, each one also keeps it from turning idle.
 ///
 /// Claude Code's `Stop` comes while a background subagent still runs, and the subagent's `SubagentStop` later. The running
 /// subagents are kept per session (`subagents`): a `Stop` with any left keeps the session working, and the last `SubagentStop`
@@ -117,6 +117,11 @@ final class AgentHooks {
             set(id, .working, idleFrom: later(now.addingTimeInterval(Self.activeWindow), id), event: event, now: now)
         case .needsInput:
             set(id, .waiting, idleFrom: now.addingTimeInterval(Self.activeWindow), event: event, now: now)
+        case .toolRan:
+            // Only within a turn: a subagent's tool after the turn's Stop must not take away the finished hand, nor revive one that is idle.
+            guard let entry = entries[id], !entry.turnOver, entry.settled(at: now).state != .idle,
+                  entry.state == .working || !entry.finished else { break }
+            set(id, .working, idleFrom: later(now.addingTimeInterval(Self.activeWindow), id), event: event, now: now)
         case .finished:
             finish(id, event: event, now: now)
         case .idle:
