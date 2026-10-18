@@ -112,6 +112,7 @@ enum AgentKind: String, CaseIterable {
     /// pi and the forks that share its session files and extension API (see `PiSessions`), and gajae-code, which has no extension.
     case pi, omp, gjc, omo
     case opencode
+    case gemini, copilot, agy, cursor, hermes, amp
 }
 
 /// One hook call (or extension or plugin event) from a session of one of the tools, reduced to what the count needs.
@@ -138,19 +139,21 @@ struct AgentEvent: Equatable {
 enum AgentHook {
     /// What an event means; nil for the ones that say nothing about work (`auth_success`). `SubagentStart` and `SubagentStop` are
     /// told by `event(headers:)`, which has the subagent's id.
-    /// `PermissionRequest` and `Interrupt` are Codex's.
+    /// `PermissionRequest` and `Interrupt` are Codex's, `BeforeAgent` and `AfterAgent` Gemini CLI's. The other tools' hooks, plugins and
+    /// extensions send Claude Code's names (a Copilot `agentStop` is a `Stop`), and the notification types of Claude Code, Gemini CLI
+    /// (`ToolPermission`) and Copilot (`agent_idle`).
     static func action(event: String, type: String?) -> AgentAction? {
         switch event {
-        case "UserPromptSubmit": return .working
-        case "Stop", "StopFailure": return .finished
+        case "UserPromptSubmit", "BeforeAgent": return .working
+        case "Stop", "StopFailure", "AfterAgent": return .finished
         case "SessionEnd": return .remove
         case "SessionStart": return .opened
         case "PermissionRequest": return .needsInput
         case "Interrupt": return .idle
         case "Notification":
             switch type {
-            case "permission_prompt", "elicitation_dialog", "elicitation_url_dialog", "agent_needs_input": return .needsInput
-            case "idle_prompt": return .idle
+            case "permission_prompt", "elicitation_dialog", "elicitation_url_dialog", "agent_needs_input", "ToolPermission": return .needsInput
+            case "idle_prompt", "agent_idle": return .idle
             case "elicitation_response", "elicitation_complete": return .working
             default: return nil
             }
@@ -336,15 +339,52 @@ final class NotifyServer: @unchecked Sendable {
             + "curl -s -m 1 --connect-timeout 1 -X POST http://127.0.0.1:\(port)/agent -d '' "
             + authHeaderOption + " "
             + "-H \"X-Session: $(k session_id)\" -H \"X-Event: $(k hook_event_name)\" -H \"X-Type: $(k notification_type)\" "
-            + "-H \"X-Subagent: $(k agent_id)\" -H \"X-App: $__CFBundleIdentifier\" -H \"X-Herdr: ${HERDR_PANE_ID:+1}\" "
-            + "-H \"X-Muxy: ${MUXY_SESSION_ID}\" -H \"X-Cmux: ${CMUX_SURFACE_ID}\" "
-            + "-H \"X-Mux: ${TMUX:+1}${ZELLIJ:+1}${STY:+1}\" "
-            + "-H \"X-Wezterm: ${WEZTERM_PANE}\" -H \"X-Wezterm-Socket: ${WEZTERM_UNIX_SOCKET}\" -H \"X-Kitty: ${KITTY_WINDOW_ID}\" -H \"X-Kitty-Socket: ${KITTY_LISTEN_ON}\" "
-            + "-H \"X-Iterm: ${ITERM_SESSION_ID}\" -H \"X-Orca: ${ORCA_PANE_KEY}\" "
+            + "-H \"X-Subagent: $(k agent_id)\" -H \"X-App: $__CFBundleIdentifier\" " + terminalHeaders
             + "-H \"X-Background: ${CLAUDE_JOB_DIR:+1}\" "
             + "-H \"X-Pid: $PPID\" "
             + (agent == .claude ? "-H \"X-Background-Tasks: $(k background_tasks)\" " : "-H 'X-Agent: \(agent.rawValue)' ")
             + ">/dev/null 2>&1 || true"
+    }
+
+    /// The headers that say which terminal a hook runs in, the same for every tool (see `AgentHook.input`).
+    private static let terminalHeaders =
+        "-H \"X-Herdr: ${HERDR_PANE_ID:+1}\" "
+        + "-H \"X-Muxy: ${MUXY_SESSION_ID}\" -H \"X-Cmux: ${CMUX_SURFACE_ID}\" "
+        + "-H \"X-Mux: ${TMUX:+1}${ZELLIJ:+1}${STY:+1}\" "
+        + "-H \"X-Wezterm: ${WEZTERM_PANE}\" -H \"X-Wezterm-Socket: ${WEZTERM_UNIX_SOCKET}\" -H \"X-Kitty: ${KITTY_WINDOW_ID}\" -H \"X-Kitty-Socket: ${KITTY_LISTEN_ON}\" "
+        + "-H \"X-Iterm: ${ITERM_SESSION_ID}\" -H \"X-Orca: ${ORCA_PANE_KEY}\" "
+
+    /// The hook of a tool whose events don't carry Claude Code's names or keys (Copilot's `agentStop`, Antigravity's `conversationId`,
+    /// Cursor's `conversation_id`): the same headers, with the event named by the hook itself. Nothing but the ids below leaves the
+    /// event JSON, and a closed or stuck Nunsseop costs the tool at most a second.
+    /// - session: the key of the session id in the event JSON (`plutil` keypath).
+    /// - event: shell text for `X-Event`, inside double quotes: a name of `AgentHook.action`, or a command substitution that picks one.
+    /// - type: the same for `X-Type`.
+    /// - only: a shell test that must hold for the event to be sent (`k` reads a key of the event JSON); nothing is sent otherwise.
+    /// - app: what `X-App` falls back to when macOS names no app, for a tool that runs in one of its own (Cursor).
+    /// - pid: whether the hook's parent is the tool's process, which `X-Pid` says; false for a tool whose hooks run in a process shared
+    ///   by sessions or by tools.
+    /// - after: what the hook prints once the event is sent, for a tool that wants an answer to every event.
+    static func toolHookCommand(for agent: AgentKind, session: String, event: String, type: String = "", only: String? = nil,
+                                app: String? = nil, pid: Bool = true, after: String? = nil, port: UInt16 = NotifyServer.port) -> String {
+        let send = "curl -s -m 1 --connect-timeout 1 -X POST http://127.0.0.1:\(port)/agent -d '' "
+            + authHeaderOption + " "
+            + "-H \"X-Session: $(k \(session))\" -H \"X-Event: \(event)\" -H \"X-Type: \(type)\" "
+            + "-H \"X-App: ${__CFBundleIdentifier\(app.map { ":-" + $0 } ?? "")}\" " + terminalHeaders
+            + (pid ? "-H \"X-Pid: $PPID\" " : "")
+            + "-H 'X-Agent: \(agent.rawValue)' >/dev/null 2>&1"
+        let guarded = only.map { "if \($0); then \(send); fi" } ?? send
+        return "in=$(cat); k() { printf '%s' \"$in\" | plutil -extract \"$1\" raw -o - - 2>/dev/null | tr -cd 'A-Za-z0-9_.-' | cut -c1-64; }; "
+            + guarded + (after.map { "; " + $0 } ?? "") + "; true"
+    }
+
+    /// A notice for a tool whose hook passes no message of its own, or only for some events: `message` is shown with `title` whenever
+    /// `only` holds (see `toolHookCommand`). `app` as there.
+    static func noticeCommand(title: String, message: String, only: String? = nil, app: String? = nil, port: UInt16 = NotifyServer.port) -> String {
+        let send = "curl -s -m 2 -X POST http://127.0.0.1:\(port)/notify " + authHeaderOption + " "
+            + "-H 'X-Title: \(title)' -H \"X-App: ${__CFBundleIdentifier\(app.map { ":-" + $0 } ?? "")}\" --data-binary '\(message)' >/dev/null 2>&1"
+        return "in=$(cat); k() { printf '%s' \"$in\" | plutil -extract \"$1\" raw -o - - 2>/dev/null | tr -cd 'A-Za-z0-9_.-' | cut -c1-64; }; "
+            + (only.map { "if \($0); then \(send); fi" } ?? send) + "; true"
     }
 
     /// Claude Code's PermissionRequest hook. It asks the notch about a permission prompt and prints the answer Claude Code
@@ -360,13 +400,26 @@ final class NotifyServer: @unchecked Sendable {
     /// terminal answered first) by TERM or KILL, a watchdog sees the shell gone within a second and ends curl and its connection.
     static var permissionHookCommand: String { permissionHookCommand(port: port) }
 
-    static func permissionHookCommand(port: UInt16) -> String {
-        #"""
+    /// - agent: a tool whose hook is this one too (Copilot, Antigravity, Cursor). The request names it in `X-Agent`, which tells the
+    ///   server how to read the tool's input and which answer the tool reads back (see `PermissionDialect`). The text for Claude Code,
+    ///   which sends no such header, is the one installed so far, and stays as it is. Cursor reads an exit code of 1 as "the hook had
+    ///   nothing to say" (its action goes on as if there were no hook) and an empty answer of a permission hook as possibly a block, so
+    ///   there the hook ends with 1 whenever it decides nothing; for the others, it ends with 0.
+    static func permissionHookCommand(port: UInt16, agent: AgentKind? = nil) -> String {
+        let quit = agent == .cursor ? "exit 1" : "exit 0"
+        let chain = agent == .cursor ? " && exit 0" : ""
+        let header = agent.map { "-H 'X-Agent: \($0.rawValue)' " } ?? ""
+        // Antigravity runs the hook before every tool call its matcher names; only the calls that can be put to the user get past here.
+        let filter = agent == .agy
+            ? "; case $(printf %s \"$in\" | plutil -extract toolCall.name raw -o - - 2>/dev/null) in "
+                + PermissionDialect.antigravityTools.joined(separator: "|") + ") ;; *) exit 0;; esac"
+            : ""
+        return #"""
         t="$HOME/Library/Application Support/Nunsseop/permission-key"
-        in=$(cat)
-        [ -n "$in" ] && [ $(printf %s "$in" | wc -c) -le \#(PermissionGate.maxBodyBytes) ] || exit 0
+        in=$(cat)\#(filter)
+        [ -n "$in" ] && [ $(printf %s "$in" | wc -c) -le \#(PermissionGate.maxBodyBytes) ] || \#(quit)
         kh=$(tr -d ' \t\r\n' < "$t" 2>/dev/null | od -An -v -tx1 | tr -d ' \n')
-        [ ${#kh} -ge 64 ] || exit 0
+        [ ${#kh} -ge 64 ] || \#(quit)
         [ ${#kh} -gt 128 ] && kh=$(tr -d ' \t\r\n' < "$t" | openssl dgst -sha256 -binary | od -An -v -tx1 | tr -d ' \n')
         while [ ${#kh} -lt 128 ]; do kh=${kh}00; done
         i=; o=; r=$kh
@@ -374,18 +427,18 @@ final class NotifyServer: @unchecked Sendable {
         H() { openssl dgst -sha256 | sed 's/^.*= //'; }
         M() { { printf "$i"; cat; } | openssl dgst -sha256 -binary | { printf "$o"; cat; } | H; }
         n=$(dd if=/dev/urandom bs=16 count=1 2>/dev/null | od -An -v -tx1 | tr -d ' \n')
-        [ ${#n} -eq 32 ] || exit 0
+        [ ${#n} -eq 32 ] || \#(quit)
         p=$(printf 'nunsseop-permission-request\n%s\n%s' "$n" "$(printf %s "$in" | H)" | M)
         s=$$
-        r=$({ printf %s "$in" | curl -s -m 590 --connect-timeout 1 -X POST http://127.0.0.1:\#(port)/permission -H 'Expect:' -H "X-Nonce: $n" -H "X-Proof: $p" --data-binary @- 2>/dev/null &
+        r=$({ printf %s "$in" | curl -s -m 590 --connect-timeout 1 -X POST http://127.0.0.1:\#(port)/permission -H 'Expect:' \#(header)-H "X-Nonce: $n" -H "X-Proof: $p" --data-binary @- 2>/dev/null &
         c=$!
         ( while kill -0 $s 2>/dev/null; do kill -0 $c 2>/dev/null || exit 0; sleep 1; done; kill $c ) >/dev/null 2>&1 &
         wait $c; })
-        case $r in *\ *) ;; *) exit 0;; esac
+        case $r in *\ *) ;; *) \#(quit);; esac
         m=${r%% *}
         d=${r#* }
-        [ -n "$d" ] && [ "$m" = "$(printf 'nunsseop-permission-response\n%s\n%s' "$n" "$(printf %s "$d" | H)" | M)" ] && printf %s "$d"
-        exit 0
+        [ -n "$d" ] && [ "$m" = "$(printf 'nunsseop-permission-response\n%s\n%s' "$n" "$(printf %s "$d" | H)" | M)" ] && printf %s "$d"\#(chain)
+        \#(quit)
         """#
     }
 

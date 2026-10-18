@@ -83,8 +83,9 @@ struct AgentTranscript: Equatable {
                 case .claude: result.absorbClaude(object)
                 case .codex: result.absorbCodex(object)
                 case .pi, .omp, .gjc, .omo: result.absorbPi(object)
-                // OpenCode keeps no file to read; its database is (see `OpenCodeDB`).
-                case .opencode: break
+                // OpenCode keeps no file to read; its database is (see `OpenCodeDB`). The tools that only report through hooks and
+                // plugins have none that Nunsseop reads.
+                case .opencode, .gemini, .copilot, .agy, .cursor, .hermes, .amp: break
                 }
             }
         }
@@ -508,7 +509,7 @@ struct AgentTranscripts {
         switch key.kind {
         case .pi, .omp, .gjc, .omo:
             return PiSessions.locate(key.kind, session: key.session, home: home)
-        case .opencode:
+        case .opencode, .gemini, .copilot, .agy, .cursor, .hermes, .amp:
             return nil
         case .claude:
             let candidates = children(home.appendingPathComponent(".claude/projects"))

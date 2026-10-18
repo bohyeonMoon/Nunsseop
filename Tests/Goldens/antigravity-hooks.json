@@ -1,0 +1,42 @@
+{
+  "nunsseop" : {
+    "PreInvocation" : [
+      {
+        "command" : "in=$(cat); k() { printf '%s' \"$in\" | plutil -extract \"$1\" raw -o - - 2>/dev/null | tr -cd 'A-Za-z0-9_.-' | cut -c1-64; }; curl -s -m 1 --connect-timeout 1 -X POST http://127.0.0.1:47750/agent -d '' -H @\"$HOME/Library/Application Support/Nunsseop/notify-auth\" -H \"X-Session: $(k conversationId)\" -H \"X-Event: UserPromptSubmit\" -H \"X-Type: \" -H \"X-App: ${__CFBundleIdentifier}\" -H \"X-Herdr: ${HERDR_PANE_ID:+1}\" -H \"X-Muxy: ${MUXY_SESSION_ID}\" -H \"X-Cmux: ${CMUX_SURFACE_ID}\" -H \"X-Mux: ${TMUX:+1}${ZELLIJ:+1}${STY:+1}\" -H \"X-Wezterm: ${WEZTERM_PANE}\" -H \"X-Wezterm-Socket: ${WEZTERM_UNIX_SOCKET}\" -H \"X-Kitty: ${KITTY_WINDOW_ID}\" -H \"X-Kitty-Socket: ${KITTY_LISTEN_ON}\" -H \"X-Iterm: ${ITERM_SESSION_ID}\" -H \"X-Orca: ${ORCA_PANE_KEY}\" -H \"X-Pid: $PPID\" -H 'X-Agent: agy' >/dev/null 2>&1; true",
+        "timeout" : 10,
+        "type" : "command"
+      }
+    ],
+    "PreToolUse" : [
+      {
+        "hooks" : [
+          {
+            "command" : "t=\"$HOME/Library/Application Support/Nunsseop/permission-key\"\nin=$(cat); case $(printf %s \"$in\" | plutil -extract toolCall.name raw -o - - 2>/dev/null) in run_command|write_to_file|replace_file_content|multi_replace_file_content) ;; *) exit 0;; esac\n[ -n \"$in\" ] && [ $(printf %s \"$in\" | wc -c) -le 262144 ] || exit 0\nkh=$(tr -d ' \\t\\r\\n' < \"$t\" 2>/dev/null | od -An -v -tx1 | tr -d ' \\n')\n[ ${#kh} -ge 64 ] || exit 0\n[ ${#kh} -gt 128 ] && kh=$(tr -d ' \\t\\r\\n' < \"$t\" | openssl dgst -sha256 -binary | od -An -v -tx1 | tr -d ' \\n')\nwhile [ ${#kh} -lt 128 ]; do kh=${kh}00; done\ni=; o=; r=$kh\nwhile [ -n \"$r\" ]; do h=${r%\"${r#??}\"}; r=${r#??}; v=$((0x$h)); x=$((v ^ 54)); i=\"$i\\\\$((x >> 6))$(((x >> 3) & 7))$((x & 7))\"; x=$((v ^ 92)); o=\"$o\\\\$((x >> 6))$(((x >> 3) & 7))$((x & 7))\"; done\nH() { openssl dgst -sha256 | sed 's/^.*= //'; }\nM() { { printf \"$i\"; cat; } | openssl dgst -sha256 -binary | { printf \"$o\"; cat; } | H; }\nn=$(dd if=/dev/urandom bs=16 count=1 2>/dev/null | od -An -v -tx1 | tr -d ' \\n')\n[ ${#n} -eq 32 ] || exit 0\np=$(printf 'nunsseop-permission-request\\n%s\\n%s' \"$n\" \"$(printf %s \"$in\" | H)\" | M)\ns=$$\nr=$({ printf %s \"$in\" | curl -s -m 590 --connect-timeout 1 -X POST http://127.0.0.1:47750/permission -H 'Expect:' -H 'X-Agent: agy' -H \"X-Nonce: $n\" -H \"X-Proof: $p\" --data-binary @- 2>/dev/null &\nc=$!\n( while kill -0 $s 2>/dev/null; do kill -0 $c 2>/dev/null || exit 0; sleep 1; done; kill $c ) >/dev/null 2>&1 &\nwait $c; })\ncase $r in *\\ *) ;; *) exit 0;; esac\nm=${r%% *}\nd=${r#* }\n[ -n \"$d\" ] && [ \"$m\" = \"$(printf 'nunsseop-permission-response\\n%s\\n%s' \"$n\" \"$(printf %s \"$d\" | H)\" | M)\" ] && printf %s \"$d\"\nexit 0",
+            "timeout" : 600,
+            "type" : "command"
+          }
+        ],
+        "matcher" : "run_command|write_to_file|replace_file_content|multi_replace_file_content"
+      }
+    ],
+    "SessionStart" : [
+      {
+        "command" : "in=$(cat); k() { printf '%s' \"$in\" | plutil -extract \"$1\" raw -o - - 2>/dev/null | tr -cd 'A-Za-z0-9_.-' | cut -c1-64; }; curl -s -m 1 --connect-timeout 1 -X POST http://127.0.0.1:47750/agent -d '' -H @\"$HOME/Library/Application Support/Nunsseop/notify-auth\" -H \"X-Session: $(k conversationId)\" -H \"X-Event: SessionStart\" -H \"X-Type: \" -H \"X-App: ${__CFBundleIdentifier}\" -H \"X-Herdr: ${HERDR_PANE_ID:+1}\" -H \"X-Muxy: ${MUXY_SESSION_ID}\" -H \"X-Cmux: ${CMUX_SURFACE_ID}\" -H \"X-Mux: ${TMUX:+1}${ZELLIJ:+1}${STY:+1}\" -H \"X-Wezterm: ${WEZTERM_PANE}\" -H \"X-Wezterm-Socket: ${WEZTERM_UNIX_SOCKET}\" -H \"X-Kitty: ${KITTY_WINDOW_ID}\" -H \"X-Kitty-Socket: ${KITTY_LISTEN_ON}\" -H \"X-Iterm: ${ITERM_SESSION_ID}\" -H \"X-Orca: ${ORCA_PANE_KEY}\" -H \"X-Pid: $PPID\" -H 'X-Agent: agy' >/dev/null 2>&1; true",
+        "timeout" : 10,
+        "type" : "command"
+      }
+    ],
+    "Stop" : [
+      {
+        "command" : "in=$(cat); k() { printf '%s' \"$in\" | plutil -extract \"$1\" raw -o - - 2>/dev/null | tr -cd 'A-Za-z0-9_.-' | cut -c1-64; }; if [ \"$(k fullyIdle)\" = true ]; then curl -s -m 1 --connect-timeout 1 -X POST http://127.0.0.1:47750/agent -d '' -H @\"$HOME/Library/Application Support/Nunsseop/notify-auth\" -H \"X-Session: $(k conversationId)\" -H \"X-Event: Stop\" -H \"X-Type: \" -H \"X-App: ${__CFBundleIdentifier}\" -H \"X-Herdr: ${HERDR_PANE_ID:+1}\" -H \"X-Muxy: ${MUXY_SESSION_ID}\" -H \"X-Cmux: ${CMUX_SURFACE_ID}\" -H \"X-Mux: ${TMUX:+1}${ZELLIJ:+1}${STY:+1}\" -H \"X-Wezterm: ${WEZTERM_PANE}\" -H \"X-Wezterm-Socket: ${WEZTERM_UNIX_SOCKET}\" -H \"X-Kitty: ${KITTY_WINDOW_ID}\" -H \"X-Kitty-Socket: ${KITTY_LISTEN_ON}\" -H \"X-Iterm: ${ITERM_SESSION_ID}\" -H \"X-Orca: ${ORCA_PANE_KEY}\" -H \"X-Pid: $PPID\" -H 'X-Agent: agy' >/dev/null 2>&1; fi; true",
+        "timeout" : 10,
+        "type" : "command"
+      },
+      {
+        "command" : "in=$(cat); k() { printf '%s' \"$in\" | plutil -extract \"$1\" raw -o - - 2>/dev/null | tr -cd 'A-Za-z0-9_.-' | cut -c1-64; }; if [ \"$(k fullyIdle)\" = true ]; then curl -s -m 2 -X POST http://127.0.0.1:47750/notify -H @\"$HOME/Library/Application Support/Nunsseop/notify-auth\" -H 'X-Title: Antigravity' -H \"X-App: ${__CFBundleIdentifier}\" --data-binary 'Finished' >/dev/null 2>&1; fi; true",
+        "timeout" : 10,
+        "type" : "command"
+      }
+    ]
+  }
+}

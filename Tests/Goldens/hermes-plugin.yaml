@@ -1,0 +1,4 @@
+# Added by Nunsseop: shows this Hermes session in the notch. Delete this folder to stop.
+name: nunsseop
+version: "1.0"
+description: Shows Hermes sessions in the Nunsseop notch

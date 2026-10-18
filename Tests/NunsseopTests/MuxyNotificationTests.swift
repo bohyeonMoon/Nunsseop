@@ -125,7 +125,8 @@ struct MuxyNoticeTextTests {
             MuxyEvent(id: "1", session: "1", project: "", provider: provider, timestamp: 0, kind: .attention, read: false).integration
         }
         #expect(integration("Claude") == .claudeCode && integration("Codex") == .codex && integration("OpenCode") == .openCode)
-        #expect(integration("Cursor") == nil && integration("Pi") == nil)
+        #expect(integration("Cursor") == .cursor && integration("GitHub Copilot") == .copilot && integration("Antigravity") == .antigravity)
+        #expect(integration("Aider") == nil && integration("Pi") == nil)
     }
 }
 
@@ -135,7 +136,7 @@ struct MuxyBoardTests {
         let projects = try #require(MuxyProjects.parse(projectList))
         let listed = tracker.agents(for: activity(agents: [agent("1", state: "working"), agent("2", provider: "Codex", state: "blocked"),
                                                            agent("3", state: "idle"), agent("4", state: "unknown"),
-                                                           agent(biggest, provider: "Cursor", state: "working")]),
+                                                           agent(biggest, provider: "Aider", state: "working")]),
                                     projects: projects, now: moment)
         #expect(Set(listed.keys) == ["1", "2", biggest])
         let working = try #require(listed["1"])
@@ -143,7 +144,7 @@ struct MuxyBoardTests {
         #expect(working.app == Muxy.bundleID && working.input == .muxy("1") && working.since == moment && working.pid == nil && !working.finished)
         #expect(listed["2"]?.state == .waiting && listed["2"]?.tool == "codex")
         // A provider with no hook of Nunsseop's keeps the name Muxy gives it.
-        #expect(listed[biggest]?.tool == "Cursor" && listed[biggest]?.input == .muxy(biggest))
+        #expect(listed[biggest]?.tool == "Aider" && listed[biggest]?.input == .muxy(biggest))
     }
 
     @Test func aStateKeepsItsStartAcrossLooksAndRestartsWhenItChanges() {

@@ -107,8 +107,8 @@ final class AgentHooks {
         forgetSubagents(now: now)
         let id = event.session
         // One process has one session at a time: /resume or /clear inside it starts another id. Not OpenCode, whose plugin lives in
-        // the server, where one process hosts several sessions at once.
-        if let pid = event.pid, event.action != .remove, kind != .opencode {
+        // the server, where one process hosts several sessions at once, nor the others that do (see `AgentKind.sharesProcess`).
+        if let pid = event.pid, event.action != .remove, !kind.sharesProcess {
             entries = entries.filter { $0.key == id || $0.value.pid != pid }
         }
         switch event.action {

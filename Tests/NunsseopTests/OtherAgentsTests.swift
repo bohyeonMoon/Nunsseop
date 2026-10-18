@@ -5,17 +5,20 @@ import Testing
 struct AgentKindTests {
     @Test func aToolIsKnownByTheNamesItGoesBy() {
         let names: [String: AgentKind] = ["claude": .claude, "Claude-Code": .claude, "codex": .codex, "pi": .pi, "PI": .pi, "omp": .omp,
-                                          "oh-my-pi": .omp, "gjc": .gjc, "gajae-code": .gjc, "omo": .omo, "opencode": .opencode, "OpenCode": .opencode]
+                                          "oh-my-pi": .omp, "gjc": .gjc, "gajae-code": .gjc, "omo": .omo, "opencode": .opencode, "OpenCode": .opencode,
+                                          "gemini": .gemini, "Gemini CLI": .gemini, "gemini-cli": .gemini, "copilot": .copilot, "GitHub Copilot": .copilot,
+                                          "agy": .agy, "Antigravity": .agy, "cursor": .cursor, "cursor-agent": .cursor, "hermes": .hermes,
+                                          "hermes-agent": .hermes, "amp": .amp, "AMP": .amp]
         for (name, kind) in names { #expect(AgentKind(tool: name) == kind, "\(name)") }
-        for other in ["", "Pi Coding Agent", "herdr", "hermes", "claude code", "a name for a session"] { #expect(AgentKind(tool: other) == nil, "\(other)") }
+        for other in ["", "Pi Coding Agent", "herdr", "hermes agent", "claude code", "a name for a session", "ampere"] { #expect(AgentKind(tool: other) == nil, "\(other)") }
         #expect(AgentKind(tool: nil) == nil)
     }
 
     @Test func eachToolIsNamedAsItPresentsItself() {
-        #expect(AgentKind.allCases.map(\.displayName) == ["Claude Code", "Codex", "pi", "omp", "gjc", "omo", "OpenCode"])
+        #expect(AgentKind.allCases.map(\.displayName) == ["Claude Code", "Codex", "pi", "omp", "gjc", "omo", "OpenCode", "Gemini CLI", "GitHub Copilot", "Antigravity", "Cursor", "Hermes", "Amp"])
         #expect(AgentRow.toolName("omp") == "omp" && AgentRow.toolName("OpenCode") == "OpenCode" && AgentRow.toolName("claude") == "Claude Code")
         // A name that isn't a tool's is shown as it is, and nothing at all is herdr's.
-        #expect(AgentRow.toolName("hermes") == "hermes" && AgentRow.toolName(nil) == "herdr" && AgentRow.toolName("") == "herdr")
+        #expect(AgentRow.toolName("hermes") == "Hermes" && AgentRow.toolName("a tool of its own") == "a tool of its own" && AgentRow.toolName(nil) == "herdr" && AgentRow.toolName("") == "herdr")
         #expect(AgentKind.allCases.filter(\.isPiFamily) == [.pi, .omp, .gjc, .omo])
         #expect(AgentKind.allCases.filter(\.reportsMode) == [.claude, .codex])
     }
@@ -25,7 +28,10 @@ struct AgentKindTests {
         let expected: [AgentKind: String] = [
             .claude: "claude --resume '\(id)'", .codex: "codex resume '\(id)'", .pi: "pi --session '\(id)'", .omo: "omo --session '\(id)'",
             // gjc's value is optional: a separate word would be its prompt.
-            .omp: "omp --resume='\(id)'", .gjc: "gjc --resume='\(id)'", .opencode: "opencode -s '\(id)'"]
+            .omp: "omp --resume='\(id)'", .gjc: "gjc --resume='\(id)'", .opencode: "opencode -s '\(id)'",
+            // None of these has a conversation list that Nunsseop reads, so nothing offers to resume one yet.
+            .gemini: "gemini --resume='\(id)'", .copilot: "copilot --resume='\(id)'", .agy: "agy --resume '\(id)'",
+            .cursor: "cursor-agent --resume='\(id)'", .hermes: "hermes --resume '\(id)'", .amp: "amp threads continue '\(id)'"]
         for kind in AgentKind.allCases { #expect(kind.resumeCommand(session: id) == expected[kind], "\(kind)") }
         for kind in AgentKind.allCases {
             let conversation = RecentConversation(kind: kind, session: id, cwd: "/Users/me/it's here", modified: .now)
@@ -139,7 +145,7 @@ struct HerdrOtherAgentsTests {
         #expect(Herdr.agentName(display: "Refactor the parser", agent: "omp") == "omp")
         #expect(Herdr.agentName(display: "Claude", agent: "claude") == "Claude")
         #expect(Herdr.agentName(display: nil, agent: "opencode") == "opencode")
-        #expect(Herdr.agentName(display: "Some label", agent: "hermes") == "Some label")
+        #expect(Herdr.agentName(display: "Some label", agent: "aider") == "Some label")
         #expect(Herdr.agentName(display: nil, agent: nil) == nil)
         let named: [String: Any] = ["pane_id": "p", "agent": "omp", "display_agent": "Refactor the parser", "agent_status": "working"]
         #expect(Herdr.panes(in: list([named]))?.first?.agent == "omp")

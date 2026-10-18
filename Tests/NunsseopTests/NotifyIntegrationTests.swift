@@ -105,10 +105,20 @@ struct AgentHookInstallTests {
         #expect(!codex.map(\.event).contains { $0.hasPrefix("Subagent") })
     }
 
-    @Test func geminiKeepsTheNoticeHookOnly() {
+    @Test func geminiGetsTheNoticeHookAndReportsItsSessions() throws {
         let gemini = NotifyIntegration.gemini.hooks
-        #expect(gemini.count == 1)
-        #expect(gemini[0].event == "Notification" && gemini[0].command == NotifyServer.hookCommand(title: "Gemini CLI"))
+        let agent = NotifyServer.agentHookCommand(for: .gemini)
+        #expect(gemini.map(\.event) == ["Notification", "Notification", "BeforeAgent", "AfterAgent", "SessionStart", "SessionEnd"])
+        #expect(gemini[0].command == NotifyServer.hookCommand(title: "Gemini CLI"))
+        #expect(gemini.dropFirst().allSatisfy { $0.command == agent } && agent.contains("X-Agent: gemini"))
+        let settings = try JSONHook.adding(gemini, to: [:])
+        #expect(JSONHook.isInstalled(in: settings) && JSONHook.isCurrent(gemini, in: settings))
+        #expect(JSONHook.removing(from: settings).isEmpty)
+        // A connection from before it reported sessions gains the hooks and keeps the notice hook where it was.
+        let old = try JSONHook.adding(NotifyServer.hookCommand(title: "Gemini CLI"), to: ["theme": "dark"])
+        let updated = try #require(try JSONHook.updating(gemini, in: old))
+        #expect(JSONHook.isCurrent(gemini, in: updated) && updated["theme"] as? String == "dark")
+        #expect(commands(updated, "Notification") == [[NotifyServer.hookCommand(title: "Gemini CLI")], [agent]])
     }
 
     @Test func codexGetsTheAgentHooksForItsOwnEventsAndNoNoticeHook() throws {

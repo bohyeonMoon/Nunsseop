@@ -27,6 +27,8 @@ final class PermissionGate: @unchecked Sendable {
         let questionInput: [String: Any]?
         /// OpenCode's, which is answered with a smaller decision.
         let openCode: Bool
+        /// Copilot's, Antigravity's or Cursor's, which are answered in the words of each.
+        let dialect: PermissionDialect?
         let timeout: DispatchWorkItem
     }
 
@@ -65,14 +67,15 @@ final class PermissionGate: @unchecked Sendable {
             NotifyServer.reply(connection, status: "503 Service Unavailable")
             return false
         }
-        guard let parsed = PermissionPrompt.parse(request.body) else {
+        let dialect = PermissionDialect(agent: request.headers["x-agent"])
+        guard let parsed = PermissionPrompt.parse(request.body, dialect: dialect) else {
             NotifyServer.reply(connection, status: "204 No Content")
             return false
         }
         let prompt = parsed.prompt
         let timeout = DispatchWorkItem { [weak self] in self?.release(prompt.id) }
         held[prompt.id] = Held(connection: connection, nonce: nonce, suggestion: parsed.suggestion,
-                           questionInput: parsed.questionInput, openCode: parsed.openCode, timeout: timeout)
+                           questionInput: parsed.questionInput, openCode: parsed.openCode, dialect: parsed.dialect, timeout: timeout)
         queue.asyncAfter(deadline: .now() + holdSeconds, execute: timeout)
         watch(connection, prompt.id)
         let handler = onPrompt
@@ -91,7 +94,7 @@ final class PermissionGate: @unchecked Sendable {
                 return
             }
             guard let decision = PermissionWire.decision(answer, suggestion: entry.suggestion, questionInput: entry.questionInput,
-                                                         openCode: entry.openCode) else {
+                                                         openCode: entry.openCode, dialect: entry.dialect) else {
                 entry.connection.cancel()
                 return
             }

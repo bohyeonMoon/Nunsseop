@@ -281,7 +281,25 @@ struct ConnectPreviewTests {
     }
 
     @Test func onlyThePlainFilesOfSharedSettingsPromiseToKeepTheUsersHooks() {
-        #expect(NotifyIntegration.allCases.filter(\.sharesItsFile) == [.claudeCode, .codex, .gemini])
+        #expect(NotifyIntegration.allCases.filter(\.sharesItsFile) == [.claudeCode, .codex, .gemini, .antigravity, .cursor])
+    }
+
+    /// The tools added since the sheet: what it shows is what connecting writes, a shared file keeps what another app put in it, and
+    /// a tool already connected has nothing to show.
+    @Test(arguments: [NotifyIntegration.copilot, .antigravity, .cursor, .hermes, .amp])
+    func theNewerToolsAreShownAsTheyAreWritten(tool: NotifyIntegration) throws {
+        try withTempHome { home in
+            if tool.sharesItsFile { try put(#"{"other": {"keep": true}}"# + "\n", at: tool.configURL) }
+            let changes = try tool.changes()
+            #expect(!changes.isEmpty)
+            #expect(snapshot(home).values.compactMap { $0 }.count == (tool.sharesItsFile ? 1 : 0))
+            try tool.installNow()
+            for change in changes {
+                #expect(text(change.url) == change.after, Comment(rawValue: change.url.path))
+                if tool.sharesItsFile { #expect(change.after.contains("keep")) }
+            }
+            #expect(try tool.changes().isEmpty)
+        }
     }
 
     @Test func theRequestNamesFilesWithTheHomeAsTildeAndTheBackupByItsName() throws {

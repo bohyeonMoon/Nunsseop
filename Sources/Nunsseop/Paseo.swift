@@ -21,9 +21,6 @@ enum Paseo {
     /// A working agent whose record hasn't been written for this long stops being listed. A worker that died mid-turn (a crash, the
     /// system killing it) leaves `running` in the record, and the supervisor that owns the pid file stays up and says nothing of it.
     static let staleWorking: TimeInterval = 6 * 60 * 60
-    /// Paseo's own names for the tools it runs where they differ from how `AgentKind` names them.
-    private static let providerNames = ["copilot": "Copilot"]
-
     static func folder(home: URL) -> URL { home.appendingPathComponent(".paseo", isDirectory: true) }
 
     /// The desktop app, wherever it is installed.
@@ -80,7 +77,7 @@ enum Paseo {
     /// The tool Paseo runs, as the board names it: `AgentKind`'s name where there is one, else Paseo's own label.
     static func tool(provider: String) -> String {
         let lowered = provider.lowercased()
-        return AgentKind(tool: lowered)?.rawValue ?? providerNames[lowered] ?? provider
+        return AgentKind(tool: lowered)?.rawValue ?? provider
     }
 
     /// Opens the desktop app, on an agent when its link is known. `open -b` hands the link to the app that registered the scheme.

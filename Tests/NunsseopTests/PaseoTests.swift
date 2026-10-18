@@ -112,7 +112,7 @@ struct PaseoFactsTests {
     @Test func theProvidersAreNamedAsTheBoardNamesTools() {
         #expect(Paseo.tool(provider: "claude") == "claude" && Paseo.tool(provider: "codex") == "codex" && Paseo.tool(provider: "opencode") == "opencode")
         #expect(Paseo.tool(provider: "pi") == "pi" && Paseo.tool(provider: "omp") == "omp")
-        #expect(Paseo.tool(provider: "copilot") == "Copilot" && Paseo.tool(provider: "somethingnew") == "somethingnew")
+        #expect(Paseo.tool(provider: "copilot") == "copilot" && Paseo.tool(provider: "gemini") == "gemini" && Paseo.tool(provider: "somethingnew") == "somethingnew")
     }
 
     @Test func paseoIsPresentWhereItsFolderIsOrItsAppIs() {
@@ -460,7 +460,7 @@ struct PaseoBoardTests {
         let copilot = paseoRecord(id: "aaaaaaaa-0000-4000-8000-000000000002", provider: "copilot", model: nil)
         let listed = agents([codex, copilot])
         #expect(listed["aaaaaaaa-0000-4000-8000-000000000001"]?.tool == "codex" && listed["aaaaaaaa-0000-4000-8000-000000000001"]?.title == nil)
-        #expect(listed["aaaaaaaa-0000-4000-8000-000000000002"]?.tool == "Copilot" && listed["aaaaaaaa-0000-4000-8000-000000000002"]?.model == nil)
+        #expect(listed["aaaaaaaa-0000-4000-8000-000000000002"]?.tool == "copilot" && listed["aaaaaaaa-0000-4000-8000-000000000002"]?.model == nil)
     }
 }
 

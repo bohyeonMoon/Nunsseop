@@ -51,7 +51,7 @@ struct PiExtensionInstallTests {
             #expect(NotifyIntegration.pi.configURL.lastPathComponent == "nunsseop.ts")
             #expect(NotifyIntegration.omp.piAgent == .omp && NotifyIntegration.claudeCode.piAgent == nil && NotifyIntegration.openCode.piAgent == nil)
             // The settings row for a tool that isn't of ours is untouched by these.
-            #expect(NotifyIntegration.reportingSessions.contains(.omp) && !NotifyIntegration.reportingSessions.contains(.gemini))
+            #expect(NotifyIntegration.reportingSessions.contains(.omp) && NotifyIntegration.reportingSessions.contains(.pi))
         }
     }
 

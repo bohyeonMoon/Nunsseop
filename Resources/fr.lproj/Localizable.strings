@@ -657,3 +657,11 @@
 "Last week" = "Semaine passée";
 "Recap last week's agent work on Mondays" = "Résumer le travail des agents de la semaine passée le lundi";
 "Added up on this Mac from the session files of Claude Code and Codex, and never sent anywhere. The AI tab can show it any time." = "Calculé sur ce Mac à partir des fichiers de session de Claude Code et de Codex, et jamais envoyé ailleurs. L’onglet IA peut l’afficher à tout moment.";
+"Gemini CLI, GitHub Copilot, Antigravity, Cursor, Hermes and Amp also report their sessions to the agents count and the Agents tab once connected." = "Gemini CLI, GitHub Copilot, Antigravity, Cursor, Hermes et Amp signalent aussi leurs sessions au compteur d’agents et à l’onglet Agents une fois connectés.";
+"Approvals from GitHub Copilot, Antigravity and Cursor show in the notch too, where you can allow or deny them. While the notch holds one, the tool waits for it; “Answer in terminal” (“Answer in Cursor” for Cursor) hands it back. If Nunsseop isn't running, the tool asks as before." = "Les approbations de GitHub Copilot, Antigravity et Cursor s’affichent aussi dans le notch, où vous pouvez les autoriser ou les refuser. Tant que le notch en retient une, l’outil attend ; « Répondre dans le terminal » (« Répondre dans Cursor » pour Cursor) la lui rend. Si Nunsseop ne tourne pas, l’outil demande comme avant.";
+"Hermes loads a plugin only after you enable it: run `hermes plugins enable nunsseop` in a terminal once." = "Hermes ne charge un plugin qu’après son activation : exécutez une fois `hermes plugins enable nunsseop` dans un terminal.";
+"Copy Hermes enable command" = "Copier la commande d’activation de Hermes";
+"Enabled in Hermes" = "Activé dans Hermes";
+"Not enabled in Hermes yet" = "Pas encore activé dans Hermes";
+"Amp's plugin API is experimental, so an Amp update may stop this from working." = "L’API de plugins d’Amp est expérimentale : une mise à jour d’Amp peut donc empêcher ceci de fonctionner.";
+"Answer in Cursor" = "Répondre dans Cursor";

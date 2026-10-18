@@ -284,7 +284,7 @@ struct AgentRow: Identifiable, Equatable {
 
     /// Where the transcript is looked for; herdr gives the session id of the agent in a pane.
     static func transcriptKey(_ agent: AgentBoard.Agent) -> AgentTranscripts.Key? {
-        guard let kind = kind(agent.tool), let session = agent.session else { return nil }
+        guard let kind = kind(agent.tool), kind.hasTranscript, let session = agent.session else { return nil }
         return AgentTranscripts.Key(kind: kind, session: session)
     }
 

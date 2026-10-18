@@ -657,3 +657,11 @@
 "Last week" = "上周";
 "Recap last week's agent work on Mondays" = "周一回顾上周代理的工作";
 "Added up on this Mac from the session files of Claude Code and Codex, and never sent anywhere. The AI tab can show it any time." = "根据 Claude Code 和 Codex 的会话文件在本机统计，不会发送到任何地方。随时可在 AI 标签页查看。";
+"Gemini CLI, GitHub Copilot, Antigravity, Cursor, Hermes and Amp also report their sessions to the agents count and the Agents tab once connected." = "连接后，Gemini CLI、GitHub Copilot、Antigravity、Cursor、Hermes 和 Amp 也会把它们的会话报告给代理数量和“代理”标签页。";
+"Approvals from GitHub Copilot, Antigravity and Cursor show in the notch too, where you can allow or deny them. While the notch holds one, the tool waits for it; “Answer in terminal” (“Answer in Cursor” for Cursor) hands it back. If Nunsseop isn't running, the tool asks as before." = "GitHub Copilot、Antigravity 和 Cursor 的审批请求也会显示在刘海中，你可以允许或拒绝。刘海持有审批期间，工具会等待；点“在终端中回答”(Cursor 为“在 Cursor 中回答”)即可交还给工具。如果 Nunsseop 没有运行，工具会像以前一样自己询问。";
+"Hermes loads a plugin only after you enable it: run `hermes plugins enable nunsseop` in a terminal once." = "Hermes 只有在你启用插件后才会加载：请在终端里运行一次 `hermes plugins enable nunsseop`。";
+"Copy Hermes enable command" = "拷贝 Hermes 启用命令";
+"Enabled in Hermes" = "已在 Hermes 中启用";
+"Not enabled in Hermes yet" = "尚未在 Hermes 中启用";
+"Amp's plugin API is experimental, so an Amp update may stop this from working." = "Amp 的插件 API 仍属实验性质，Amp 更新后可能会失效。";
+"Answer in Cursor" = "在 Cursor 中回答";
