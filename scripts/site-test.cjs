@@ -232,6 +232,23 @@ const pickLang = async (page, lang) => {
   const scrollX = await mobile.evaluate(() => { window.scrollTo(1000, 0); return window.scrollX; });
   check(scrollX === 0, `mobile: page scrolls sideways by ${scrollX}px`);
 
+  // No text runs out of its box into the next column (a Korean list joined by "·" did, as one unbreakable word).
+  for (const [p, name] of [[page, 'desktop'], [mobile, 'mobile']]) {
+    for (const lang of langs) {
+      await pickLang(p, lang);
+      const wide = await p.evaluate(() => [...document.querySelectorAll('main p, main h2, main h3, main li')]
+        .filter(el => el.getClientRects().length)
+        .map(el => {
+          const box = el.parentElement, s = getComputedStyle(box);
+          const edge = box.getBoundingClientRect().right - parseFloat(s.paddingRight) - parseFloat(s.borderRightWidth);
+          return [Math.round(el.getBoundingClientRect().right - edge), el.textContent.trim().slice(0, 40)];
+        })
+        .filter(([over]) => over > 1)
+        .map(([over, text]) => `+${over}px "${text}"`));
+      check(wide.length === 0, `${name} ${lang}: text wider than its box: ${wide.join('; ')}`);
+    }
+  }
+
   // Every Copy button (hero, Homebrew tab, Source tab): "Copied" only when the clipboard write really succeeded.
   const copied = { en: 'Copied', ko: '복사됨', ja: 'コピーしました', zh: '已复制', es: 'Copiado', de: 'Kopiert', fr: 'Copié' };
   const copyFailed = { en: 'Copy failed', ko: '복사 실패', ja: 'コピーできませんでした', zh: '复制失败', es: 'No se pudo copiar', de: 'Kopieren fehlgeschlagen', fr: 'Échec de la copie' };
@@ -449,5 +466,5 @@ const pickLang = async (page, lang) => {
     console.error(failures.map(f => 'FAIL ' + f).join('\n'));
     process.exit(1);
   }
-  console.log(`site OK: ${langs.length} languages, images, version badge, meta tags, anchors, tour, copy buttons, failed copies, persistence, locale detection, mobile width, motion and Reduce Motion`);
+  console.log(`site OK: ${langs.length} languages, images, version badge, meta tags, anchors, tour, copy buttons, failed copies, persistence, locale detection, mobile width, text fits its box, motion and Reduce Motion`);
 })().catch(e => { console.error(e); process.exit(1); });
