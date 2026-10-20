@@ -78,7 +78,11 @@
 "System default" = "Systemstandard";
 "Display" = "Bildschirm";
 "Show on" = "Anzeigen auf";
-"Automatic (follows the pointer)" = "Automatisch (folgt dem Zeiger)";
+"Automatic" = "Automatisch";
+"Move to the screen the pointer is on" = "Zum Bildschirm mit dem Zeiger wechseln";
+"The closed notch goes to whichever screen you move the pointer to." = "Die eingeklappte Notch wechselt auf den Bildschirm, auf den du den Zeiger bewegst.";
+"The notch stays on the screen that has one, or else on the main screen." = "Sie bleibt auf dem Bildschirm mit Notch, sonst auf dem Hauptbildschirm.";
+"The notch stays on the screen chosen above." = "Sie bleibt auf dem oben gewählten Bildschirm.";
 "Brightness keys adjust the display under the pointer, including external displays that support DDC. Keyboard backlight keys work on keyboards that have them." = "Helligkeitstasten regeln den Bildschirm unter dem Zeiger, auch externe Bildschirme mit DDC. Tasten für die Tastaturbeleuchtung funktionieren auf Tastaturen, die sie haben.";
 "Updates" = "Updates";
 "Check for updates automatically" = "Automatisch nach Updates suchen";

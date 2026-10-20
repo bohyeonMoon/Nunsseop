@@ -99,7 +99,11 @@
 /* Display */
 "Display" = "화면";
 "Show on" = "표시할 화면";
-"Automatic (follows the pointer)" = "자동 (포인터를 따라감)";
+"Automatic" = "자동";
+"Move to the screen the pointer is on" = "포인터가 있는 화면으로 옮기기";
+"The closed notch goes to whichever screen you move the pointer to." = "닫힌 노치가 포인터를 옮긴 화면으로 따라갑니다.";
+"The notch stays on the screen that has one, or else on the main screen." = "노치가 있는 화면에, 없으면 주 화면에 머뭅니다.";
+"The notch stays on the screen chosen above." = "위에서 고른 화면에 머뭅니다.";
 
 /* Backlights */
 "Brightness keys adjust the display under the pointer, including external displays that support DDC. Keyboard backlight keys work on keyboards that have them." = "밝기 키는 마우스가 있는 화면을 조절합니다. DDC를 지원하는 외부 모니터도 포함됩니다. 키보드 백라이트 키는 해당 키가 있는 키보드에서 동작합니다.";

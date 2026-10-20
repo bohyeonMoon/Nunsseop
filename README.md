@@ -103,7 +103,7 @@ On a fresh install the notch also opens by itself after a second and walks you t
 - Pick your tabs and drag them into order, whether the header shows the date, what the collapsed notch shows, and which pop-ups you get. **Anything you turn off stops running.**
 - On macOS 26 the expanded notch and its cards use Liquid Glass, so what's behind shows through softly. You can set how dark the glass is, all the way to 100% for a solid black notch, or switch the glass off.
 - On displays without a notch, the closed notch is a small pill in the menu bar, in glass if you like, with the eyebrow, a white brush stroke, on it. The eyebrow lifts when the pointer is over it. After it sits unused (3 to 60 seconds, or never) it lowers like a closing eye and fades out, and it comes back when the pointer reaches it; rest there for half a second and it opens, attached to the top edge. There, HUDs, notices, lyrics and the sneak peek are one line, with the symbol right beside the level bar, percent or text. The idle values grow the pill just enough for each one, right beside the eyebrow, and the eyebrow stays over the camera.
-- Choose the display, size and hover delay, launch at login, and hide the notch while the lid is closed.
+- Choose the display, size and hover delay, launch at login, and hide the notch while the lid is closed. On automatic, the closed notch follows the pointer to another display, or stays put if you turn that off. Mission Control hides it.
 - Swipe down to open, up to close, sideways on Home to skip tracks.
 - Speaks English, 한국어, 日本語, 简体中文, Español, Deutsch and Français, following your Mac.
 

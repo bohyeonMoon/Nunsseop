@@ -78,7 +78,11 @@
 "System default" = "システムのデフォルト";
 "Display" = "ディスプレイ";
 "Show on" = "表示するディスプレイ";
-"Automatic (follows the pointer)" = "自動（ポインタに追従）";
+"Automatic" = "自動";
+"Move to the screen the pointer is on" = "ポインタのある画面に移動";
+"The closed notch goes to whichever screen you move the pointer to." = "閉じたノッチは、ポインタを動かした先の画面に移ります。";
+"The notch stays on the screen that has one, or else on the main screen." = "ノッチのある画面に、なければメイン画面にとどまります。";
+"The notch stays on the screen chosen above." = "上で選んだ画面にとどまります。";
 "Brightness keys adjust the display under the pointer, including external displays that support DDC. Keyboard backlight keys work on keyboards that have them." = "明るさキーはポインタのあるディスプレイを調整します。DDC に対応した外部ディスプレイも含みます。キーボードバックライトキーは、そのキーがあるキーボードで動作します。";
 "Updates" = "アップデート";
 "Check for updates automatically" = "アップデートを自動的に確認";

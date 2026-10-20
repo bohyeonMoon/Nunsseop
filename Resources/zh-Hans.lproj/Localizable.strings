@@ -78,7 +78,11 @@
 "System default" = "系统默认";
 "Display" = "显示器";
 "Show on" = "显示在";
-"Automatic (follows the pointer)" = "自动（跟随指针）";
+"Automatic" = "自动";
+"Move to the screen the pointer is on" = "移到指针所在的屏幕";
+"The closed notch goes to whichever screen you move the pointer to." = "收起的刘海会跟着指针移到对应的屏幕。";
+"The notch stays on the screen that has one, or else on the main screen." = "停留在有刘海的屏幕上，没有则停留在主屏幕上。";
+"The notch stays on the screen chosen above." = "停留在上方选择的屏幕上。";
 "Brightness keys adjust the display under the pointer, including external displays that support DDC. Keyboard backlight keys work on keyboards that have them." = "亮度键调节指针所在的显示器，包括支持 DDC 的外接显示器。键盘背光键适用于带有这些按键的键盘。";
 "Updates" = "更新";
 "Check for updates automatically" = "自动检查更新";

@@ -195,7 +195,7 @@ private struct GeneralPane: View {
             }
             Section("Display") {
                 Picker("Show on", selection: $settings.displayName) {
-                    Text("Automatic (follows the pointer)").tag("")
+                    Text("Automatic").tag("")
                     ForEach(NSScreen.screens.map(\.localizedName), id: \.self) { name in
                         Text(name).tag(name)
                     }
@@ -203,6 +203,14 @@ private struct GeneralPane: View {
                         Text(settings.displayName).tag(settings.displayName)
                     }
                 }
+                Toggle("Move to the screen the pointer is on", isOn: $settings.followPointerAcrossDisplays)
+                    .disabled(!settings.displayName.isEmpty)
+                Text(settings.displayName.isEmpty
+                     ? (settings.followPointerAcrossDisplays
+                        ? String(localized: "The closed notch goes to whichever screen you move the pointer to.")
+                        : String(localized: "The notch stays on the screen that has one, or else on the main screen."))
+                     : String(localized: "The notch stays on the screen chosen above."))
+                    .font(.caption).foregroundStyle(.secondary)
                 Toggle("Show the notch when the MacBook lid is closed", isOn: $settings.showInClamshell)
                 Text("In clamshell mode the notch appears as a pill on your external display.")
                     .font(.caption).foregroundStyle(.secondary)

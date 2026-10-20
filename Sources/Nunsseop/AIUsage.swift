@@ -94,9 +94,10 @@ final class AIUsageModel: ObservableObject {
             return
         }
         loading = true
+        // Anthropic isn't waited for: the card shows at once, and refreshes again when it answers.
+        let answered: @Sendable () -> Void = { [weak self] in Task { @MainActor in self?.refresh(includeTokens: false) } }
         Task.detached(priority: .utility) {
-            // Anthropic isn't waited for: the card shows at once, and refreshes again when it answers.
-            let limits = Self.limits { Task { @MainActor [weak self] in self?.refresh(includeTokens: false) } }
+            let limits = Self.limits(answered: answered)
             let anthropic = ClaudeUsageAPI.status
             // Adding up the logs takes a while, so the limits (or where they will go) show first.
             if includeTokens {

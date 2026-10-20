@@ -78,7 +78,11 @@
 "System default" = "Predeterminada del sistema";
 "Display" = "Pantalla";
 "Show on" = "Mostrar en";
-"Automatic (follows the pointer)" = "Automático (sigue al puntero)";
+"Automatic" = "Automático";
+"Move to the screen the pointer is on" = "Moverse a la pantalla del puntero";
+"The closed notch goes to whichever screen you move the pointer to." = "El notch plegado va a la pantalla a la que lleves el puntero.";
+"The notch stays on the screen that has one, or else on the main screen." = "Se queda en la pantalla con notch o, si no hay, en la pantalla principal.";
+"The notch stays on the screen chosen above." = "Se queda en la pantalla elegida arriba.";
 "Brightness keys adjust the display under the pointer, including external displays that support DDC. Keyboard backlight keys work on keyboards that have them." = "Las teclas de brillo ajustan la pantalla bajo el puntero, incluidas las pantallas externas compatibles con DDC. Las teclas de retroiluminación funcionan en teclados que las tienen.";
 "Updates" = "Actualizaciones";
 "Check for updates automatically" = "Buscar actualizaciones automáticamente";
