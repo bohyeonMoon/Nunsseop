@@ -81,11 +81,6 @@ final class UpdateChecker: ObservableObject {
         return URL(string: "https://github.com/namekun/Nunsseop/releases/download/v\(version)/Nunsseop-\(version).dmg")!
     }
 
-    /// Homebrew keeps a folder in its Caskroom for every cask it installed.
-    nonisolated static var installedWithBrew: Bool {
-        ["/opt/homebrew/Caskroom/nunsseop", "/usr/local/Caskroom/nunsseop"].contains { FileManager.default.fileExists(atPath: $0) }
-    }
-
     func copyUpdateCommand() {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(Self.brewCommand, forType: .string)

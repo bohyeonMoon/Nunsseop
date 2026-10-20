@@ -26,7 +26,7 @@
 
 ## Instalación en 30 segundos
 
-**[Descarga Nunsseop.dmg](https://github.com/namekun/Nunsseop/releases/latest/download/Nunsseop.dmg)**, ábrelo y arrastra Nunsseop a Aplicaciones. La app está firmada y notarizada por Apple, así que se abre sin problemas. Cuando hay una versión nueva, Ajustes › General › Actualizaciones la descarga.
+**[Descarga Nunsseop.dmg](https://github.com/namekun/Nunsseop/releases/latest/download/Nunsseop.dmg)**, ábrelo y arrastra Nunsseop a Aplicaciones. La app está firmada y notarizada por Apple, así que se abre sin problemas. Cuando hay una versión nueva, Instalar actualización en Ajustes › General › Actualizaciones muestra las novedades, la instala y reinicia Nunsseop (las copias anteriores a la 0.38.0 descargan el DMG nuevo una vez más).
 
 O con [Homebrew](https://brew.sh):
 
@@ -245,7 +245,7 @@ Nunsseop pide la mayoría de los permisos solo la primera vez que usas la funci�
 
 Nunsseop no recopila ni envía datos personales. Solo se conecta a internet para:
 
-- consultar `api.github.com` en busca de una versión nueva una vez al día (se puede desactivar);
+- consultar `api.github.com` en busca de una versión nueva una vez al día (se puede desactivar) y, cuando instalas una actualización en una copia del DMG, descargar de GitHub el `appcast.xml` y el DMG de la última versión;
 - buscar letras sincronizadas en `lrclib.net` (se puede desactivar);
 - obtener el tiempo de `open-meteo.com` para la ciudad que indiques (desactivado hasta que indiques una), y pedir al geocodificador de Apple la ubicación de la ciudad cuando Open-Meteo no la encuentra;
 - descargar carátulas por HTTPS desde servicios de música conocidos, solo cuando el helper de MediaRemote no está disponible;

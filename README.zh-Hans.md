@@ -26,7 +26,7 @@
 
 ## 30 秒安装
 
-**[下载 Nunsseop.dmg](https://github.com/namekun/Nunsseop/releases/latest/download/Nunsseop.dmg)**，打开后把 Nunsseop 拖到“应用程序”中。应用已经过 Apple 签名和公证，可以直接打开。有新版本时，可以在设置 › 通用 › 更新中下载。
+**[下载 Nunsseop.dmg](https://github.com/namekun/Nunsseop/releases/latest/download/Nunsseop.dmg)**，打开后把 Nunsseop 拖到“应用程序”中。应用已经过 Apple 签名和公证，可以直接打开。有新版本时，设置 › 通用 › 更新中的“安装更新”会先展示新内容，安装后重新启动 Nunsseop（早于 0.38.0 的版本需要再下载一次新的 DMG）。
 
 也可以用 [Homebrew](https://brew.sh) 安装：
 
@@ -245,7 +245,7 @@ Nunsseop 的大多数权限只在你第一次使用需要它的功能时才请�
 
 Nunsseop 不会收集或发送个人数据。它只会在以下情况下联网：
 
-- 每天向 `api.github.com` 检查一次是否有新版本（可以关闭）；
+- 每天向 `api.github.com` 检查一次是否有新版本（可以关闭）；在从 DMG 安装的应用中安装更新时，从 GitHub 获取最新版本的 `appcast.xml` 和 DMG；
 - 到 `lrclib.net` 查找同步歌词（可以关闭）；
 - 从 `open-meteo.com` 获取你输入的城市的天气（输入城市之前保持关闭），当 Open-Meteo 找不到该城市时，会向 Apple 的地理编码服务查询城市的位置；
 - 通过 HTTPS 从已知的音乐服务下载封面，仅在 MediaRemote 辅助库不可用时；

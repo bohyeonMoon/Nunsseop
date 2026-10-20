@@ -9,6 +9,7 @@ cd "$(dirname "$0")/.."
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
 DEVELOPER_ID="$(codesign -dvv build/Nunsseop.app 2>&1 | sed -n 's/^Authority=\(Developer ID Application: .*\)$/\1/p' | head -1)"
 PROFILE="${NOTARY_PROFILE:-nunsseop}"
+[[ -z "${NUNSSEOP_RELEASE:-}" || -n "$DEVELOPER_ID" ]] || { echo "A release must be signed with a Developer ID and notarized" >&2; exit 1; }
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -35,7 +36,7 @@ fi
 
 STAGE="$WORK/stage"
 mkdir -p "$STAGE"
-cp -R build/Nunsseop.app "$STAGE/"
+ditto build/Nunsseop.app "$STAGE/Nunsseop.app"
 xattr -cr "$STAGE/Nunsseop.app"
 codesign --verify --deep --strict "$STAGE/Nunsseop.app"
 ln -s /Applications "$STAGE/Applications"

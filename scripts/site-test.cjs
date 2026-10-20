@@ -229,6 +229,13 @@ const pickLang = async (page, lang) => {
   check(swift.includes(`"${upgradeCmd}"`), 'UpdateChecker no longer uses the upgrade command the site documents');
   // The DMG the site offers is the one release.sh uploads under a fixed name; the app downloads it by version.
   check(fs.readFileSync(path.join(root, 'scripts/release.sh'), 'utf8').includes('build/Nunsseop.dmg'), 'release.sh no longer uploads Nunsseop.dmg, which the download button links to');
+  // Sparkle: the feed every copy from the DMG asks is the one release.sh uploads, signed with the key Info.plist trusts.
+  check(plistValue('SUFeedURL') === 'https://github.com/namekun/Nunsseop/releases/latest/download/appcast.xml', `SUFeedURL is ${plistValue('SUFeedURL')}`);
+  check(Buffer.from(plistValue('SUPublicEDKey') || '', 'base64').length === 32, 'SUPublicEDKey is not a 32 byte key');
+  check(!plist.includes('NunsseopUpdaterAnywhere'), 'the test-only NunsseopUpdaterAnywhere key is in Info.plist');
+  check(fs.readFileSync(path.join(root, 'scripts/release.sh'), 'utf8').includes('build/appcast.xml'), 'release.sh no longer uploads the appcast.xml SUFeedURL points to');
+  const sparkle = /sparkle-project\/Sparkle", exact: "(\d+)\.(\d+)\.(\d+)"/.exec(fs.readFileSync(path.join(root, 'Package.swift'), 'utf8'));
+  check(sparkle && [2, 9, 6].reduce((cmp, min, i) => cmp || Math.sign(+sparkle[i + 1] - min), 0) >= 0, 'Sparkle must be pinned at 2.9.6 or later, the oldest without known advisories');
   check(swift.includes('releases/download/v\\(version)/Nunsseop-\\(version).dmg'), 'UpdateChecker downloads a DMG name release.sh no longer uses');
 
   // Mobile: nothing wider than the screen.

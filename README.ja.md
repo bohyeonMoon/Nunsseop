@@ -26,7 +26,7 @@
 
 ## 30秒でインストール
 
-**[Nunsseop.dmg をダウンロード](https://github.com/namekun/Nunsseop/releases/latest/download/Nunsseop.dmg)** し、開いて Nunsseop をアプリケーションにドラッグしてください。Apple の署名と公証を受けたアプリなので、すぐに開けます。新しいバージョンが出ると、設定 › 一般 › アップデートからダウンロードできます。
+**[Nunsseop.dmg をダウンロード](https://github.com/namekun/Nunsseop/releases/latest/download/Nunsseop.dmg)** し、開いて Nunsseop をアプリケーションにドラッグしてください。Apple の署名と公証を受けたアプリなので、すぐに開けます。新しいバージョンが出ると、設定 › 一般 › アップデートの「アップデートをインストール」が新しい点を表示し、インストールして Nunsseop を再起動します(0.38.0 より前のアプリは、新しい DMG をもう一度ダウンロードしてください)。
 
 [Homebrew](https://brew.sh) でもインストールできます:
 
@@ -245,7 +245,7 @@ Nunsseop は、ほとんどの権限を、それを必要とする機能を初�
 
 Nunsseop は個人データを収集も送信もしません。オンラインに接続するのは、次の場合だけです。
 
-- `api.github.com` で、新しいリリースがないかを 1 日 1 回確認します(オフにできます)。
+- `api.github.com` で、新しいリリースがないかを 1 日 1 回確認します(オフにできます)。DMG からインストールしたアプリでアップデートをインストールするときは、GitHub から最新リリースの `appcast.xml` と DMG を取得します。
 - `lrclib.net` で、同期歌詞を検索します(オフにできます)。
 - 入力した都市の天気を `open-meteo.com` から取得します(都市を入力するまではオフ)。Open-Meteo で見つからない場合は、都市の位置を Apple のジオコーダに問い合わせます。
 - MediaRemote ヘルパーが使えない場合に限り、既知の音楽サービスから HTTPS でアートワークをダウンロードします。

@@ -26,7 +26,7 @@
 
 ## Install in 30 seconds
 
-**[Download Nunsseop.dmg](https://github.com/namekun/Nunsseop/releases/latest/download/Nunsseop.dmg)**, open it and drag Nunsseop to Applications. The app is signed and notarized by Apple, so it opens right away. When an update is out, Settings › General › Updates downloads it.
+**[Download Nunsseop.dmg](https://github.com/namekun/Nunsseop/releases/latest/download/Nunsseop.dmg)**, open it and drag Nunsseop to Applications. The app is signed and notarized by Apple, so it opens right away. When an update is out, Install Update in Settings › General › Updates shows what's new, installs it and restarts Nunsseop (copies older than 0.38.0 download the new DMG once more).
 
 Or with [Homebrew](https://brew.sh):
 
@@ -245,7 +245,7 @@ Nunsseop asks for most permissions only when you first use the feature that need
 
 Nunsseop doesn't collect or send personal data. It goes online only to:
 
-- check `api.github.com` for a newer release once a day (can be turned off);
+- check `api.github.com` for a newer release once a day (can be turned off), and, when you install an update in a copy from the DMG, fetch the `appcast.xml` and DMG of the latest release from GitHub;
 - look up synced lyrics on `lrclib.net` (can be turned off);
 - fetch weather from `open-meteo.com` for the city you enter (off until you enter one), asking Apple's geocoder for the city's location when Open-Meteo can't find it;
 - download artwork over HTTPS from known music services, only when the MediaRemote helper is unavailable;

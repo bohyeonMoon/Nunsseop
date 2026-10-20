@@ -369,6 +369,8 @@
 "Copy Update Command" = "拷贝更新命令";
 "Copied" = "已拷贝";
 "The command goes to the clipboard. Paste it in Terminal and press Return." = "命令会拷贝到剪贴板。粘贴到“终端”中并按下 Return 键。";
+"Install Update" = "安装更新";
+"Shows what's new, then installs the update and restarts Nunsseop." = "先显示新内容，然后安装更新并重新启动 Nunsseop。";
 "Download Update" = "下载更新";
 "Open the downloaded file and drag Nunsseop to Applications, replacing this one." = "打开下载的文件，把 Nunsseop 拖到“应用程序”中替换当前版本。";
 "Agents" = "代理";
@@ -605,6 +607,12 @@
 "Change %lld of %lld this turn" = "本轮第 %1$lld/%2$lld 处修改";
 "← → the change before or after · Esc back to the list" = "← → 上一处或下一处修改 · Esc 返回列表";
 "Others" = "其他";
+"Keeps itself fresh" = "自己保持最新";
+"Installed from the DMG, Nunsseop %@ and later install their own updates." = "从 DMG 安装的 Nunsseop %@ 及以后版本会自己安装更新。";
+"Updates itself" = "自己更新";
+"Install Update shows what's new, then restarts" = "点按安装更新会先展示新内容，再重新启动";
+"Only when you say so" = "只在你同意时";
+"Nothing installs until you choose to" = "你选择之前什么都不会安装";
 "Now with papers" = "现在有证件了";
 "Nunsseop %@ is signed and notarized by Apple, and its bottom edge sits a little closer." = "Nunsseop %@ 已经过 Apple 签名和公证，底部留白也收紧了一点。";
 "Notarized by Apple" = "已通过 Apple 公证";
