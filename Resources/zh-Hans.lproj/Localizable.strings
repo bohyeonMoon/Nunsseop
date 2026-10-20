@@ -605,6 +605,12 @@
 "Change %lld of %lld this turn" = "本轮第 %1$lld/%2$lld 处修改";
 "← → the change before or after · Esc back to the list" = "← → 上一处或下一处修改 · Esc 返回列表";
 "Others" = "其他";
+"Now with papers" = "现在有证件了";
+"Nunsseop %@ is signed and notarized by Apple, and its bottom edge sits a little closer." = "Nunsseop %@ 已经过 Apple 签名和公证，底部留白也收紧了一点。";
+"Notarized by Apple" = "已通过 Apple 公证";
+"Opens like any other app, no workarounds" = "像其他应用一样直接打开";
+"Ask again, once" = "权限再确认一次";
+"macOS may want permissions renewed" = "macOS 可能会重新请求权限";
 "A little shy now" = "有点害羞了";
 "Nunsseop %@ steps aside for Mission Control, and can stay on one display." = "Nunsseop %@ 会给调度中心让路，也可以只待在一块屏幕上。";
 "Hides in Mission Control" = "调度中心里自动隐藏";

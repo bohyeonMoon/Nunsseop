@@ -26,6 +26,13 @@ enum WhatsNew {
     /// A pre-release ("0.35.0-beta.1") shows the notes of the release it leads to.
     static func notes(for version: String) -> Notes? {
         switch version.split(separator: "-").first.map(String.init) ?? version {
+        case "0.37.0":
+            Notes(version: version, title: String(localized: "Now with papers"),
+                  text: String(localized: "Nunsseop \(version) is signed and notarized by Apple, and its bottom edge sits a little closer."),
+                  items: [Item(symbol: "checkmark.seal", title: String(localized: "Notarized by Apple"),
+                               detail: String(localized: "Opens like any other app, no workarounds")),
+                          Item(symbol: "hand.raised", title: String(localized: "Ask again, once"),
+                               detail: String(localized: "macOS may want permissions renewed"))])
         case "0.36.0":
             Notes(version: version, title: String(localized: "A little shy now"),
                   text: String(localized: "Nunsseop \(version) steps aside for Mission Control, and can stay on one display."),
