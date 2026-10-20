@@ -69,11 +69,16 @@ final class UpdateChecker: ObservableObject {
         return Release(version: tag.trimmingCharacters(in: CharacterSet(charactersIn: "vV")))
     }
 
-    /// The Terminal line that updates the app. One installed some other way is replaced by Homebrew's, since only
-    /// Homebrew installs are offered now. `brew update` comes first: Homebrew skips refreshing its taps when it did so
-    /// recently, and would then report the old version as the latest.
-    nonisolated static func brewCommand(installedWithBrew: Bool) -> String {
-        installedWithBrew ? "brew update && brew upgrade --cask nunsseop" : "brew update && brew install --cask --force namekun/tap/nunsseop"
+    /// The Terminal line that updates an app Homebrew installed. `brew update` comes first: Homebrew skips refreshing its
+    /// taps when it did so recently, and would then report the old version as the latest.
+    nonisolated static let brewCommand = "brew update && brew upgrade --cask nunsseop"
+
+    /// The DMG of a release, for an app installed from one; the releases page for a version that isn't plain numbers.
+    nonisolated static func downloadURL(version: String) -> URL {
+        guard !version.isEmpty, version.allSatisfy({ $0.isASCII && ($0.isNumber || $0 == ".") }) else {
+            return URL(string: "https://github.com/namekun/Nunsseop/releases/latest")!
+        }
+        return URL(string: "https://github.com/namekun/Nunsseop/releases/download/v\(version)/Nunsseop-\(version).dmg")!
     }
 
     /// Homebrew keeps a folder in its Caskroom for every cask it installed.
@@ -81,14 +86,9 @@ final class UpdateChecker: ObservableObject {
         ["/opt/homebrew/Caskroom/nunsseop", "/usr/local/Caskroom/nunsseop"].contains { FileManager.default.fileExists(atPath: $0) }
     }
 
-    /// Homebrew itself, at the prefix of either kind of Mac. Without it there is no command to copy.
-    nonisolated static var brewInstalled: Bool {
-        ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"].contains { FileManager.default.isExecutableFile(atPath: $0) }
-    }
-
     func copyUpdateCommand() {
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(Self.brewCommand(installedWithBrew: Self.installedWithBrew), forType: .string)
+        NSPasteboard.general.setString(Self.brewCommand, forType: .string)
     }
 
     nonisolated static func isNewer(_ candidate: String, than current: String) -> Bool {

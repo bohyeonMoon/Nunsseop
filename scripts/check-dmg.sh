@@ -42,14 +42,16 @@ done
 
 step "Signature"
 codesign --verify --deep --strict "$APP" || fail "Signature is broken"
-codesign -dv "$APP" 2>&1 | grep -Eq "flags=.*[(,]runtime[),]" || fail "The app isn't signed with the hardened runtime"
+# Read into a variable first: `grep -q` stops reading at the first match, and under pipefail codesign's broken pipe fails the check.
+SIGNATURE="$(codesign -dvv "$APP" 2>&1)"
+grep -Eq "flags=.*[(,]runtime[),]" <<<"$SIGNATURE" || fail "The app isn't signed with the hardened runtime"
 ENTITLEMENTS="$(codesign -d --entitlements - --xml "$APP" 2>/dev/null)"
 for key in automation.apple-events device.camera device.audio-input personal-information.calendars; do
     grep -q "com.apple.security.$key" <<<"$ENTITLEMENTS" || fail "The app lacks the $key entitlement"
 done
 
 # Signed with a Developer ID, it must be notarized, the app and the DMG each with its ticket.
-if codesign -dvv "$APP" 2>&1 | grep -q "^Authority=Developer ID Application:"; then
+if grep -q "^Authority=Developer ID Application:" <<<"$SIGNATURE"; then
     step "Notarized"
     spctl --assess --type execute "$APP" 2>/dev/null || fail "Gatekeeper rejects the app"
     xcrun stapler validate -q "$APP" || fail "The app has no notarization ticket"

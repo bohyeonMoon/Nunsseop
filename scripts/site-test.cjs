@@ -15,6 +15,9 @@ const enTourTitles = ['Home', 'AI usage', 'Search', 'Shelf', 'Timer', 'Tools', '
 const sameAsEnglish = new Set(['de:Timer', 'de:System', 'es:Emoji', 'de:Emoji', 'fr:Emoji']);
 const failures = [];
 const check = (ok, msg) => { if (!ok) failures.push(msg); };
+// A panel slides in when its tab is chosen; a click during that can land beside the button it aims at.
+const settledPanel = page => page.waitForFunction(() => !document.querySelector('.panel.active').getAnimations({ subtree: true })
+  .some(a => a.playState === 'running'));
 const pickLang = async (page, lang) => {
   await page.click('.lang-btn');
   await page.click(`[data-set="${lang}"]`);
@@ -105,7 +108,7 @@ const pickLang = async (page, lang) => {
   // Links leave the page only for known places.
   const hrefs = await page.$$eval('a[href]', as => as.map(a => a.getAttribute('href')).filter(h => !h.startsWith('#')));
   const okLinks = new Set(['https://brew.sh', 'https://github.com/namekun/Nunsseop', 'https://github.com/namekun/Nunsseop/releases',
-    'https://github.com/namekun/Nunsseop/releases/latest', 'https://github.com/namekun/homebrew-tap']);
+    'https://github.com/namekun/Nunsseop/releases/latest', 'https://github.com/namekun/homebrew-tap', 'https://github.com/namekun/Nunsseop/releases/latest/download/Nunsseop.dmg']);
   check(hrefs.every(h => okLinks.has(h)), 'unexpected links: ' + [...new Set(hrefs.filter(h => !okLinks.has(h)))].join(', '));
   for (const h of okLinks) check(hrefs.includes(h), 'link no longer on the page: ' + h);
 
@@ -188,8 +191,9 @@ const pickLang = async (page, lang) => {
   check(copies.filter(c => c.copy === installCmd).length === 2, `install command is on ${copies.filter(c => c.copy === installCmd).length} copy buttons, expected 2`);
   const copyBtns = await cp.$$('[data-copy]');
   for (let i = 0; i < copyBtns.length; i++) {
-    // The source panel is hidden until its tab is selected.
-    if (copies[i].copy.startsWith('git clone')) await cp.click('[data-tab="src"]');
+    // A panel other than the first is hidden until its tab is selected.
+    const tab = await copyBtns[i].evaluate(b => { const panel = b.closest('.panel'); return panel && panel.dataset.panel; });
+    if (tab) { await cp.click(`[data-tab="${tab}"]`); await settledPanel(cp); }
     await copyBtns[i].scrollIntoViewIfNeeded();
     const label = async () => (await copyBtns[i].innerText()).trim();
     const before = await label();
@@ -223,7 +227,9 @@ const pickLang = async (page, lang) => {
   check(upgradeOnSite === langs.length, `site shows the upgrade command ${upgradeOnSite} times, expected ${langs.length}`);
   const swift = fs.readFileSync(path.join(root, 'Sources/Nunsseop/UpdateChecker.swift'), 'utf8');
   check(swift.includes(`"${upgradeCmd}"`), 'UpdateChecker no longer uses the upgrade command the site documents');
-  check(swift.includes('brew update && brew install --cask --force namekun/tap/nunsseop'), 'UpdateChecker reinstall command drifted from the tap name');
+  // The DMG the site offers is the one release.sh uploads under a fixed name; the app downloads it by version.
+  check(fs.readFileSync(path.join(root, 'scripts/release.sh'), 'utf8').includes('build/Nunsseop.dmg'), 'release.sh no longer uploads Nunsseop.dmg, which the download button links to');
+  check(swift.includes('releases/download/v\\(version)/Nunsseop-\\(version).dmg'), 'UpdateChecker downloads a DMG name release.sh no longer uses');
 
   // Mobile: nothing wider than the screen.
   const mobile = await browser.newPage({ viewport: { width: 375, height: 812 } });
@@ -272,7 +278,7 @@ const pickLang = async (page, lang) => {
         await p.goto(url);
         const btn = p.locator('[data-copy]').nth(i);
         const tab = await btn.evaluate(b => { const panel = b.closest('.panel'); return panel && panel.dataset.panel; });
-        if (tab) await p.click(`.tabs button[data-tab="${tab}"]`);
+        if (tab) { await p.click(`.tabs button[data-tab="${tab}"]`); await settledPanel(p); }
         const where = `${lang}: copy button ${i}`;
         const shown = await btn.evaluate(b => (b.parentNode.querySelector('pre, code').textContent || '').replace(/\s+/g, ' ').trim());
         const idle = await btn.innerHTML();

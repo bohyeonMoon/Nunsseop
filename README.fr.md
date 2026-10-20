@@ -26,11 +26,15 @@
 
 ## Installation en 30 secondes
 
+**[Téléchargez Nunsseop.dmg](https://github.com/namekun/Nunsseop/releases/latest/download/Nunsseop.dmg)**, ouvrez-le et glissez Nunsseop dans Applications. L’app est signée et notarisée par Apple, elle s’ouvre donc tout de suite. Quand une mise à jour est disponible, Réglages › Général › Mises à jour la télécharge.
+
+Ou avec [Homebrew](https://brew.sh) :
+
 ```sh
 brew install --cask namekun/tap/nunsseop
 ```
 
-Nécessite [Homebrew](https://brew.sh). L’app est signée et notarisée par Apple, elle s’ouvre donc tout de suite. Pour la mettre à jour, lancez `brew update && brew upgrade --cask nunsseop` ; quand une mise à jour est disponible, Réglages › Général › Mises à jour copie cette commande dans le presse-papiers (pour une app installée depuis l’ancien dmg, une commande qui la fait passer à Homebrew).
+Pour la mettre à jour, lancez `brew update && brew upgrade --cask nunsseop` ; quand une mise à jour est disponible, Réglages › Général › Mises à jour copie cette commande dans le presse-papiers.
 
 Nécessite macOS 14 Sonoma ou ultérieur. Fonctionne sur les Mac Apple silicon (pas sur Intel), y compris sur les écrans sans encoche.
 
@@ -112,7 +116,7 @@ Sur une installation toute neuve, l’encoche s’ouvre aussi toute seule au bou
 <details>
 <summary><b>macOS indique que Nunsseop ne peut pas être ouverte.</b></summary>
 
-Depuis la 0.37.0, l’app est signée et notarisée par Apple et s’ouvre comme n’importe quelle autre. Les versions plus anciennes ne l’étaient pas : mettez-la à jour avec Homebrew (`brew update && brew upgrade --cask nunsseop`) ou installez-la avec `brew install --cask namekun/tap/nunsseop`.
+Depuis la 0.37.0, l’app est signée et notarisée par Apple et s’ouvre comme n’importe quelle autre. Les versions plus anciennes ne l’étaient pas : [téléchargez le dernier DMG](https://github.com/namekun/Nunsseop/releases/latest/download/Nunsseop.dmg) ou mettez à jour avec Homebrew (`brew update && brew upgrade --cask nunsseop`).
 </details>
 
 <details>

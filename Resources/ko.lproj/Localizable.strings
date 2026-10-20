@@ -394,8 +394,8 @@
 "Copy Update Command" = "업데이트 명령 복사";
 "Copied" = "복사됨";
 "The command goes to the clipboard. Paste it in Terminal and press Return." = "명령이 클립보드에 복사됩니다. 터미널에 붙여 넣고 Return을 누르세요.";
-"Get Homebrew" = "Homebrew 받기";
-"Updates come through Homebrew. Install it, then come back here to copy the update command." = "업데이트는 Homebrew로 받습니다. Homebrew를 설치한 뒤 여기서 업데이트 명령을 복사하세요.";
+"Download Update" = "업데이트 다운로드";
+"Open the downloaded file and drag Nunsseop to Applications, replacing this one." = "받은 파일을 열고 Nunsseop을 응용 프로그램으로 끌어다 놓아 지금 것과 바꾸세요.";
 "Agents" = "에이전트";
 "Needs input" = "입력 필요";
 "Your turn" = "내 차례";

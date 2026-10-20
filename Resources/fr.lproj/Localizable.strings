@@ -369,8 +369,8 @@
 "Copy Update Command" = "Copier la commande de mise à jour";
 "Copied" = "Copiée";
 "The command goes to the clipboard. Paste it in Terminal and press Return." = "La commande est copiée dans le presse-papiers. Collez-la dans Terminal et appuyez sur Retour.";
-"Get Homebrew" = "Obtenir Homebrew";
-"Updates come through Homebrew. Install it, then come back here to copy the update command." = "Les mises à jour passent par Homebrew. Installez-le, puis revenez ici copier la commande de mise à jour.";
+"Download Update" = "Télécharger la mise à jour";
+"Open the downloaded file and drag Nunsseop to Applications, replacing this one." = "Ouvrez le fichier téléchargé et glissez Nunsseop dans Applications pour remplacer celle-ci.";
 "Agents" = "Agents";
 "Needs input" = "Attend une réponse";
 "Your turn" = "À vous";
