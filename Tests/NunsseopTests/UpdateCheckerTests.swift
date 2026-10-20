@@ -12,9 +12,13 @@ struct UpdateCheckerTests {
         #expect(UpdateChecker.isNewer(candidate, than: current) == newer)
     }
 
-    @Test func updateCommandUpgradesAHomebrewInstallAndReplacesAnyOther() {
-        #expect(UpdateChecker.brewCommand(installedWithBrew: true) == "brew update && brew upgrade --cask nunsseop")
-        #expect(UpdateChecker.brewCommand(installedWithBrew: false) == "brew update && brew install --cask --force namekun/tap/nunsseop")
+    @Test func aHomebrewInstallGetsTheUpgradeCommandAndAnyOtherTheReleasesDMG() {
+        #expect(UpdateChecker.brewCommand == "brew update && brew upgrade --cask nunsseop")
+        #expect(UpdateChecker.downloadURL(version: "0.37.0").absoluteString == "https://github.com/namekun/Nunsseop/releases/download/v0.37.0/Nunsseop-0.37.0.dmg")
+        // A tag that isn't plain numbers never becomes part of the link.
+        for odd in ["", "1.0/../../x", "1.0?x=1", "１.０"] {
+            #expect(UpdateChecker.downloadURL(version: odd).absoluteString == "https://github.com/namekun/Nunsseop/releases/latest", Comment(rawValue: odd))
+        }
     }
 }
 

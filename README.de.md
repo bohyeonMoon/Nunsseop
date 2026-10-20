@@ -26,11 +26,15 @@
 
 ## In 30 Sekunden installieren
 
+**[Nunsseop.dmg laden](https://github.com/namekun/Nunsseop/releases/latest/download/Nunsseop.dmg)**, öffnen und Nunsseop in „Programme“ ziehen. Die App ist von Apple signiert und notarisiert, sodass sie sich sofort öffnen lässt. Sobald ein Update verfügbar ist, lädt Einstellungen › Allgemein › Updates es herunter.
+
+Oder mit [Homebrew](https://brew.sh):
+
 ```sh
 brew install --cask namekun/tap/nunsseop
 ```
 
-Dafür brauchst du [Homebrew](https://brew.sh). Die App ist von Apple signiert und notarisiert, sodass sie sich sofort öffnen lässt. Zum Aktualisieren führst du `brew update && brew upgrade --cask nunsseop` aus; sobald ein Update verfügbar ist, kopiert Einstellungen › Allgemein › Updates diesen Befehl in deine Zwischenablage (bei einer App, die aus dem alten dmg installiert wurde, einen Befehl, der sie zu Homebrew umzieht).
+Zum Aktualisieren führst du `brew update && brew upgrade --cask nunsseop` aus; sobald ein Update verfügbar ist, kopiert Einstellungen › Allgemein › Updates diesen Befehl in deine Zwischenablage.
 
 Erfordert macOS 14 Sonoma oder neuer. Läuft auf Macs mit Apple Silicon (nicht auf Intel), auch auf Bildschirmen ohne Notch.
 
@@ -112,7 +116,7 @@ Bei einer frischen Installation öffnet sich die Notch nach einer Sekunde außer
 <details>
 <summary><b>macOS meldet, dass Nunsseop nicht geöffnet werden kann.</b></summary>
 
-Seit 0.37.0 ist die App von Apple signiert und notarisiert und öffnet sich wie jede andere. Ältere Versionen waren es nicht: Aktualisiere sie mit Homebrew (`brew update && brew upgrade --cask nunsseop`) oder installiere sie mit `brew install --cask namekun/tap/nunsseop`.
+Seit 0.37.0 ist die App von Apple signiert und notarisiert und öffnet sich wie jede andere. Ältere Versionen waren es nicht: [Lade das neueste DMG](https://github.com/namekun/Nunsseop/releases/latest/download/Nunsseop.dmg) oder aktualisiere mit Homebrew (`brew update && brew upgrade --cask nunsseop`).
 </details>
 
 <details>

@@ -48,7 +48,9 @@ git tag "v$VERSION"
 git push -q origin main "v$VERSION"
 PUSHED=1
 
-gh release create "v$VERSION" "$DMG" --title "v$VERSION" --notes-file "$NOTES_FILE"
+# Also under a name without the version, which the site's download button finds at releases/latest/download/Nunsseop.dmg.
+cp "$DMG" build/Nunsseop.dmg
+gh release create "v$VERSION" "$DMG" build/Nunsseop.dmg --title "v$VERSION" --notes-file "$NOTES_FILE"
 
 SHA="$(shasum -a 256 "$DMG" | cut -d' ' -f1)"
 git -C "$TAP_DIR" pull -q --ff-only

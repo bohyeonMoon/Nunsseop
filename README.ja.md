@@ -26,11 +26,15 @@
 
 ## 30秒でインストール
 
+**[Nunsseop.dmg をダウンロード](https://github.com/namekun/Nunsseop/releases/latest/download/Nunsseop.dmg)** し、開いて Nunsseop をアプリケーションにドラッグしてください。Apple の署名と公証を受けたアプリなので、すぐに開けます。新しいバージョンが出ると、設定 › 一般 › アップデートからダウンロードできます。
+
+[Homebrew](https://brew.sh) でもインストールできます:
+
 ```sh
 brew install --cask namekun/tap/nunsseop
 ```
 
-[Homebrew](https://brew.sh) が必要です。アプリは Apple の署名と公証を受けているので、すぐに開けます。アップデートは `brew update && brew upgrade --cask nunsseop` で行えます。新しいバージョンが出ると、設定 › 一般 › アップデートでそのコマンドをクリップボードにコピーできます(旧 dmg からインストールしたアプリには、Homebrew へ移行するコマンドがコピーされます)。
+アップデートは `brew update && brew upgrade --cask nunsseop` で行えます。新しいバージョンが出ると、設定 › 一般 › アップデートでそのコマンドをクリップボードにコピーできます。
 
 macOS 14 Sonoma 以降が必要です。Apple シリコン搭載の Mac に対応し（Intel は非対応）、ノッチのない画面でも動作します。
 
@@ -112,7 +116,7 @@ Dock にアイコンは出ません。Nunsseop はノッチの中にいます。
 <details>
 <summary><b>macOS に「Nunsseop は開けません」と表示されます。</b></summary>
 
-0.37.0 からは Apple の署名と公証を受けていて、ほかのアプリと同じように開けます。それより古いバージョンは公証前のものです。Homebrew でアップデートする(`brew update && brew upgrade --cask nunsseop`)か、`brew install --cask namekun/tap/nunsseop` でインストールしてください。
+0.37.0 からは Apple の署名と公証を受けていて、ほかのアプリと同じように開けます。それより古いバージョンは公証前のものです。[最新の DMG](https://github.com/namekun/Nunsseop/releases/latest/download/Nunsseop.dmg) をダウンロードし直すか、Homebrew でアップデート(`brew update && brew upgrade --cask nunsseop`)してください。
 </details>
 
 <details>

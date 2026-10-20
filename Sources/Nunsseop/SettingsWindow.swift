@@ -166,14 +166,14 @@ private struct GeneralPane: View {
                     if let release = updates.available {
                         Text("Version \(release.version) is available")
                         Spacer()
-                        if UpdateChecker.brewInstalled {
+                        if UpdateChecker.installedWithBrew {
                             Button(copiedUpdateCommand ? String(localized: "Copied") : String(localized: "Copy Update Command")) {
                                 updates.copyUpdateCommand()
                                 copiedUpdateCommand = true
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copiedUpdateCommand = false }
                             }
                         } else {
-                            Button("Get Homebrew") { NSWorkspace.shared.open(URL(string: "https://brew.sh")!) }
+                            Button("Download Update") { NSWorkspace.shared.open(UpdateChecker.downloadURL(version: release.version)) }
                         }
                     } else {
                         Text(updates.isChecking ? String(localized: "Checking…")
@@ -186,9 +186,9 @@ private struct GeneralPane: View {
                     }
                 }
                 if updates.available != nil {
-                    Text(UpdateChecker.brewInstalled
+                    Text(UpdateChecker.installedWithBrew
                          ? String(localized: "The command goes to the clipboard. Paste it in Terminal and press Return.")
-                         : String(localized: "Updates come through Homebrew. Install it, then come back here to copy the update command."))
+                         : String(localized: "Open the downloaded file and drag Nunsseop to Applications, replacing this one."))
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Text("Version \(updates.currentVersion)").font(.caption).foregroundStyle(.secondary)

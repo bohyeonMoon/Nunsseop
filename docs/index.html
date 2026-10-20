@@ -296,6 +296,8 @@
   .code { display: flex; align-items: flex-start; gap: 12px; padding: 14px 12px 14px 18px; border-radius: 8px; background: #232323; font-size: 14px; line-height: 1.75; }
   .code pre { flex: 1 1 auto; min-width: 0; margin: 0; overflow-x: auto; color: var(--paper); padding-top: 3px; }
   .code .copy { order: 2; }
+  .install .btn.primary { background: var(--paper); color: var(--ink); border-color: var(--paper); }
+  .install .btn.primary:hover { background: #D9D9D4; color: var(--ink); }
   .install .note { margin: 14px 0 0; font-size: 14.5px; line-height: 1.6; color: #C8C8C4; }
   .install .note a { text-decoration: underline; }
   .install .note code { font-size: 13px; padding: 1px 6px; border-radius: 4px; background: #232323; color: var(--paper); }
@@ -409,9 +411,9 @@
     <p class="lead de">Musik, Dateien, dein Kalender und System-HUDs leben genau dort, wo die Kamera sitzt. Zum Öffnen einfach darüberhovern. Das war’s.</p>
     <p class="lead fr">La musique, les fichiers, votre calendrier et les HUD système se trouvent juste à l’endroit où se loge la caméra. Survolez pour ouvrir. C’est tout.</p>
     <div class="cta">
-      <a class="btn primary" href="#install">
+      <a class="btn primary" href="https://github.com/namekun/Nunsseop/releases/latest/download/Nunsseop.dmg">
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.4 12.6c0-2.6 2.1-3.8 2.2-3.9-1.2-1.8-3.1-2-3.7-2-1.6-.2-3.1.9-3.9.9-.8 0-2-.9-3.4-.9-1.7 0-3.3 1-4.2 2.6-1.8 3.1-.5 7.7 1.3 10.2.9 1.2 1.9 2.6 3.2 2.6 1.3-.1 1.8-.8 3.3-.8s2 .8 3.4.8 2.3-1.3 3.1-2.5c1-1.4 1.4-2.8 1.4-2.9-.1 0-2.7-1-2.7-4.1zM13.9 5c.7-.9 1.2-2 1-3.2-1 0-2.3.7-3 1.6-.7.8-1.3 2-1.1 3.1 1.2.1 2.3-.6 3.1-1.5z"/></svg>
-        <span class="en">Install for Mac</span><span class="ko">Mac에 설치하기</span><span class="ja">Mac にインストール</span><span class="zh">安装到 Mac</span><span class="es">Instalar en Mac</span><span class="de">Auf dem Mac installieren</span><span class="fr">Installer sur Mac</span>
+        <span class="en">Download for Mac</span><span class="ko">Mac용 다운로드</span><span class="ja">Mac 版をダウンロード</span><span class="zh">下载 Mac 版</span><span class="es">Descargar para Mac</span><span class="de">Für Mac laden</span><span class="fr">Télécharger pour Mac</span>
       </a>
       <div class="brew-col">
       <div class="brew">
@@ -680,16 +682,34 @@
       <p class="en">macOS 14 Sonoma or later, on an Apple silicon Mac.</p><p class="ko">macOS 14 Sonoma 이상, Apple 실리콘 Mac.</p><p class="ja">macOS 14 Sonoma 以降、Apple シリコン搭載の Mac で。</p><p class="zh">macOS 14 Sonoma 或更高版本，搭载 Apple 芯片的 Mac。</p><p class="es">macOS 14 Sonoma o posterior, en un Mac con Apple silicon.</p><p class="de">macOS 14 Sonoma oder neuer, auf einem Mac mit Apple Silicon.</p><p class="fr">macOS 14 Sonoma ou version ultérieure, sur un Mac Apple silicon.</p>
     </div>
     <div class="steps">
-      <div class="step"><div class="n">1</div><h3><span class="en">Install</span><span class="ko">설치</span><span class="ja">インストール</span><span class="zh">安装</span><span class="es">Instalación</span><span class="de">Installieren</span><span class="fr">Installation</span></h3><p class="en">One Homebrew line. It lives in the notch, not the Dock.</p><p class="ko">Homebrew 한 줄이면 됩니다. Dock이 아니라 노치에 삽니다.</p><p class="ja">Homebrew のコマンド1行だけ。Dock ではなくノッチに常駐します。</p><p class="zh">一行 Homebrew 命令即可。它常驻在刘海里，不在 Dock 中。</p><p class="es">Una línea de Homebrew. Vive en el notch, no en el Dock.</p><p class="de">Eine Zeile mit Homebrew. Sie lebt in der Notch, nicht im Dock.</p><p class="fr">Une ligne Homebrew. Il vit dans l’encoche, pas dans le Dock.</p></div>
+      <div class="step"><div class="n">1</div><h3><span class="en">Install</span><span class="ko">설치</span><span class="ja">インストール</span><span class="zh">安装</span><span class="es">Instalación</span><span class="de">Installieren</span><span class="fr">Installation</span></h3><p class="en">Download the DMG and drag it to Applications, or use one Homebrew line. It lives in the notch, not the Dock.</p><p class="ko">DMG를 받아 응용 프로그램으로 끌어다 놓거나 Homebrew 한 줄이면 됩니다. Dock이 아니라 노치에 삽니다.</p><p class="ja">DMG をダウンロードしてアプリケーションにドラッグするか、Homebrew のコマンド1行だけ。Dock ではなくノッチに常駐します。</p><p class="zh">下载 DMG 拖到“应用程序”中，或者一行 Homebrew 命令即可。它常驻在刘海里，不在 Dock 中。</p><p class="es">Descarga el DMG y arrástralo a Aplicaciones, o usa una línea de Homebrew. Vive en el notch, no en el Dock.</p><p class="de">Lade das DMG und zieh die App in „Programme“, oder nimm eine Zeile mit Homebrew. Sie lebt in der Notch, nicht im Dock.</p><p class="fr">Téléchargez le DMG et glissez-le dans Applications, ou utilisez une ligne Homebrew. Il vit dans l’encoche, pas dans le Dock.</p></div>
       <div class="step"><div class="n">2</div><h3><span class="en">Hover the notch</span><span class="ko">노치에 마우스 올리기</span><span class="ja">ノッチにマウスを乗せる</span><span class="zh">把鼠标移到刘海上</span><span class="es">Pasa el cursor por el notch</span><span class="de">Maus über die Notch</span><span class="fr">Survolez l’encoche</span></h3><p class="en">It opens. Move away and it tucks itself back. Play some music and watch it come alive. On a fresh install, a short tour opens it for you.</p><p class="ko">열립니다. 마우스를 떼면 다시 접혀요. 음악을 틀면 살아 움직입니다. 처음 설치하면 짧은 안내가 저절로 열려요.</p><p class="ja">開きます。マウスを離すとまた閉じます。音楽を再生すると動き出します。初回インストール時は、短いスタートガイドが自動で開きます。</p><p class="zh">它会打开；移开鼠标又会自动收起。播放点音乐，看它变得生动起来。刚安装时，它会自己展开，带你看一遍简短的新手引导。</p><p class="es">Se abre. Aparta el cursor y se repliega. Pon música y mira cómo cobra vida. En una instalación nueva, una guía breve la abre por ti.</p><p class="de">Sie öffnet sich. Geh weg, und sie zieht sich wieder ein. Spiel etwas Musik und sieh zu, wie sie lebendig wird. Bei einer frischen Installation öffnet sie eine kurze Tour von selbst.</p><p class="fr">Elle s’ouvre. Éloignez-vous et elle se replie. Lancez de la musique et regardez-la s’animer. Sur une installation neuve, une courte présentation l’ouvre pour vous.</p></div>
       <div class="step"><div class="n">3</div><h3><span class="en">Make it yours</span><span class="ko">내 맞게 고르기</span><span class="ja">自分好みに設定</span><span class="zh">打造专属体验</span><span class="es">Hazlo tuyo</span><span class="de">Mach es zu deinem</span><span class="fr">Configurez-la à votre façon</span></h3><p class="en">Right-click the notch and open Settings to choose tabs, pop-ups and size.</p><p class="ko">노치를 우클릭해 설정을 열고 탭, 알림, 크기를 고르세요.</p><p class="ja">ノッチを右クリックして設定を開き、タブ、通知、サイズを選んでください。</p><p class="zh">右键点击刘海打开设置，选择标签、提示和尺寸。</p><p class="es">Haz clic derecho en el notch y abre Ajustes para elegir pestañas, avisos y tamaño.</p><p class="de">Klicke mit der rechten Maustaste auf die Notch und öffne die Einstellungen, um Tabs, Hinweise und Größe zu wählen.</p><p class="fr">Clic droit sur l’encoche puis ouvrez Réglages pour choisir les onglets, les notifications et la taille.</p></div>
     </div>
     <div class="install">
       <div class="tabs" role="tablist">
-        <button role="tab" aria-selected="true" data-tab="brew">Homebrew</button>
+        <button role="tab" aria-selected="true" data-tab="dmg">DMG</button>
+        <button role="tab" aria-selected="false" data-tab="brew">Homebrew</button>
         <button role="tab" aria-selected="false" data-tab="src"><span class="en">Source</span><span class="ko">소스</span><span class="ja">ソース</span><span class="zh">来源</span><span class="es">Código fuente</span><span class="de">Quelle</span><span class="fr">Source</span></button>
       </div>
-      <div class="panel active" data-panel="brew">
+      <div class="panel active" data-panel="dmg">
+        <a class="btn primary" href="https://github.com/namekun/Nunsseop/releases/latest/download/Nunsseop.dmg"><span class="en">Download Nunsseop.dmg</span><span class="ko">Nunsseop.dmg 다운로드</span><span class="ja">Nunsseop.dmg をダウンロード</span><span class="zh">下载 Nunsseop.dmg</span><span class="es">Descargar Nunsseop.dmg</span><span class="de">Nunsseop.dmg laden</span><span class="fr">Télécharger Nunsseop.dmg</span></a>
+        <p class="note en">Open it and drag Nunsseop to Applications. The app is signed and notarized by Apple, so it opens right away.</p>
+        <p class="note ko">파일을 열고 Nunsseop을 응용 프로그램으로 끌어다 놓으세요. Apple의 서명과 공증을 받은 앱이라 바로 실행됩니다.</p>
+        <p class="note ja">ファイルを開いて Nunsseop をアプリケーションにドラッグしてください。Apple の署名と公証を受けたアプリなので、すぐに起動できます。</p>
+        <p class="note zh">打开文件，把 Nunsseop 拖到“应用程序”中。应用已经过 Apple 签名和公证，可以直接打开。</p>
+        <p class="note es">Ábrelo y arrastra Nunsseop a Aplicaciones. La app está firmada y notarizada por Apple, así que se abre al instante.</p>
+        <p class="note de">Öffne die Datei und zieh Nunsseop in „Programme“. Die App ist von Apple signiert und notarisiert, sodass sie sofort startet.</p>
+        <p class="note fr">Ouvrez-le et glissez Nunsseop dans Applications. L’app est signée et notarisée par Apple, elle s’ouvre donc immédiatement.</p>
+        <p class="note en">When an update is out, Settings › General › Updates downloads the new version.</p>
+        <p class="note ko">새 버전이 나오면 설정 › 일반 › 업데이트에서 새 버전을 받을 수 있어요.</p>
+        <p class="note ja">新しいバージョンが出ると、設定 › 一般 › アップデートからダウンロードできます。</p>
+        <p class="note zh">有新版本时，可以在“设置 › 通用 › 更新”中下载。</p>
+        <p class="note es">Cuando hay una actualización, Ajustes › General › Actualizaciones descarga la nueva versión.</p>
+        <p class="note de">Sobald ein Update verfügbar ist, lädt Einstellungen › Allgemein › Updates die neue Version.</p>
+        <p class="note fr">Quand une mise à jour est disponible, Réglages › Général › Mises à jour télécharge la nouvelle version.</p>
+      </div>
+      <div class="panel" data-panel="brew">
         <div class="code"><button class="copy" type="button" data-copy="brew install --cask namekun/tap/nunsseop"><span class="en">Copy</span><span class="ko">복사</span><span class="ja">コピー</span><span class="zh">复制</span><span class="es">Copiar</span><span class="de">Kopieren</span><span class="fr">Copier</span></button><pre>brew install --cask namekun/tap/nunsseop</pre></div>
         <p class="note en">Needs <a href="https://brew.sh">Homebrew</a>. The app is signed and notarized by Apple, so it opens right away.</p>
         <p class="note ko"><a href="https://brew.sh">Homebrew</a>가 필요합니다. Apple의 서명과 공증을 받은 앱이라 바로 실행됩니다.</p>
@@ -806,13 +826,13 @@ open build/Nunsseop.app</pre></div>
         <div class="a de">Ja. Auf einem Bildschirm ohne Notch, etwa einem externen Monitor bei geschlossenem Deckel, ist die eingeklappte Notch eine kleine Pille mit dem Augenbrauen-Logo in der Menüleiste, die sich genauso öffnet. Unbenutzt blendet sie aus (abschaltbar, Dauer einstellbar), und du kannst wählen, auf welchem Bildschirm sie erscheint.</div>
         <div class="a fr">Oui. Sur un écran sans encoche, comme un moniteur externe capot fermé, l’encoche repliée devient une petite pastille avec le logo sourcil dans la barre des menus, qui s’ouvre de la même façon. Elle s’efface quand vous ne l’utilisez pas (désactivable, délai réglable), et vous pouvez choisir sur quel écran elle apparaît.</div></details>
       <details id="faq-open"><summary><span class="en">macOS says the app can't be opened.</span><span class="ko">"앱을 열 수 없습니다"라고 나와요.</span><span class="ja">macOS で「アプリを開けません」と表示されます。</span><span class="zh">macOS 提示“无法打开应用”。</span><span class="es">macOS dice que la app no se puede abrir.</span><span class="de">macOS sagt, die App kann nicht geöffnet werden.</span><span class="fr">macOS dit que l’app ne peut pas être ouverte.</span></summary>
-        <div class="a en">Since 0.37.0 the app is signed and notarized by Apple and opens like any other. Older versions weren't: update or install it with Homebrew.</div>
-        <div class="a ko">0.37.0부터는 Apple의 서명과 공증을 받아 다른 앱처럼 열립니다. 그보다 오래된 버전은 공증 전이라 그렇습니다. Homebrew로 업데이트하거나 설치하세요.</div>
-        <div class="a ja">0.37.0 からは Apple の署名と公証を受けていて、ほかのアプリと同じように開けます。それより古いバージョンは公証前のものです。Homebrew でアップデートするか、インストールし直してください。</div>
-        <div class="a zh">从 0.37.0 起，应用经过 Apple 签名和公证，可以像其他应用一样打开。更早的版本还没有公证：请用 Homebrew 更新或重新安装。</div>
-        <div class="a es">Desde la 0.37.0 la app está firmada y notarizada por Apple y se abre como cualquier otra. Las versiones anteriores no lo estaban: actualízala o instálala con Homebrew.</div>
-        <div class="a de">Seit 0.37.0 ist die App von Apple signiert und notarisiert und öffnet sich wie jede andere. Ältere Versionen waren es nicht: Aktualisiere oder installiere sie mit Homebrew.</div>
-        <div class="a fr">Depuis la 0.37.0, l’app est signée et notarisée par Apple et s’ouvre comme n’importe quelle autre. Les versions plus anciennes ne l’étaient pas&nbsp;: mettez-la à jour ou installez-la avec Homebrew.</div></details>
+        <div class="a en">Since 0.37.0 the app is signed and notarized by Apple and opens like any other. Older versions weren't: download the latest DMG, or update with Homebrew.</div>
+        <div class="a ko">0.37.0부터는 Apple의 서명과 공증을 받아 다른 앱처럼 열립니다. 그보다 오래된 버전은 공증 전이라 그렇습니다. 최신 DMG를 다시 받거나 Homebrew로 업데이트하세요.</div>
+        <div class="a ja">0.37.0 からは Apple の署名と公証を受けていて、ほかのアプリと同じように開けます。それより古いバージョンは公証前のものです。最新の DMG をダウンロードし直すか、Homebrew でアップデートしてください。</div>
+        <div class="a zh">从 0.37.0 起，应用经过 Apple 签名和公证，可以像其他应用一样打开。更早的版本还没有公证：请重新下载最新的 DMG，或用 Homebrew 更新。</div>
+        <div class="a es">Desde la 0.37.0 la app está firmada y notarizada por Apple y se abre como cualquier otra. Las versiones anteriores no lo estaban: descarga el DMG más reciente o actualiza con Homebrew.</div>
+        <div class="a de">Seit 0.37.0 ist die App von Apple signiert und notarisiert und öffnet sich wie jede andere. Ältere Versionen waren es nicht: Lade das neueste DMG oder aktualisiere mit Homebrew.</div>
+        <div class="a fr">Depuis la 0.37.0, l’app est signée et notarisée par Apple et s’ouvre comme n’importe quelle autre. Les versions plus anciennes ne l’étaient pas&nbsp;: téléchargez le dernier DMG ou mettez à jour avec Homebrew.</div></details>
       <details><summary><span class="en">Nothing shows up when I play music.</span><span class="ko">음악을 틀어도 아무것도 안 나와요.</span><span class="ja">音楽を再生しても何も表示されません。</span><span class="zh">播放音乐时什么都没显示。</span><span class="es">No aparece nada cuando reproduzco música.</span><span class="de">Beim Abspielen von Musik passiert nichts.</span><span class="fr">Rien ne s’affiche quand je lance de la musique.</span></summary>
         <div class="a en">Nunsseop reads whatever macOS lists as Now Playing, so the player has to report to Control Center. Most apps and browsers do. If a future macOS update blocks this, Nunsseop asks for Automation access and falls back to AppleScript for Music, Spotify and browsers.</div>
         <div class="a ko">Nunsseop은 macOS가 '지금 재생 중'으로 아는 것을 읽습니다. 그래서 제어 센터에 재생 정보가 뜨는 앱이어야 하는데, 대부분의 앱과 브라우저가 그렇습니다. 이후 macOS 업데이트로 막히면 자동화 권한을 받아 Music, Spotify, 브라우저를 AppleScript로 읽습니다.</div>

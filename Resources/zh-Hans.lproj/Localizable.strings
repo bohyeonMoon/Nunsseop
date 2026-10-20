@@ -369,8 +369,8 @@
 "Copy Update Command" = "拷贝更新命令";
 "Copied" = "已拷贝";
 "The command goes to the clipboard. Paste it in Terminal and press Return." = "命令会拷贝到剪贴板。粘贴到“终端”中并按下 Return 键。";
-"Get Homebrew" = "获取 Homebrew";
-"Updates come through Homebrew. Install it, then come back here to copy the update command." = "更新通过 Homebrew 进行。请先安装 Homebrew，再回到这里拷贝更新命令。";
+"Download Update" = "下载更新";
+"Open the downloaded file and drag Nunsseop to Applications, replacing this one." = "打开下载的文件，把 Nunsseop 拖到“应用程序”中替换当前版本。";
 "Agents" = "代理";
 "Needs input" = "需要输入";
 "Your turn" = "轮到你了";

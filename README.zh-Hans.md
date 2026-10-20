@@ -26,11 +26,15 @@
 
 ## 30 秒安装
 
+**[下载 Nunsseop.dmg](https://github.com/namekun/Nunsseop/releases/latest/download/Nunsseop.dmg)**，打开后把 Nunsseop 拖到“应用程序”中。应用已经过 Apple 签名和公证，可以直接打开。有新版本时，可以在设置 › 通用 › 更新中下载。
+
+也可以用 [Homebrew](https://brew.sh) 安装：
+
 ```sh
 brew install --cask namekun/tap/nunsseop
 ```
 
-需要 [Homebrew](https://brew.sh)。应用已经过 Apple 签名和公证，可以直接打开。要更新，请运行 `brew update && brew upgrade --cask nunsseop`；有新版本时，设置 › 通用 › 更新中的“拷贝更新命令”会把这条命令拷贝到剪贴板（如果应用是用旧的 dmg 安装的，拷贝的则是把它迁移到 Homebrew 的命令）。
+要更新，请运行 `brew update && brew upgrade --cask nunsseop`；有新版本时，设置 › 通用 › 更新中的“拷贝更新命令”会把这条命令拷贝到剪贴板。
 
 需要 macOS 14 Sonoma 或更高版本。支持搭载 Apple 芯片的 Mac（不支持 Intel），也支持没有刘海的屏幕。
 
@@ -112,7 +116,7 @@ brew install --cask namekun/tap/nunsseop
 <details>
 <summary><b>macOS 提示无法打开 Nunsseop。</b></summary>
 
-从 0.37.0 起，应用经过 Apple 签名和公证，可以像其他应用一样打开。更早的版本还没有公证：请用 Homebrew 更新（`brew update && brew upgrade --cask nunsseop`），或用 `brew install --cask namekun/tap/nunsseop` 安装。
+从 0.37.0 起，应用经过 Apple 签名和公证，可以像其他应用一样打开。更早的版本还没有公证：请重新[下载最新的 DMG](https://github.com/namekun/Nunsseop/releases/latest/download/Nunsseop.dmg)，或用 Homebrew 更新（`brew update && brew upgrade --cask nunsseop`）。
 </details>
 
 <details>

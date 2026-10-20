@@ -26,11 +26,15 @@
 
 ## 30초 만에 설치
 
+**[Nunsseop.dmg 다운로드](https://github.com/namekun/Nunsseop/releases/latest/download/Nunsseop.dmg)** 후 파일을 열고 Nunsseop을 응용 프로그램으로 끌어다 놓으세요. Apple의 서명과 공증을 받은 앱이라 바로 열립니다. 새 버전이 나오면 설정 → 일반 → 업데이트에서 받을 수 있어요.
+
+[Homebrew](https://brew.sh)로 설치할 수도 있습니다:
+
 ```sh
 brew install --cask namekun/tap/nunsseop
 ```
 
-[Homebrew](https://brew.sh)가 필요합니다. 앱은 Apple의 서명과 공증을 받았기 때문에 바로 열립니다. 업데이트는 `brew update && brew upgrade --cask nunsseop`으로 하세요. 새 버전이 나오면 설정 → 일반 → 업데이트에서 이 명령을 클립보드에 복사해 줍니다(옛 dmg로 설치한 앱이라면 Homebrew로 옮기는 명령을 복사합니다).
+업데이트는 `brew update && brew upgrade --cask nunsseop`으로 하세요. 새 버전이 나오면 설정 → 일반 → 업데이트에서 이 명령을 클립보드에 복사해 줍니다.
 
 macOS 14 Sonoma 이상이면 됩니다. Apple 실리콘 Mac에서 동작하며(Intel 제외), 노치가 없는 화면에서도 동작합니다.
 
@@ -112,7 +116,7 @@ Dock 아이콘은 없습니다. Nunsseop은 노치에 삽니다.
 <details>
 <summary><b>"Nunsseop을 열 수 없습니다"라고 나와요.</b></summary>
 
-0.37.0부터는 Apple의 서명과 공증을 받아 다른 앱처럼 열립니다. 그보다 오래된 버전은 공증 전이라 그렇습니다. Homebrew로 업데이트(`brew update && brew upgrade --cask nunsseop`)하거나 `brew install --cask namekun/tap/nunsseop`으로 설치하세요.
+0.37.0부터는 Apple의 서명과 공증을 받아 다른 앱처럼 열립니다. 그보다 오래된 버전은 공증 전이라 그렇습니다. [최신 DMG](https://github.com/namekun/Nunsseop/releases/latest/download/Nunsseop.dmg)를 다시 받거나 Homebrew로 업데이트(`brew update && brew upgrade --cask nunsseop`)하세요.
 </details>
 
 <details>
