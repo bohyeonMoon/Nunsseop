@@ -21,11 +21,12 @@ struct NotchGeometry: Equatable {
 
     /// The display named in settings if it is connected; otherwise the one with the pointer, then the built-in display
     /// with a camera housing, then the main screen.
-    static func pickScreen(preferredName: String = "", pointer: NSPoint = NSEvent.mouseLocation) -> NSScreen? {
+    /// With no pointer, no screen is picked for holding it.
+    static func pickScreen(preferredName: String = "", pointer: NSPoint? = NSEvent.mouseLocation) -> NSScreen? {
         let screens = NSScreen.screens
         let candidates = screens.map { screen in
             ScreenCandidate(name: screen.localizedName, hasNotch: screen.safeAreaInsets.top > 0, isMain: screen == NSScreen.main,
-                            hasPointer: holdsPointer(screen.frame, pointer),
+                            hasPointer: pointer.map { holdsPointer(screen.frame, $0) } ?? false,
                             isBuiltin: (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID)
                                 .map { CGDisplayIsBuiltin($0) != 0 } ?? false)
         }

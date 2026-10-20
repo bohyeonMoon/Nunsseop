@@ -78,7 +78,11 @@
 "System default" = "Systemstandard";
 "Display" = "Bildschirm";
 "Show on" = "Anzeigen auf";
-"Automatic (follows the pointer)" = "Automatisch (folgt dem Zeiger)";
+"Automatic" = "Automatisch";
+"Move to the screen the pointer is on" = "Zum Bildschirm mit dem Zeiger wechseln";
+"The closed notch goes to whichever screen you move the pointer to." = "Die eingeklappte Notch wechselt auf den Bildschirm, auf den du den Zeiger bewegst.";
+"The notch stays on the screen that has one, or else on the main screen." = "Sie bleibt auf dem Bildschirm mit Notch, sonst auf dem Hauptbildschirm.";
+"The notch stays on the screen chosen above." = "Sie bleibt auf dem oben gewählten Bildschirm.";
 "Brightness keys adjust the display under the pointer, including external displays that support DDC. Keyboard backlight keys work on keyboards that have them." = "Helligkeitstasten regeln den Bildschirm unter dem Zeiger, auch externe Bildschirme mit DDC. Tasten für die Tastaturbeleuchtung funktionieren auf Tastaturen, die sie haben.";
 "Updates" = "Updates";
 "Check for updates automatically" = "Automatisch nach Updates suchen";
@@ -600,6 +604,12 @@
 "Show diff" = "Diff zeigen";
 "Change %lld of %lld this turn" = "Änderung %1$lld von %2$lld in diesem Zug";
 "← → the change before or after · Esc back to the list" = "← → vorige oder nächste Änderung · Esc zurück zur Liste";
+"A little shy now" = "Jetzt etwas schüchtern";
+"Nunsseop %@ steps aside for Mission Control, and can stay on one display." = "Nunsseop %@ macht Mission Control Platz und kann auf einem Bildschirm bleiben.";
+"Hides in Mission Control" = "Versteckt in Mission Control";
+"Out of the way while your windows spread out" = "Weg, solange sich deine Fenster ausbreiten";
+"Stays on one display" = "Bleibt auf einem Bildschirm";
+"Turn off following in Settings › Display" = "Folgen in Einstellungen › Bildschirm ausschalten";
 "Now with feelings" = "Jetzt mit Gefühl";
 "Nunsseop %@ wears its mood on its brow. Also new: a Monday recap, more shortcuts and six more agents." = "In Nunsseop %@ trägt die Braue ihre Laune offen. Neu sind auch ein Rückblick am Montag, mehr Kurzbefehle und sechs weitere Agenten.";
 "A brow with moods" = "Eine Braue mit Laune";

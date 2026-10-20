@@ -78,7 +78,11 @@
 "System default" = "Predeterminada del sistema";
 "Display" = "Pantalla";
 "Show on" = "Mostrar en";
-"Automatic (follows the pointer)" = "Automático (sigue al puntero)";
+"Automatic" = "Automático";
+"Move to the screen the pointer is on" = "Moverse a la pantalla del puntero";
+"The closed notch goes to whichever screen you move the pointer to." = "El notch plegado va a la pantalla a la que lleves el puntero.";
+"The notch stays on the screen that has one, or else on the main screen." = "Se queda en la pantalla con notch o, si no hay, en la pantalla principal.";
+"The notch stays on the screen chosen above." = "Se queda en la pantalla elegida arriba.";
 "Brightness keys adjust the display under the pointer, including external displays that support DDC. Keyboard backlight keys work on keyboards that have them." = "Las teclas de brillo ajustan la pantalla bajo el puntero, incluidas las pantallas externas compatibles con DDC. Las teclas de retroiluminación funcionan en teclados que las tienen.";
 "Updates" = "Actualizaciones";
 "Check for updates automatically" = "Buscar actualizaciones automáticamente";
@@ -600,6 +604,12 @@
 "Show diff" = "Ver diff";
 "Change %lld of %lld this turn" = "Cambio %1$lld de %2$lld en este turno";
 "← → the change before or after · Esc back to the list" = "← → cambio anterior o siguiente · Esc vuelve a la lista";
+"A little shy now" = "Un poco tímida";
+"Nunsseop %@ steps aside for Mission Control, and can stay on one display." = "Nunsseop %@ se aparta en Mission Control y puede quedarse en una sola pantalla.";
+"Hides in Mission Control" = "Se esconde en Mission Control";
+"Out of the way while your windows spread out" = "Se aparta mientras se abren tus ventanas";
+"Stays on one display" = "Se queda en una pantalla";
+"Turn off following in Settings › Display" = "Desactiva el seguimiento en Ajustes › Pantalla";
 "Now with feelings" = "Ahora con sentimientos";
 "Nunsseop %@ wears its mood on its brow. Also new: a Monday recap, more shortcuts and six more agents." = "Nunsseop %@ lleva el ánimo en la ceja. También llegan un resumen los lunes, más atajos y seis agentes más.";
 "A brow with moods" = "Una ceja con ánimo";

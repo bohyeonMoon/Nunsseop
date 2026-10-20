@@ -40,6 +40,11 @@ final class AppSettings: ObservableObject {
     @Published var remindersEnabled: Bool = AppSettings.load("remindersEnabled", default: true) { didSet { save(remindersEnabled, "remindersEnabled") } }
     /// NSScreen.localizedName of the display to use; empty means automatic.
     @Published var displayName: String = AppSettings.load("displayName", default: "") { didSet { save(displayName, "displayName") } }
+    /// With the display set to automatic: whether the closed notch moves to the display the pointer goes to. Off, it stays on
+    /// the display with a camera housing, or else the main one.
+    @Published var followPointerAcrossDisplays: Bool = AppSettings.load("followPointerAcrossDisplays", default: true) {
+        didSet { save(followPointerAcrossDisplays, "followPointerAcrossDisplays") }
+    }
     /// Whether the notch shows on external displays while the MacBook lid is closed.
     @Published var showInClamshell: Bool = AppSettings.load("showInClamshell", default: true) { didSet { save(showInClamshell, "showInClamshell") } }
     /// Fades the eyebrow out on displays without a notch after it sat unused; the pointer at the top edge brings it back.

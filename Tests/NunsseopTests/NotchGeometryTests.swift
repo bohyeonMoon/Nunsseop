@@ -191,3 +191,43 @@ struct FollowAfterCloseTests {
         #expect(NotchWindowController.hasSettled(closedAt: .distantPast, now: closed))
     }
 }
+
+struct FollowAcrossDisplaysTests {
+    private let current = NSRect(x: 0, y: 0, width: 1512, height: 982)
+    private let pointer = NSPoint(x: 3000, y: 500)
+
+    @Test func onlyAnAutomaticDisplayWithFollowingOnFollowsThePointer() {
+        #expect(NotchWindowController.followsPointer(displayName: "", enabled: true))
+        #expect(!NotchWindowController.followsPointer(displayName: "", enabled: false))
+        #expect(!NotchWindowController.followsPointer(displayName: "DELL U2720Q", enabled: true))
+    }
+
+    @Test func aClosedNotchThatDoesNotFollowIsPickedWithoutThePointer() {
+        #expect(NotchWindowController.screenPoint(following: true, idle: true, pointer: pointer, current: current) == pointer)
+        #expect(NotchWindowController.screenPoint(following: false, idle: true, pointer: pointer, current: current) == nil)
+    }
+
+    @Test func anOpenNotchStaysOnItsScreenEitherWay() {
+        let middle = NSPoint(x: 756, y: 491)
+        #expect(NotchWindowController.screenPoint(following: true, idle: false, pointer: pointer, current: current) == middle)
+        #expect(NotchWindowController.screenPoint(following: false, idle: false, pointer: pointer, current: current) == middle)
+    }
+
+    @Test func withoutThePointerTheNotchedThenTheMainScreenIsPicked() {
+        // pickScreen with no pointer gives every candidate hasPointer false.
+        let builtin = NotchGeometry.ScreenCandidate(name: "Built-in Retina Display", hasNotch: true, isMain: false, isBuiltin: true)
+        let external = NotchGeometry.ScreenCandidate(name: "Q27G2SG4B+", hasNotch: false, isMain: true, isBuiltin: false)
+        let second = NotchGeometry.ScreenCandidate(name: "DELL U2720Q", hasNotch: false, isMain: false, isBuiltin: false)
+        #expect(NotchGeometry.pick([second, external, builtin], preferredName: "", lidClosed: false) == 2)
+        #expect(NotchGeometry.pick([second, external, builtin], preferredName: "", lidClosed: true) == 1)
+    }
+}
+
+struct MissionControlTests {
+    @Test func theNotchIsHiddenByMissionControl() {
+        #expect(NotchPanel.behavior.contains(.transient))
+        #expect(!NotchPanel.behavior.contains(.stationary))
+        #expect(NotchPanel.behavior.contains(.canJoinAllSpaces))
+        #expect(NotchPanel.behavior.contains(.fullScreenAuxiliary))
+    }
+}

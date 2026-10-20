@@ -99,7 +99,11 @@
 /* Display */
 "Display" = "화면";
 "Show on" = "표시할 화면";
-"Automatic (follows the pointer)" = "자동 (포인터를 따라감)";
+"Automatic" = "자동";
+"Move to the screen the pointer is on" = "포인터가 있는 화면으로 옮기기";
+"The closed notch goes to whichever screen you move the pointer to." = "닫힌 노치가 포인터를 옮긴 화면으로 따라갑니다.";
+"The notch stays on the screen that has one, or else on the main screen." = "노치가 있는 화면에, 없으면 주 화면에 머뭅니다.";
+"The notch stays on the screen chosen above." = "위에서 고른 화면에 머뭅니다.";
 
 /* Backlights */
 "Brightness keys adjust the display under the pointer, including external displays that support DDC. Keyboard backlight keys work on keyboards that have them." = "밝기 키는 마우스가 있는 화면을 조절합니다. DDC를 지원하는 외부 모니터도 포함됩니다. 키보드 백라이트 키는 해당 키가 있는 키보드에서 동작합니다.";
@@ -625,6 +629,12 @@
 "Show diff" = "diff 보기";
 "Change %lld of %lld this turn" = "이번 턴 수정 %1$lld/%2$lld";
 "← → the change before or after · Esc back to the list" = "← → 이전·다음 수정 · Esc 목록으로";
+"A little shy now" = "눈썹이 좀 수줍어졌어요";
+"Nunsseop %@ steps aside for Mission Control, and can stay on one display." = "Nunsseop %@부터 Mission Control이 열리면 눈썹이 비켜 주고, 한 화면에만 머물 수도 있어요.";
+"Hides in Mission Control" = "Mission Control에선 숨기";
+"Out of the way while your windows spread out" = "창들이 펼쳐지는 동안 잠깐 비켜요";
+"Stays on one display" = "한 화면에 머물기";
+"Turn off following in Settings › Display" = "설정 › 화면에서 따라가기를 끄세요";
 "Now with feelings" = "눈썹에 표정이 생겼어요";
 "Nunsseop %@ wears its mood on its brow. Also new: a Monday recap, more shortcuts and six more agents." = "Nunsseop %@부터 눈썹이 기분을 숨기지 않아요. 월요일 요약, 단축키, 새 에이전트 여섯 개도 함께 왔어요.";
 "A brow with moods" = "눈썹 표정";

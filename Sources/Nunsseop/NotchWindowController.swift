@@ -9,7 +9,7 @@ final class NotchPanel: NSPanel {
                    backing: .buffered, defer: false)
         isFloatingPanel = true
         level = .statusBar
-        collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
+        collectionBehavior = NotchPanel.behavior
         backgroundColor = .clear
         isOpaque = false
         hasShadow = false
@@ -20,6 +20,9 @@ final class NotchPanel: NSPanel {
 
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+
+    /// Transient: Mission Control hides it, where a stationary panel would stay on top of the windows it spreads out.
+    nonisolated static let behavior: NSWindow.CollectionBehavior = [.canJoinAllSpaces, .transient, .fullScreenAuxiliary, .ignoresCycle]
 }
 
 /// The panel never becomes active, so the first click must reach SwiftUI gestures directly.
@@ -212,7 +215,10 @@ final class NotchWindowController {
     }
 
     init() {
-        let geometry = NotchGeometry.pickScreen(preferredName: AppSettings.shared.displayName).map { NotchGeometry(screen: $0) }
+        let settings = AppSettings.shared
+        let geometry = NotchGeometry.pickScreen(preferredName: settings.displayName,
+                                                pointer: settings.followPointerAcrossDisplays ? NSEvent.mouseLocation : nil)
+            .map { NotchGeometry(screen: $0) }
             ?? NotchGeometry()
         // Before the view model exists: its notification server writes the token this looks for.
         let freshInstall = OnboardingTour.isFreshInstall()
@@ -623,8 +629,9 @@ final class NotchWindowController {
             }
         model.resetBrowHide()
         displayObserver = model.settings.$displayName.map { _ in () }
-            .merge(with: model.settings.$showInClamshell.map { _ in () })
-            .dropFirst(2)
+            .merge(with: model.settings.$showInClamshell.map { _ in () },
+                   model.settings.$followPointerAcrossDisplays.map { _ in () })
+            .dropFirst(3)
             .sink { [weak self] _ in
                 DispatchQueue.main.async { self?.relayout() }
             }
@@ -648,10 +655,10 @@ final class NotchWindowController {
         }
     }
 
-    /// With no display chosen in Settings, the closed notch moves to the screen the pointer goes to. It stays put while it is
-    /// open or shows a pop-up.
+    /// With no display chosen in Settings and following turned on, the closed notch moves to the screen the pointer goes to.
+    /// It stays put while it is open or shows a pop-up.
     private func followPointer(to point: NSPoint) {
-        guard model.settings.displayName.isEmpty, isIdle, Self.hasSettled(closedAt: closedAt, now: .now),
+        guard followsPointer, isIdle, Self.hasSettled(closedAt: closedAt, now: .now),
               NotchGeometry.pointerLeft(model.geometry.screenFrame, for: point, among: NSScreen.screens.map(\.frame)) else { return }
         relayout()
     }
@@ -660,7 +667,7 @@ final class NotchWindowController {
     /// notch is moved as if it were idle.
     private func showPopUpUnderPointer() {
         let point = NSEvent.mouseLocation
-        guard model.settings.displayName.isEmpty, !model.isExpanded, Self.hasSettled(closedAt: closedAt, now: .now),
+        guard followsPointer, !model.isExpanded, Self.hasSettled(closedAt: closedAt, now: .now),
               NotchGeometry.pointerLeft(model.geometry.screenFrame, for: point, among: NSScreen.screens.map(\.frame)) else { return }
         relayout(followingPointer: true)
     }
@@ -670,13 +677,26 @@ final class NotchWindowController {
 
     nonisolated static func hasSettled(closedAt: Date, now: Date) -> Bool { now.timeIntervalSince(closedAt) >= closeSettle }
 
+    private var followsPointer: Bool {
+        Self.followsPointer(displayName: model.settings.displayName, enabled: model.settings.followPointerAcrossDisplays)
+    }
+
+    nonisolated static func followsPointer(displayName: String, enabled: Bool) -> Bool { displayName.isEmpty && enabled }
+
+    /// The point a screen is picked by: the pointer's while the notch may follow it; the notch's own screen while it is open
+    /// or shows a pop-up; none when it stays on its display, which is then the one with a camera housing or the main one.
+    nonisolated static func screenPoint(following: Bool, idle: Bool, pointer: NSPoint, current: NSRect) -> NSPoint? {
+        guard idle else { return NSPoint(x: current.midX, y: current.midY) }
+        return following ? pointer : nil
+    }
+
     /// Closed with nothing showing, so the notch may change screens.
     private var isIdle: Bool { !model.isExpanded && model.hud.event == nil && model.approvals.current == nil }
 
     private func relayout(followingPointer: Bool? = nil) {
         // An open notch or a pop-up stays on its screen while that screen is still there.
-        let frame = model.geometry.screenFrame
-        let pointer = (followingPointer ?? isIdle) ? NSEvent.mouseLocation : NSPoint(x: frame.midX, y: frame.midY)
+        let pointer = Self.screenPoint(following: followsPointer, idle: followingPointer ?? isIdle,
+                                       pointer: NSEvent.mouseLocation, current: model.geometry.screenFrame)
         guard let screen = NotchGeometry.pickScreen(preferredName: model.settings.displayName, pointer: pointer) else { return }
         model.geometry = NotchGeometry(screen: screen)
         panel.setFrame(model.geometry.panelFrame, display: true)

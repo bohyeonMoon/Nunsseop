@@ -78,7 +78,11 @@
 "System default" = "系统默认";
 "Display" = "显示器";
 "Show on" = "显示在";
-"Automatic (follows the pointer)" = "自动（跟随指针）";
+"Automatic" = "自动";
+"Move to the screen the pointer is on" = "移到指针所在的屏幕";
+"The closed notch goes to whichever screen you move the pointer to." = "收起的刘海会跟着指针移到对应的屏幕。";
+"The notch stays on the screen that has one, or else on the main screen." = "停留在有刘海的屏幕上，没有则停留在主屏幕上。";
+"The notch stays on the screen chosen above." = "停留在上方选择的屏幕上。";
 "Brightness keys adjust the display under the pointer, including external displays that support DDC. Keyboard backlight keys work on keyboards that have them." = "亮度键调节指针所在的显示器，包括支持 DDC 的外接显示器。键盘背光键适用于带有这些按键的键盘。";
 "Updates" = "更新";
 "Check for updates automatically" = "自动检查更新";
@@ -600,6 +604,12 @@
 "Show diff" = "查看差异";
 "Change %lld of %lld this turn" = "本轮第 %1$lld/%2$lld 处修改";
 "← → the change before or after · Esc back to the list" = "← → 上一处或下一处修改 · Esc 返回列表";
+"A little shy now" = "有点害羞了";
+"Nunsseop %@ steps aside for Mission Control, and can stay on one display." = "Nunsseop %@ 会给调度中心让路，也可以只待在一块屏幕上。";
+"Hides in Mission Control" = "调度中心里自动隐藏";
+"Out of the way while your windows spread out" = "窗口铺开时先躲一躲";
+"Stays on one display" = "只待在一块屏幕上";
+"Turn off following in Settings › Display" = "在设置 › 显示器中关闭跟随";
 "Now with feelings" = "眉毛有表情了";
 "Nunsseop %@ wears its mood on its brow. Also new: a Monday recap, more shortcuts and six more agents." = "Nunsseop %@ 的眉毛不再掩饰心情。另外还有周一回顾、更多快捷键和六个新智能体。";
 "A brow with moods" = "眉毛表情";
