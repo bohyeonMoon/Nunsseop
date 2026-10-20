@@ -1,4 +1,5 @@
 import Foundation
+import SQLite3
 import Testing
 @testable import Nunsseop
 
@@ -355,12 +356,12 @@ struct WeeklyRecapTests {
         recap.codexSessions = 15
         recap.claudeTokens = 12_900_000
         recap.codexTokens = 5_300_000
-        #expect(RecapText.sessions(recap) == "Claude Code 31 · Codex 15")
+        #expect(RecapText.sessions(recap) == "Claude 31 · Codex 15")
         let (big, small) = (RecapText.compact(12_900_000), RecapText.compact(5_300_000))
         #expect(RecapText.tokens(recap) == "Claude \(big) · Codex \(small)")
         recap.codexSessions = 0
         recap.codexTokens = 0
-        #expect(RecapText.sessions(recap) == "Claude Code 31")
+        #expect(RecapText.sessions(recap) == "Claude 31")
         #expect(RecapText.tokens(recap) == "Claude \(big)")
         #expect(RecapText.lines(WeekRecap(week: recap.week, added: 4_210, removed: 1_380)) == "+\(4_210.formatted()) \u{2212}\(1_380.formatted())")
     }
@@ -373,5 +374,185 @@ struct WeeklyRecapTests {
         for (hour, part) in parts {
             #expect(RecapText.dayPart(thursday(hour), calendar: calendar).hasSuffix(" \(part)"), Comment(rawValue: "\(hour)"))
         }
+    }
+}
+
+// MARK: pi, omo, gjc, omp and OpenCode
+
+private extension RecapHome {
+    func piHeader(_ id: String, cwd: String = "/Users/me/work/Shop", title: String? = nil) -> String {
+        var object: [String: Any] = ["type": "session", "version": 3, "id": id, "timestamp": stamp(-30, 9), "cwd": cwd]
+        if let title { object["title"] = title }
+        return json(object)
+    }
+
+    func piLine(at time: String, message: [String: Any] = ["role": "user", "content": [] as [Any]]) -> String {
+        json(["type": "message", "id": UUID().uuidString, "timestamp": time, "message": message])
+    }
+
+    func piCall(_ name: String, id: String, at time: String, arguments: [String: Any]) -> String {
+        piLine(at: time, message: ["role": "assistant", "content": [["type": "toolCall", "id": id, "name": name, "arguments": arguments]]])
+    }
+
+    func piResult(_ name: String, id: String, at time: String, details: [String: Any], isError: Bool = false) -> String {
+        piLine(at: time, message: ["role": "toolResult", "toolCallId": id, "toolName": name, "details": details, "isError": isError, "content": [] as [Any]])
+    }
+
+    func piAnswer(at time: String, provider: String, response: String, output: Int) -> String {
+        piLine(at: time, message: ["role": "assistant", "provider": provider, "model": "m", "responseId": response, "content": [] as [Any],
+                                   "usage": ["input": 0, "output": output, "cacheRead": 5_000, "cacheWrite": 0]])
+    }
+
+    @discardableResult
+    func pi(_ tool: AgentKind, _ id: String, folder: String = "--Users-me-work-Shop--", _ lines: [String]) -> URL {
+        write(lines, to: ".\(tool.rawValue)/agent/sessions/\(folder)/2026-10-13T00-00-00-000Z_\(id).jsonl")
+    }
+
+    func millis(_ time: String) -> Int64 {
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return Int64(iso.date(from: time)!.timeIntervalSince1970 * 1000)
+    }
+
+    /// OpenCode's database, with the `part` table its tools write.
+    func openCode(sessions: [OpenCodeFixture.Session], messages: [(session: String, at: String, data: [String: Any])],
+                  parts: [(session: String, at: String, data: [String: Any])]) throws {
+        try OpenCodeFixture.create(home: url, sessions: sessions)
+        var db: OpaquePointer?
+        defer { sqlite3_close(db) }
+        guard sqlite3_open(OpenCodeDB.url(home: url).path, &db) == SQLITE_OK else { throw POSIXError(.EIO) }
+        var sql = "CREATE TABLE part (id text PRIMARY KEY, message_id text NOT NULL, session_id text NOT NULL, time_created integer NOT NULL, time_updated integer NOT NULL, data text NOT NULL);"
+        for (n, message) in messages.enumerated() {
+            sql += "INSERT INTO message VALUES ('msg\(n)', '\(message.session)', \(millis(message.at)), 0, '\(json(message.data))');"
+        }
+        for (n, part) in parts.enumerated() {
+            sql += "INSERT INTO part VALUES ('prt\(n)', 'msg0', '\(part.session)', \(millis(part.at)), 0, '\(json(part.data))');"
+        }
+        guard sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK else { throw POSIXError(.EIO) }
+    }
+}
+
+struct WeeklyRecapOtherAgentsTests {
+    @Test func piStyleSessionsAreCountedPerToolWithTheirWorkingTime() {
+        let home = RecapHome()
+        home.pi(.omo, "o1", [home.piHeader("o1"), home.piLine(at: home.stamp(1, 9)), home.piLine(at: home.stamp(1, 9, 4))])
+        home.pi(.omo, "o2", [home.piHeader("o2"), home.piLine(at: home.stamp(2, 9))])
+        home.pi(.gjc, "g1", [home.piHeader("g1"), home.piLine(at: home.stamp(3, 9))])
+        // Only the week before: it counts toward the change, not as a session.
+        home.pi(.omp, "p1", [home.piHeader("p1"), home.piLine(at: home.stamp(-2, 9)), home.piLine(at: home.stamp(-2, 9, 2))])
+        // omo's memory runs are kept apart from its sessions and are not conversations.
+        home.write([home.piHeader("mem"), home.piLine(at: home.stamp(1, 12)), home.piLine(at: home.stamp(1, 12, 3))],
+                   to: ".omo/memory/agents/dev/runtime/transcripts/x/transcript.jsonl")
+        let recap = home.read()
+        #expect(recap.otherSessions == [.omo: 2, .gjc: 1])
+        #expect(recap.sessions == 3 && recap.claudeSessions == 0)
+        #expect(recap.working == minutes(4) && recap.workingBefore == minutes(2))
+        #expect(recap.topProject?.name == "Shop")
+        #expect(RecapText.sessions(recap) == "omo 2 · gjc 1")
+    }
+
+    @Test func toolsAreListedMostSessionsFirst() {
+        var recap = WeekRecap(week: DateInterval(start: .distantPast, duration: 1))
+        recap.claudeSessions = 3
+        recap.otherSessions = [.gjc: 1, .omo: 4, .opencode: 1]
+        #expect(RecapText.sessions(recap) == "omo 4 · Claude 3 · gjc 1 · OpenCode 1")
+        // Shorter, for a tile too narrow: the fewest fold into "Others", never just one of them.
+        #expect(RecapText.sessionLines(recap) == ["omo 4 · Claude 3 · gjc 1 · OpenCode 1", "omo 4 · Claude 3 · Others 2", "omo 4 · Others 5"])
+    }
+
+    @Test func piEditsCountTheDiffOfTheirResultAndWritesTheirContent() {
+        let home = RecapHome()
+        home.pi(.omo, "o1", [
+            home.piHeader("o1"),
+            home.piCall("edit", id: "e1", at: home.stamp(1, 9), arguments: ["path": "Sources/A.swift", "edits": [] as [Any]]),
+            home.piResult("edit", id: "e1", at: home.stamp(1, 9, 1), details: ["diff": "@@ -1,3 +1,4 @@\n 1|keep\n-2|old\n+2|new\n+3|more\n 4|end"]),
+            // One call over two files.
+            home.piCall("edit", id: "e2", at: home.stamp(1, 9, 2), arguments: ["input": "§multi"]),
+            home.piResult("edit", id: "e2", at: home.stamp(1, 9, 3), details: ["perFileResults": [["path": "/abs/B.swift", "diff": "+1|b"],
+                                                                                                  ["path": "C.swift", "diff": "-7|c\n-8|d"]]]),
+            home.piCall("write", id: "w1", at: home.stamp(1, 9, 4), arguments: ["path": "D.md", "content": "one\ntwo\n"]),
+            // A patch whose result names no file: the call's patch does.
+            home.piCall("apply_patch", id: "p1", at: home.stamp(1, 9, 5), arguments: ["input": "*** Begin Patch\n*** Update File: E.swift\n+x\n*** End Patch"]),
+            home.piResult("apply_patch", id: "p1", at: home.stamp(1, 9, 6), details: ["diff": "+1|x"]),
+            // A failed edit, a result logged twice, and an edit the week before.
+            home.piResult("edit", id: "e3", at: home.stamp(1, 9, 7), details: ["diff": "+1|nope"], isError: true),
+            home.piResult("edit", id: "e1", at: home.stamp(1, 9, 8), details: ["diff": "+2|again"]),
+            home.piResult("edit", id: "e0", at: home.stamp(-1, 9), details: ["path": "F.swift", "diff": "+1|old week"]),
+        ])
+        let recap = home.read()
+        #expect(recap.added == 2 + 1 + 2 + 1)
+        #expect(recap.removed == 1 + 2)
+        #expect(recap.files == 5)
+    }
+
+    @Test func numberedDiffLinesAreCountedByTheirSign() {
+        #expect(WeekRecap.numberedDiffChanges("@@ -1 +1 @@\n 1|a\n-2|b\n+2|c\n+3|-d\n--- x\n+++ y") == (added: 2, removed: 1))
+        #expect(WeekRecap.numberedDiffChanges("") == (added: 0, removed: 0))
+    }
+
+    @Test func piTokensCountTowardTheSubscriptionTheirProviderBelongsTo() {
+        let home = RecapHome()
+        home.pi(.omo, "o1", [home.piHeader("o1"),
+                             home.piAnswer(at: home.stamp(1, 9), provider: "anthropic", response: "r1", output: 40),
+                             home.piAnswer(at: home.stamp(1, 9, 1), provider: "openai-codex", response: "r2", output: 30),
+                             // Another seller of the same models, and the same response logged again.
+                             home.piAnswer(at: home.stamp(1, 9, 2), provider: "openrouter", response: "r3", output: 1_000),
+                             home.piAnswer(at: home.stamp(1, 9, 3), provider: "anthropic", response: "r1", output: 40)])
+        let recap = home.read()
+        #expect(recap.claudeTokens == 40 && recap.codexTokens == 30)
+    }
+
+    @Test func theWorkersOfAGjcTeamAreOneSessionInTheirRepository() {
+        let home = RecapHome()
+        for worker in 1...2 {
+            let cwd = "/Users/me/work/Shop/.gjc/_session-lead1/state/team/1-x/worktrees/worker-\(worker)"
+            home.pi(.gjc, "w\(worker)", folder: "--worker-\(worker)--", [home.piHeader("w\(worker)", cwd: cwd),
+                                                                           home.piLine(at: home.stamp(1, 9, worker)), home.piLine(at: home.stamp(1, 9, worker + 2))])
+        }
+        let recap = home.read()
+        #expect(recap.otherSessions == [.gjc: 1])
+        #expect(recap.topProject?.name == "Shop")
+        #expect(recap.working == minutes(3))
+    }
+
+    @Test func aPiSessionsTitleNamesTheLongestSession() {
+        let home = RecapHome()
+        home.pi(.omp, "p1", [home.piHeader("p1", title: "Checkout flow"), home.piLine(at: home.stamp(1, 21)), home.piLine(at: home.stamp(1, 21, 5))])
+        #expect(home.read().longest?.title == "Checkout flow")
+    }
+
+    @Test func openCodeSessionsCountWithTheirSubagentsTheirEditsAndTokens() throws {
+        let home = RecapHome()
+        let main = OpenCodeFixture.id(1), child = OpenCodeFixture.id(2), old = OpenCodeFixture.id(3)
+        let updated = home.calendar.date(byAdding: .day, value: 2, to: home.monday)!
+        try home.openCode(
+            sessions: [.init(id: main, directory: "/Users/me/work/Api", title: "Rate limits", updated: updated),
+                       .init(id: child, directory: "/Users/me/work/Api", title: "Child session - x", parent: main, updated: updated),
+                       .init(id: old, directory: "/Users/me/work/Old", updated: home.calendar.date(byAdding: .day, value: -20, to: home.monday)!)],
+            messages: [(main, home.stamp(1, 10), ["role": "user", "time": ["created": 0]]),
+                       (main, home.stamp(1, 10, 2), ["role": "assistant", "providerID": "anthropic", "modelID": "m",
+                                                     "time": ["created": Double(home.millis(home.stamp(1, 10, 2)))],
+                                                     "tokens": ["input": 10, "output": 20, "reasoning": 0, "cache": ["read": 900, "write": 5]]])],
+            parts: [(child, home.stamp(1, 10, 4), ["type": "tool", "tool": "apply_patch",
+                                                    "state": ["status": "completed", "input": ["patchText": "*** Begin Patch\n*** Update File: src/a.ts\n-a\n+b\n+c\n*** End Patch"]]]),
+                    (main, home.stamp(1, 10, 6), ["type": "tool", "tool": "edit",
+                                                   "state": ["status": "completed", "input": ["filePath": "/Users/me/work/Api/b.ts", "oldString": "x", "newString": "y\nz"]]]),
+                    (main, home.stamp(1, 10, 7), ["type": "tool", "tool": "write",
+                                                   "state": ["status": "error", "input": ["filePath": "c.ts", "content": "failed"]]])])
+        let recap = home.read()
+        #expect(recap.otherSessions == [.opencode: 1])
+        #expect(recap.working == minutes(7))
+        #expect(recap.added == 2 + 2 && recap.removed == 1 + 1)
+        #expect(recap.files == 2)
+        #expect(recap.claudeTokens == 35)
+        #expect(recap.longest?.title == "Rate limits")
+        #expect(recap.topProject?.name == "Api")
+    }
+
+    @Test func noOpenCodeDatabaseOrNoPartTableIsNothingToCount() throws {
+        let home = RecapHome()
+        #expect(home.read().isEmpty)
+        try OpenCodeFixture.create(home: home.url, sessions: [])
+        #expect(home.read().isEmpty)
     }
 }

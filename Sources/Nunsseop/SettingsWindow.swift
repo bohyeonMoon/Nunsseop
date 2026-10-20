@@ -550,7 +550,7 @@ private struct AlertsPane: View {
                 Text("At \(LimitAlerts.share(80)) and \(LimitAlerts.share(95)) of the 5-hour or weekly limit, once each, and again when a limit that got that far resets.")
                     .font(.caption).foregroundStyle(.secondary)
                 Toggle("Recap last week's agent work on Mondays", isOn: $settings.weeklyRecap)
-                Text("Added up on this Mac from the session files of Claude Code and Codex, and never sent anywhere. The AI tab can show it any time.")
+                Text("Added up on this Mac from your coding agents' session files, and never sent anywhere. The AI tab can show it any time.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("Files") {

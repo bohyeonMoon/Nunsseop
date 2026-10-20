@@ -604,6 +604,7 @@
 "Show diff" = "Diff zeigen";
 "Change %lld of %lld this turn" = "Änderung %1$lld von %2$lld in diesem Zug";
 "← → the change before or after · Esc back to the list" = "← → vorige oder nächste Änderung · Esc zurück zur Liste";
+"Others" = "Andere";
 "A little shy now" = "Jetzt etwas schüchtern";
 "Nunsseop %@ steps aside for Mission Control, and can stay on one display." = "Nunsseop %@ macht Mission Control Platz und kann auf einem Bildschirm bleiben.";
 "Hides in Mission Control" = "Versteckt in Mission Control";
@@ -666,7 +667,7 @@
 "No Claude Code or Codex sessions last week, so there is nothing to look back on." = "Letzte Woche gab es keine Sitzungen von Claude Code oder Codex, daher gibt es nichts zum Zurückblicken.";
 "Last week" = "Letzte Woche";
 "Recap last week's agent work on Mondays" = "Montags die Agenten-Arbeit der letzten Woche zusammenfassen";
-"Added up on this Mac from the session files of Claude Code and Codex, and never sent anywhere. The AI tab can show it any time." = "Wird auf diesem Mac aus den Sitzungsdateien von Claude Code und Codex berechnet und nirgendwohin gesendet. Der KI-Tab zeigt sie jederzeit.";
+"Added up on this Mac from your coding agents' session files, and never sent anywhere. The AI tab can show it any time." = "Wird auf diesem Mac aus den Sitzungsdateien deiner Coding-Agenten berechnet und nirgendwohin gesendet. Der KI-Tab zeigt sie jederzeit.";
 "Gemini CLI, GitHub Copilot, Antigravity, Cursor, Hermes and Amp also report their sessions to the agents count and the Agents tab once connected." = "Gemini CLI, GitHub Copilot, Antigravity, Cursor, Hermes und Amp melden nach dem Verbinden ebenfalls ihre Sitzungen an die Agentenanzahl und den Tab „Agenten“.";
 "Approvals from GitHub Copilot, Antigravity and Cursor show in the notch too, where you can allow or deny them. While the notch holds one, the tool waits for it; “Answer in terminal” (“Answer in Cursor” for Cursor) hands it back. If Nunsseop isn't running, the tool asks as before." = "Auch Freigaben von GitHub Copilot, Antigravity und Cursor erscheinen im Notch, wo du sie erlauben oder ablehnen kannst. Solange der Notch eine hält, wartet das Tool; „Im Terminal antworten“ („In Cursor antworten“ bei Cursor) gibt sie an das Tool zurück. Läuft Nunsseop nicht, fragt das Tool wie bisher selbst.";
 "Hermes loads a plugin only after you enable it: run `hermes plugins enable nunsseop` in a terminal once." = "Hermes lädt ein Plugin erst, nachdem du es aktiviert hast: Führe einmal `hermes plugins enable nunsseop` in einem Terminal aus.";

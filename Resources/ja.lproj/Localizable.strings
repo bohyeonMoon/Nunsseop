@@ -604,6 +604,7 @@
 "Show diff" = "差分を見る";
 "Change %lld of %lld this turn" = "このターンの変更 %1$lld/%2$lld";
 "← → the change before or after · Esc back to the list" = "← → 前後の変更 · Esc で一覧へ";
+"Others" = "その他";
 "A little shy now" = "ちょっと控えめに";
 "Nunsseop %@ steps aside for Mission Control, and can stay on one display." = "Nunsseop %@ は Mission Control では身を引き、一つの画面にとどまることもできます。";
 "Hides in Mission Control" = "Mission Control では隠れる";
@@ -666,7 +667,7 @@
 "No Claude Code or Codex sessions last week, so there is nothing to look back on." = "先週は Claude Code や Codex のセッションがなく、振り返る内容がありません。";
 "Last week" = "先週";
 "Recap last week's agent work on Mondays" = "月曜日に先週のエージェントの作業をまとめて表示";
-"Added up on this Mac from the session files of Claude Code and Codex, and never sent anywhere. The AI tab can show it any time." = "Claude Code と Codex のセッションファイルからこの Mac 上で集計し、どこにも送信しません。AI タブからいつでも見られます。";
+"Added up on this Mac from your coding agents' session files, and never sent anywhere. The AI tab can show it any time." = "コーディングエージェントのセッションファイルからこの Mac 上で集計し、どこにも送信しません。AI タブからいつでも見られます。";
 "Gemini CLI, GitHub Copilot, Antigravity, Cursor, Hermes and Amp also report their sessions to the agents count and the Agents tab once connected." = "Gemini CLI、GitHub Copilot、Antigravity、Cursor、Hermes、Amp も、接続するとセッションをエージェント数とエージェントタブに知らせます。";
 "Approvals from GitHub Copilot, Antigravity and Cursor show in the notch too, where you can allow or deny them. While the notch holds one, the tool waits for it; “Answer in terminal” (“Answer in Cursor” for Cursor) hands it back. If Nunsseop isn't running, the tool asks as before." = "GitHub Copilot、Antigravity、Cursor の承認リクエストもノッチに表示され、許可または拒否できます。ノッチが承認を保留している間、ツールは待ちます。「ターミナルで答える」(Cursor は「Cursor で答える」)を押すとツールに戻します。Nunsseop が起動していないときは、これまでどおりツールが自分で尋ねます。";
 "Hermes loads a plugin only after you enable it: run `hermes plugins enable nunsseop` in a terminal once." = "Hermes はプラグインを有効にした後でないと読み込みません。ターミナルで `hermes plugins enable nunsseop` を一度実行してください。";

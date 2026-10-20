@@ -33,9 +33,24 @@ enum RecapText {
         counts.filter { $0.count > 0 }.map { "\($0.name) \($0.value)" }.joined(separator: " · ")
     }
 
-    static func sessions(_ recap: WeekRecap) -> String {
-        perTool([(AgentKind.claude.displayName, recap.claudeSessions.formatted(), recap.claudeSessions),
-                 (AgentKind.codex.displayName, recap.codexSessions.formatted(), recap.codexSessions)])
+    static func sessions(_ recap: WeekRecap) -> String { sessionLines(recap).first ?? "" }
+
+    /// The sessions per tool, most first, then shorter and shorter: the tools with fewest folded into "Others", so the counts
+    /// still add up to the total. Claude Code and Codex come first among tools with as many; Claude Code is "Claude", as in the
+    /// tokens, to leave room in the tile.
+    static func sessionLines(_ recap: WeekRecap) -> [String] {
+        let tools = [(AgentKind.claude, recap.claudeSessions), (AgentKind.codex, recap.codexSessions)]
+            + recap.otherSessions.sorted { $0.key.displayName.localizedStandardCompare($1.key.displayName) == .orderedAscending }.map { ($0.key, $0.value) }
+        let counts = tools.enumerated().filter { $0.element.1 > 0 }
+            .sorted { ($1.element.1, $0.offset) < ($0.element.1, $1.offset) }
+            .map { (name: $0.element.0 == .claude ? "Claude" : $0.element.0.displayName, count: $0.element.1) }
+        guard !counts.isEmpty else { return [""] }
+        // Folding one tool into "Others" saves nothing.
+        return (1...counts.count).reversed().filter { $0 == counts.count || $0 < counts.count - 1 }.map { shown in
+            let rest = counts.dropFirst(shown).reduce(0) { $0 + $1.count }
+            return perTool(counts.prefix(shown).map { ($0.name, $0.count.formatted(), $0.count) }
+                           + [(String(localized: "Others"), rest.formatted(), rest)])
+        }
     }
 
     /// "12.9M": up to three digits.
@@ -166,7 +181,7 @@ struct RecapStats: View {
         VStack(spacing: 6) {
             HStack(spacing: 6) {
                 RecapTile(label: "Agent working time", value: RecapText.duration(recap.working), sub: RecapText.change(recap))
-                RecapTile(label: "Sessions", value: recap.sessions.formatted(), sub: RecapText.sessions(recap))
+                RecapTile(label: "Sessions", value: recap.sessions.formatted(), subs: RecapText.sessionLines(recap))
                 RecapTile(label: "Lines changed", value: RecapText.lines(recap), sub: RecapText.files(recap))
                 RecapTile(label: "Tokens", value: RecapText.compact(recap.tokens), sub: RecapText.tokens(recap))
             }
@@ -185,13 +200,35 @@ struct RecapStats: View {
 struct RecapTile: View {
     let label: LocalizedStringKey
     let value: String
-    let sub: String
+    /// The line under the value, and shorter ways of saying it for when it doesn't fit.
+    let subs: [String]
+
+    init(label: LocalizedStringKey, value: String, sub: String) {
+        self.init(label: label, value: value, subs: [sub])
+    }
+
+    init(label: LocalizedStringKey, value: String, subs: [String]) {
+        self.label = label
+        self.value = value
+        self.subs = subs
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label).font(.system(size: 10)).foregroundStyle(.white.opacity(0.55)).lineLimit(1)
             Text(verbatim: value).font(.system(size: 17, weight: .semibold).monospacedDigit()).lineLimit(1).minimumScaleFactor(0.6)
-            Text(verbatim: sub).font(.system(size: 10)).foregroundStyle(.white.opacity(0.5)).lineLimit(1).minimumScaleFactor(0.85)
+            // Each way of saying it is tried at full size and shrunk by up to 15 %, before a shorter one.
+            ViewThatFits(in: .horizontal) {
+                ForEach(Array(subs.enumerated()), id: \.offset) { index, sub in
+                    let text = Text(verbatim: sub).foregroundStyle(.white.opacity(0.5)).lineLimit(1)
+                    if index == subs.count - 1 {
+                        text.font(.system(size: 10)).minimumScaleFactor(0.85)
+                    } else {
+                        text.font(.system(size: 10)).fixedSize(horizontal: true, vertical: false)
+                        text.font(.system(size: 8.5)).fixedSize(horizontal: true, vertical: false)
+                    }
+                }
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(.horizontal, 8).padding(.vertical, 7)

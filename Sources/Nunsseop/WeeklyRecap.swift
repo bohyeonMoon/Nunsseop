@@ -1,6 +1,6 @@
 import Foundation
 
-/// What Claude Code and Codex did in one week, added up from the session logs they keep on this Mac. Nothing is sent anywhere.
+/// What the coding agents did in one week, added up from the session logs they keep on this Mac. Nothing is sent anywhere.
 struct WeekRecap: Equatable, Sendable {
     struct Longest: Equatable, Sendable {
         let duration: TimeInterval
@@ -16,6 +16,9 @@ struct WeekRecap: Equatable, Sendable {
     var workingBefore: TimeInterval = 0
     var claudeSessions = 0
     var codexSessions = 0
+    /// Sessions of pi and the tools that share its logs (omo, gjc, omp), and OpenCode's.
+    var otherSessions: [AgentKind: Int] = [:]
+    /// Tokens by the subscription they count toward, whichever tool used them.
     var claudeTokens = 0
     var codexTokens = 0
     var added = 0
@@ -27,7 +30,7 @@ struct WeekRecap: Equatable, Sendable {
     /// Working time per day, Monday first.
     var days = [TimeInterval](repeating: 0, count: 7)
 
-    var sessions: Int { claudeSessions + codexSessions }
+    var sessions: Int { claudeSessions + codexSessions + otherSessions.values.reduce(0, +) }
     var tokens: Int { claudeTokens + codexTokens }
     var isEmpty: Bool { sessions == 0 }
 
@@ -60,9 +63,10 @@ struct WeekRecap: Equatable, Sendable {
         return DateInterval(start: calendar.date(byAdding: .day, value: -7, to: this) ?? this.addingTimeInterval(-7 * 86_400), end: this)
     }
 
-    /// The week before the one `now` is in, from Claude Code's logs (`~/.claude/projects`) and Codex's (`~/.codex/sessions`) under `home`.
-    /// Work is counted per session: a gap of at most `workGap` between two entries is time the agent worked. Sessions a program started
-    /// with the Agent SDK are left out, as the Agents tab leaves them out.
+    /// The week before the one `now` is in, from the logs under `home` of Claude Code (`~/.claude/projects`), Codex (`~/.codex/sessions`),
+    /// pi, omo, gjc and omp (`~/.<tool>/agent/sessions`) and OpenCode (its database). Work is counted per session: a gap of at most `workGap`
+    /// between two entries is time the agent worked. Sessions a program started with the Agent SDK are left out, as the Agents tab leaves
+    /// them out; so are omo's memory runs, which are kept elsewhere.
     static func read(home: URL, now: Date, calendar: Calendar = .current) -> WeekRecap {
         var reader = Reader(home: home, week: lastWeek(before: now, calendar: calendar), calendar: calendar)
         let claude = AIUsageModel.files(under: home.appendingPathComponent(".claude/projects"), modifiedSince: reader.before) { $0.pathExtension == "jsonl" }
@@ -71,6 +75,13 @@ struct WeekRecap: Equatable, Sendable {
         }
         for (url, _) in claude.sorted(by: { $0.0.path < $1.0.path }) { reader.scan(url, tool: .claude) }
         for (url, _) in codex.sorted(by: { $0.0.path < $1.0.path }) { reader.scan(url, tool: .codex) }
+        for tool in AgentKind.allCases where tool.isPiFamily {
+            let logs = AIUsageModel.files(under: home.appendingPathComponent(".\(tool.rawValue)/agent/sessions"), modifiedSince: reader.before) {
+                $0.pathExtension == "jsonl"
+            }
+            for (url, _) in logs.sorted(by: { $0.0.path < $1.0.path }) { reader.scanPi(url, tool: tool) }
+        }
+        reader.scanOpenCode()
         return reader.recap()
     }
 
@@ -107,6 +118,14 @@ struct WeekRecap: Equatable, Sendable {
         return result
     }
 
+    /// The lines pi's edit tools add and remove, from the diff in their result: `+12|text`, `-12|text`, ` 12|text` and `@@` headers.
+    static func numberedDiffChanges(_ diff: String) -> (added: Int, removed: Int) {
+        diff.split(separator: "\n").reduce(into: (added: 0, removed: 0)) { total, line in
+            guard let sign = line.first, line.dropFirst().first?.isNumber == true else { return }
+            if sign == "+" { total.added += 1 } else if sign == "-" { total.removed += 1 }
+        }
+    }
+
     // MARK: Reading
 
     private struct Session {
@@ -115,6 +134,8 @@ struct WeekRecap: Equatable, Sendable {
         let file: URL
         var times: [Date] = []
         var cwd: String?
+        /// The name the tool gave the session, where it keeps one in the log.
+        var name: String?
         var isProgram = false
         var added = 0
         var removed = 0
@@ -132,7 +153,7 @@ struct WeekRecap: Equatable, Sendable {
         /// Tool calls and responses seen already, which a resumed or forked session's log repeats.
         var calls = Set<String>()
         var responses = Set<String>()
-        var tokens: [AgentKind: Int] = [:]
+        var tokens: [AIUsageModel.Family: Int] = [:]
 
         init(home: URL, week: DateInterval, calendar: Calendar) {
             self.home = home
@@ -167,11 +188,198 @@ struct WeekRecap: Equatable, Sendable {
                 }
             }
             guard inWeek, !program else { return }
-            let records = tool == .claude ? AIUsageModel.claudeCodeRecords(data) : AIUsageModel.codexRecords(data)
+            add(tool == .claude ? AIUsageModel.claudeCodeRecords(data) : AIUsageModel.codexRecords(data))
+        }
+
+        /// Tokens of the week, each response once.
+        private mutating func add(_ records: [AIUsageModel.TokenRecord]) {
             for record in records where record.date >= week.start && record.date < week.end && record.tokens > 0 {
                 if let id = record.id, !responses.insert(id).inserted { continue }
-                tokens[tool, default: 0] += record.tokens
+                tokens[record.family, default: 0] += record.tokens
             }
+        }
+
+        /// Adds what one log or database says about a session to what other files said about it.
+        private mutating func merge(_ found: Session) {
+            let key = "\(found.tool.rawValue)|\(found.id)"
+            guard var session = sessions[key] else { sessions[key] = found; return }
+            session.times += found.times
+            session.cwd = session.cwd ?? found.cwd
+            session.name = session.name ?? found.name
+            session.added += found.added
+            session.removed += found.removed
+            sessions[key] = session
+        }
+
+        private static func resolved(_ path: String, in cwd: String?) -> String {
+            guard let cwd, !path.hasPrefix("/") else { return path }
+            return "\(cwd)/\(path)"
+        }
+
+        /// A pi-style log, `<time>_<id>.jsonl`, whose first line names the session and its folder. The workers of a `gjc team` are
+        /// counted as one session, the team's.
+        mutating func scanPi(_ url: URL, tool: AgentKind) {
+            guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return }
+            let name = url.deletingPathExtension().lastPathComponent
+            var session = Session(tool: tool, id: name.split(separator: "_", maxSplits: 1).last.map(String.init) ?? name, file: url)
+            var inWeek = false
+            // The files an edit names, until its result says what changed in them.
+            var pending: [String: [String]] = [:]
+            for line in data.split(separator: 0x0A) {
+                autoreleasepool {
+                    guard let json = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any] else { return }
+                    switch json["type"] as? String {
+                    case "session":
+                        let cwd = (json["cwd"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+                        if let cwd, let lead = Self.teamLead(cwd) {
+                            session = Session(tool: tool, id: "team-\(lead)", file: url, cwd: Self.teamRepo(cwd))
+                        } else {
+                            session = Session(tool: tool, id: (json["id"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? session.id,
+                                              file: url, cwd: cwd)
+                        }
+                        session.name = (json["title"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+                        return
+                    case "session_info", "title_change", "title":
+                        if let title = (json["name"] ?? json["title"]) as? String, !title.isEmpty { session.name = title }
+                        return
+                    default: break
+                    }
+                    guard let stamp = (json["timestamp"] as? String).flatMap(iso), stamp >= before, stamp < week.end else { return }
+                    inWeek = inWeek || stamp >= week.start
+                    session.times.append(stamp)
+                    guard stamp >= week.start, let message = json["message"] as? [String: Any] else { return }
+                    piEdits(message, pending: &pending, into: &session)
+                }
+            }
+            guard !session.times.isEmpty else { return }
+            merge(session)
+            if inWeek { add(AIUsageModel.piRecords(data, file: url.path)) }
+        }
+
+        /// `/repo/.gjc/_session-<lead>/state/team/…/worktrees/worker-1`: the lead's id.
+        private static func teamLead(_ cwd: String) -> String? {
+            guard PiSessions.isTeamWorker(folder: cwd), let range = cwd.range(of: "/.gjc/_session-") else { return nil }
+            let lead = cwd[range.upperBound...].prefix { $0 != "/" }
+            return lead.isEmpty ? nil : String(lead)
+        }
+
+        private static func teamRepo(_ cwd: String) -> String? {
+            cwd.range(of: "/.gjc/_session-").map { String(cwd[..<$0.lowerBound]) }
+        }
+
+        /// `write` counts its content; `edit` and `apply_patch` the diff in their result, which every way of editing ends in.
+        private mutating func piEdits(_ message: [String: Any], pending: inout [String: [String]], into session: inout Session) {
+            switch message["role"] as? String {
+            case "assistant":
+                for block in message["content"] as? [[String: Any]] ?? [] where block["type"] as? String == "toolCall" {
+                    guard let id = block["id"] as? String, let arguments = block["arguments"] as? [String: Any] else { continue }
+                    switch block["name"] as? String {
+                    case "write":
+                        guard let path = arguments["path"] as? String, let content = arguments["content"] as? String,
+                              calls.insert("pi#\(id)").inserted else { continue }
+                        session.added += WeekRecap.lineChanges(old: "", new: content).added
+                        paths.insert(Self.resolved(path, in: session.cwd))
+                    case "edit", "apply_patch":
+                        if let path = arguments["path"] as? String {
+                            pending[id] = [path]
+                        } else if let patch = arguments["input"] as? String, patch.contains("*** Begin Patch") {
+                            pending[id] = WeekRecap.patchChanges(patch).paths
+                        }
+                    default: continue
+                    }
+                }
+            case "toolResult":
+                guard ["edit", "apply_patch"].contains(message["toolName"] as? String ?? ""), message["isError"] as? Bool != true,
+                      let id = message["toolCallId"] as? String, let details = message["details"] as? [String: Any],
+                      calls.insert("pi#\(id)").inserted else { return }
+                var named: [String] = []
+                for file in (details["perFileResults"] as? [[String: Any]]) ?? [details] {
+                    guard let diff = file["diff"] as? String else { continue }
+                    let counts = WeekRecap.numberedDiffChanges(diff)
+                    session.added += counts.added
+                    session.removed += counts.removed
+                    if let path = file["path"] as? String { named.append(path) }
+                }
+                for path in named.isEmpty ? pending[id] ?? [] : named { paths.insert(Self.resolved(path, in: session.cwd)) }
+            default: break
+            }
+        }
+
+        /// OpenCode's database: a session's messages and the parts of its answers give the times; its tool parts, the edits. A
+        /// subagent's session counts as its parent's.
+        mutating func scanOpenCode() {
+            let path = OpenCodeDB.url(home: home).path
+            guard FileManager.default.fileExists(atPath: path) else { return }
+            func millis(_ date: Date) -> Int64 { Int64(date.timeIntervalSince1970 * 1000) }
+            let from = millis(before), start = millis(week.start), end = millis(week.end)
+            var parent: [String: String] = [:], folder: [String: String] = [:], title: [String: String] = [:]
+            for row in AIUsageModel.query(path, "SELECT id, ifnull(parent_id, ''), directory, title FROM session WHERE time_updated >= \(from)") {
+                if !row[1].isEmpty { parent[row[0]] = row[1] }
+                folder[row[0]] = row[2]
+                title[row[0]] = row[3]
+            }
+            func root(_ id: String) -> String {
+                var id = id
+                for _ in 0..<8 {
+                    guard let up = parent[id] else { break }
+                    id = up
+                }
+                return id
+            }
+            var found: [String: Session] = [:]
+            func session(_ id: String) -> Session {
+                let id = root(id)
+                return found[id] ?? Session(tool: .opencode, id: id, file: URL(fileURLWithPath: path), cwd: folder[id],
+                                            name: title[id].flatMap(OpenCodeDB.title))
+            }
+            let messages = AIUsageModel.query(path, "SELECT id, session_id, time_created, data FROM message WHERE time_created >= \(from) AND time_created < \(end)")
+            for row in messages {
+                guard let created = Int64(row[2]) else { continue }
+                var current = session(row[1])
+                current.times.append(Date(timeIntervalSince1970: Double(created) / 1000))
+                found[current.id] = current
+            }
+            add(messages.compactMap { AIUsageModel.openCodeRecord(id: $0[0], data: Data($0[3].utf8)) })
+            for row in AIUsageModel.query(path, "SELECT id, session_id, time_created, data FROM part WHERE time_created >= \(from) AND time_created < \(end)") {
+                guard let created = Int64(row[2]) else { continue }
+                var current = session(row[1])
+                current.times.append(Date(timeIntervalSince1970: Double(created) / 1000))
+                if created >= start, row[3].contains("\"tool\""),
+                   let json = (try? JSONSerialization.jsonObject(with: Data(row[3].utf8))) as? [String: Any] {
+                    openCodeEdits(json, id: row[0], into: &current)
+                }
+                found[current.id] = current
+            }
+            for id in found.keys.sorted() { if let session = found[id] { merge(session) } }
+        }
+
+        private mutating func openCodeEdits(_ part: [String: Any], id: String, into session: inout Session) {
+            guard part["type"] as? String == "tool", let state = part["state"] as? [String: Any], state["status"] as? String == "completed",
+                  let input = state["input"] as? [String: Any], calls.insert("opencode#\(id)").inserted else { return }
+            var changes: [(old: String, new: String)] = []
+            var named: [String] = []
+            switch part["tool"] as? String {
+            case "apply_patch", "patch":
+                guard let patch = input["patchText"] as? String else { return }
+                let counts = WeekRecap.patchChanges(patch)
+                session.added += counts.added
+                session.removed += counts.removed
+                named = counts.paths
+            case "edit":
+                changes = [(input["oldString"] as? String ?? "", input["newString"] as? String ?? "")]
+            case "multiedit":
+                changes = (input["edits"] as? [[String: Any]] ?? []).map { ($0["oldString"] as? String ?? "", $0["newString"] as? String ?? "") }
+            case "write":
+                changes = [("", input["content"] as? String ?? "")]
+            default: return
+            }
+            for change in changes {
+                let counts = WeekRecap.lineChanges(old: change.old, new: change.new)
+                session.added += counts.added
+                session.removed += counts.removed
+            }
+            if let path = input["filePath"] as? String { named.append(path) }
+            for path in named { paths.insert(Self.resolved(path, in: session.cwd)) }
         }
 
         /// Claude Code puts the folder on every line; Codex on its `session_meta` and `turn_context` lines.
@@ -251,7 +459,11 @@ struct WeekRecap: Equatable, Sendable {
                 recap.workingBefore += Self.working(times[..<split])
                 let inWeek = times[split...]
                 guard let first = inWeek.first else { continue }
-                if session.tool == .claude { recap.claudeSessions += 1 } else { recap.codexSessions += 1 }
+                switch session.tool {
+                case .claude: recap.claudeSessions += 1
+                case .codex: recap.codexSessions += 1
+                default: recap.otherSessions[session.tool, default: 0] += 1
+                }
                 recap.added += session.added
                 recap.removed += session.removed
                 var duration: TimeInterval = 0
@@ -284,12 +496,12 @@ struct WeekRecap: Equatable, Sendable {
         }
 
         private func title(of session: Session) -> String? {
-            var name: String?
+            var name = session.name
             if session.tool == .claude {
                 var scan = AgentNameScan()
                 scan.advance(session.file)
                 name = scan.name
-            } else {
+            } else if session.tool == .codex {
                 var names = CodexSessionNames()
                 names.refresh(home: home)
                 name = names.names[session.id]
