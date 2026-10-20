@@ -120,7 +120,8 @@ struct NotchView: View {
                         .padding(.top, 8)
                     }
                     .padding(.horizontal, topRadius + 14)
-                    .padding(.bottom, 16)
+                    // As far from the bottom edge as from the sides.
+                    .padding(.bottom, 14)
                     // No scale here: scaling the scrolling tab row while it appears leaves it a few points off.
                     .transition(motion.expandedContent)
                 } else if let prompt = model.approvals.current {
