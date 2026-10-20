@@ -30,7 +30,7 @@
 brew install --cask namekun/tap/nunsseop
 ```
 
-Necesita [Homebrew](https://brew.sh). Homebrew quita la marca de cuarentena, así que la app se abre sin problemas. Para actualizar, ejecuta `brew update && brew upgrade --cask nunsseop`; cuando hay una versión nueva, Ajustes › General › Actualizaciones copia ese comando al portapapeles (si la app se instaló desde el dmg antiguo, un comando que la pasa a Homebrew).
+Necesita [Homebrew](https://brew.sh). La app está firmada y notarizada por Apple, así que se abre sin problemas. Para actualizar, ejecuta `brew update && brew upgrade --cask nunsseop`; cuando hay una versión nueva, Ajustes › General › Actualizaciones copia ese comando al portapapeles (si la app se instaló desde el dmg antiguo, un comando que la pasa a Homebrew).
 
 Requiere macOS 14 Sonoma o posterior. Funciona en Mac con Apple silicon (no en Intel), también en pantallas sin notch.
 
@@ -112,7 +112,7 @@ En una instalación nueva, el notch también se abre solo al cabo de un segundo 
 <details>
 <summary><b>macOS dice que no se puede abrir Nunsseop.</b></summary>
 
-La app aún no está notarizada, así que instálala con Homebrew (`brew install --cask namekun/tap/nunsseop`). Homebrew quita la marca de cuarentena y la app se abre sin problemas.
+Desde la 0.37.0 la app está firmada y notarizada por Apple y se abre como cualquier otra. Las versiones anteriores no lo estaban: actualízala con Homebrew (`brew update && brew upgrade --cask nunsseop`) o instálala con `brew install --cask namekun/tap/nunsseop`.
 </details>
 
 <details>

@@ -30,7 +30,7 @@
 brew install --cask namekun/tap/nunsseop
 ```
 
-[Homebrew](https://brew.sh)가 필요합니다. Homebrew는 격리 플래그를 지워 주기 때문에 앱이 바로 열립니다. 업데이트는 `brew update && brew upgrade --cask nunsseop`으로 하세요. 새 버전이 나오면 설정 → 일반 → 업데이트에서 이 명령을 클립보드에 복사해 줍니다(옛 dmg로 설치한 앱이라면 Homebrew로 옮기는 명령을 복사합니다).
+[Homebrew](https://brew.sh)가 필요합니다. 앱은 Apple의 서명과 공증을 받았기 때문에 바로 열립니다. 업데이트는 `brew update && brew upgrade --cask nunsseop`으로 하세요. 새 버전이 나오면 설정 → 일반 → 업데이트에서 이 명령을 클립보드에 복사해 줍니다(옛 dmg로 설치한 앱이라면 Homebrew로 옮기는 명령을 복사합니다).
 
 macOS 14 Sonoma 이상이면 됩니다. Apple 실리콘 Mac에서 동작하며(Intel 제외), 노치가 없는 화면에서도 동작합니다.
 
@@ -112,7 +112,7 @@ Dock 아이콘은 없습니다. Nunsseop은 노치에 삽니다.
 <details>
 <summary><b>"Nunsseop을 열 수 없습니다"라고 나와요.</b></summary>
 
-아직 공증되지 않은 앱이라 그렇습니다. Homebrew(`brew install --cask namekun/tap/nunsseop`)로 설치하세요. Homebrew는 격리 플래그를 지워 주기 때문에 앱이 바로 열립니다.
+0.37.0부터는 Apple의 서명과 공증을 받아 다른 앱처럼 열립니다. 그보다 오래된 버전은 공증 전이라 그렇습니다. Homebrew로 업데이트(`brew update && brew upgrade --cask nunsseop`)하거나 `brew install --cask namekun/tap/nunsseop`으로 설치하세요.
 </details>
 
 <details>
