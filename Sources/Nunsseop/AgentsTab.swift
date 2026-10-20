@@ -1399,7 +1399,10 @@ private struct AgentFooter: View {
             footer(left: left, warns: note != nil, selected: selected, trimmed: note != nil)
             footer(left: nil, warns: false, selected: selected, trimmed: false)
         }
-        .frame(height: Metrics.row)
+        // Against the bottom of its row, and the text 14 pt from the notch's edge, as far as from its sides: centred, the half row
+        // under it added to the notch's own margin and looked like a gap.
+        .frame(height: Metrics.row, alignment: .bottom)
+        .offset(y: 2)
     }
 
     private func footer(left: String?, warns: Bool, selected: AgentRow?, trimmed: Bool) -> some View {

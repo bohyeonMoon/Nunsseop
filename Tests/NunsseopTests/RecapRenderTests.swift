@@ -26,9 +26,9 @@ private func busyWeek() -> WeekRecap {
 
 struct RecapRenderTests {
     /// The notch's content area at the size the recap is laid out for: the width less the insets, and the height less the header band
-    /// (32), the gap under it (8), the title row (24 and 8) and the bottom padding (16).
+    /// (32), the gap under it (8), the title row (24 and 8) and the bottom padding (14).
     private static let width = RecapView.minimumSize.width - 2 * NotchViewModel.headerInset
-    private static let height = RecapView.minimumSize.height - 32 - 8 - 24 - 8 - 16
+    private static let height = RecapView.minimumSize.height - 32 - 8 - 24 - 8 - 14
 
     @MainActor
     private func lit(_ view: some View) -> (left: CGFloat, right: CGFloat, bottom: CGFloat)? {
