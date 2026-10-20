@@ -629,6 +629,7 @@
 "Show diff" = "diff 보기";
 "Change %lld of %lld this turn" = "이번 턴 수정 %1$lld/%2$lld";
 "← → the change before or after · Esc back to the list" = "← → 이전·다음 수정 · Esc 목록으로";
+"Others" = "기타";
 "A little shy now" = "눈썹이 좀 수줍어졌어요";
 "Nunsseop %@ steps aside for Mission Control, and can stay on one display." = "Nunsseop %@부터 Mission Control이 열리면 눈썹이 비켜 주고, 한 화면에만 머물 수도 있어요.";
 "Hides in Mission Control" = "Mission Control에선 숨기";
@@ -691,7 +692,7 @@
 "No Claude Code or Codex sessions last week, so there is nothing to look back on." = "지난주에는 Claude Code나 Codex 세션이 없어서 돌아볼 내용이 없어요.";
 "Last week" = "지난주";
 "Recap last week's agent work on Mondays" = "월요일에 지난주 에이전트 작업 요약 보기";
-"Added up on this Mac from the session files of Claude Code and Codex, and never sent anywhere. The AI tab can show it any time." = "Claude Code와 Codex의 세션 파일로 이 Mac에서만 계산하고, 어디에도 보내지 않아요. AI 탭에서 언제든 다시 볼 수 있어요.";
+"Added up on this Mac from your coding agents' session files, and never sent anywhere. The AI tab can show it any time." = "코딩 에이전트들의 세션 파일로 이 Mac에서만 계산하고, 어디에도 보내지 않아요. AI 탭에서 언제든 다시 볼 수 있어요.";
 "Gemini CLI, GitHub Copilot, Antigravity, Cursor, Hermes and Amp also report their sessions to the agents count and the Agents tab once connected." = "Gemini CLI, GitHub Copilot, Antigravity, Cursor, Hermes, Amp도 연결하면 세션을 에이전트 수와 에이전트 탭에 알립니다.";
 "Approvals from GitHub Copilot, Antigravity and Cursor show in the notch too, where you can allow or deny them. While the notch holds one, the tool waits for it; “Answer in terminal” (“Answer in Cursor” for Cursor) hands it back. If Nunsseop isn't running, the tool asks as before." = "GitHub Copilot, Antigravity, Cursor의 승인 요청도 노치에 표시되어 허용하거나 거부할 수 있습니다. 노치가 승인을 붙들고 있는 동안 도구는 기다립니다. “터미널에서 답하기”(Cursor는 “Cursor에서 답하기”)를 누르면 도구에 돌려줍니다. Nunsseop이 실행 중이 아니면 도구가 전처럼 직접 묻습니다.";
 "Hermes loads a plugin only after you enable it: run `hermes plugins enable nunsseop` in a terminal once." = "Hermes는 플러그인을 켠 뒤에만 불러옵니다. 터미널에서 `hermes plugins enable nunsseop`을 한 번 실행하세요.";

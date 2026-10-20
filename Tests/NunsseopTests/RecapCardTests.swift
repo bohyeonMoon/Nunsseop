@@ -225,7 +225,7 @@ struct RecapWordsTests {
         ("Couldn't save the image", 0), ("A quiet week", 0),
         ("No Claude Code or Codex sessions last week, so there is nothing to look back on.", 0), ("Last week", 0),
         ("Recap last week's agent work on Mondays", 0),
-        ("Added up on this Mac from the session files of Claude Code and Codex, and never sent anywhere. The AI tab can show it any time.", 0),
+        ("Added up on this Mac from your coding agents' session files, and never sent anywhere. The AI tab can show it any time.", 0),
     ]
 
     /// Words that are the same in English and in the language.
@@ -328,8 +328,14 @@ struct RecapWordsTests {
 
     @Test func theSubLinesWithToolNamesFit() {
         // Three digits for each tool is the most a week of sessions gets to in practice.
-        let text = "Claude Code 312 \u{00B7} Codex 156"
+        let text = "Claude 312 \u{00B7} Codex 156"
         #expect(width(text, 10) * 0.85 <= Self.small, Comment(rawValue: "\(width(text, 10))"))
+        // With more tools, the shortest line the tile falls back to: the most used tool and the others together.
+        for language in ["en", "de", "es", "fr", "ja", "ko", "zh-Hans"] {
+            let others = language == "en" ? "Others" : (try? table(language))?["Others"] ?? ""
+            let folded = "OpenCode 312 \u{00B7} \(others) 156"
+            #expect(!others.isEmpty && width(folded, 10) * 0.85 <= Self.small, Comment(rawValue: "\(language): \(width(folded, 10))"))
+        }
         let tokens = "Claude 123.4M \u{00B7} Codex 56.7M"
         #expect(width(tokens, 10) * 0.85 <= Self.small, Comment(rawValue: "\(width(tokens, 10))"))
     }
