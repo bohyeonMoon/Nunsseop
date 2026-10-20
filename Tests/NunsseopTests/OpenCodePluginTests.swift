@@ -60,19 +60,9 @@ struct OpenCodePluginRunTests {
         server.server.onAgent = { events.add($0) }
         server.server.onNotify = { notices.add($0) }
         let script = try NodeScript(files: files.merging(["nunsseop.mjs": OpenCodePlugin.source(port: port ?? server.port)]) { $1 },
-                                    main: Self.imports + NodeScript.prelude + Self.patience + body, home: server.home.url, environment: environment)
+                                    main: Self.imports + NodeScript.prelude + NodeScript.patience + body, home: server.home.url, environment: environment)
         return (script, events, notices)
     }
-
-    /// The plugin gives up on a request to the server after a second (two for the notice), as it should when Nunsseop is stuck, and what it
-    /// gave up on is never sent again. That is the plugin's business, and no test here is about it; but on a busy machine the first `fetch` of
-    /// a node that has just started can take that long on its own, and the first event of a session (it was `opened`) never arrived. So in
-    /// these scripts the plugin's timers last as long as a test waits for anything (`eventDeadline`).
-    private static let patience = """
-        const giveUpAfter = AbortSignal.timeout.bind(AbortSignal)
-        AbortSignal.timeout = (ms) => giveUpAfter(Math.max(ms, \(Int(eventDeadline * 1000))))
-
-        """
 
     private static let setUp = """
         const replies = []
