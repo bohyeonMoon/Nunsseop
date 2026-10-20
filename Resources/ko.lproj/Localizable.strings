@@ -630,6 +630,12 @@
 "Change %lld of %lld this turn" = "이번 턴 수정 %1$lld/%2$lld";
 "← → the change before or after · Esc back to the list" = "← → 이전·다음 수정 · Esc 목록으로";
 "Others" = "기타";
+"Now with papers" = "이제 신분증도 있어요";
+"Nunsseop %@ is signed and notarized by Apple, and its bottom edge sits a little closer." = "Nunsseop %@부터 Apple의 서명과 공증을 받았어요. 아래쪽 여백도 조금 다듬었어요.";
+"Notarized by Apple" = "Apple 공증 완료";
+"Opens like any other app, no workarounds" = "다른 앱처럼 그냥 열려요";
+"Ask again, once" = "권한은 한 번만 다시";
+"macOS may want permissions renewed" = "macOS가 권한을 다시 물어볼 수 있어요";
 "A little shy now" = "눈썹이 좀 수줍어졌어요";
 "Nunsseop %@ steps aside for Mission Control, and can stay on one display." = "Nunsseop %@부터 Mission Control이 열리면 눈썹이 비켜 주고, 한 화면에만 머물 수도 있어요.";
 "Hides in Mission Control" = "Mission Control에선 숨기";

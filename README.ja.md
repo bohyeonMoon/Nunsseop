@@ -30,7 +30,7 @@
 brew install --cask namekun/tap/nunsseop
 ```
 
-[Homebrew](https://brew.sh) が必要です。Homebrew が隔離フラグを外すので、すぐに開けます。アップデートは `brew update && brew upgrade --cask nunsseop` で行えます。新しいバージョンが出ると、設定 › 一般 › アップデートでそのコマンドをクリップボードにコピーできます(旧 dmg からインストールしたアプリには、Homebrew へ移行するコマンドがコピーされます)。
+[Homebrew](https://brew.sh) が必要です。アプリは Apple の署名と公証を受けているので、すぐに開けます。アップデートは `brew update && brew upgrade --cask nunsseop` で行えます。新しいバージョンが出ると、設定 › 一般 › アップデートでそのコマンドをクリップボードにコピーできます(旧 dmg からインストールしたアプリには、Homebrew へ移行するコマンドがコピーされます)。
 
 macOS 14 Sonoma 以降が必要です。Apple シリコン搭載の Mac に対応し（Intel は非対応）、ノッチのない画面でも動作します。
 
@@ -112,7 +112,7 @@ Dock にアイコンは出ません。Nunsseop はノッチの中にいます。
 <details>
 <summary><b>macOS に「Nunsseop は開けません」と表示されます。</b></summary>
 
-アプリはまだ公証されていないため、Homebrew でインストールしてください(`brew install --cask namekun/tap/nunsseop`)。Homebrew が隔離フラグを外すので、すぐに開けます。
+0.37.0 からは Apple の署名と公証を受けていて、ほかのアプリと同じように開けます。それより古いバージョンは公証前のものです。Homebrew でアップデートする(`brew update && brew upgrade --cask nunsseop`)か、`brew install --cask namekun/tap/nunsseop` でインストールしてください。
 </details>
 
 <details>

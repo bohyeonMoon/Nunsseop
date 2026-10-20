@@ -17,7 +17,7 @@ private func makeTour(_ defaults: UserDefaults) -> OnboardingTour {
 
 @MainActor
 struct WhatsNewTests {
-    private let version = "0.36.0"
+    private let version = "0.37.0"
 
     @Test func theNotesShowOnceAfterAnUpdateToAVersionThatHasThem() {
         withDefaults { defaults in
@@ -113,9 +113,9 @@ struct WhatsNewTests {
     @Test func theNotesAreTranslatedIntoEveryLanguage() throws {
         let resources = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Resources")
-        let keys = ["What's new in %@", "A little shy now", "Nunsseop %@ steps aside for Mission Control, and can stay on one display.",
-                    "Hides in Mission Control", "Out of the way while your windows spread out", "Stays on one display",
-                    "Turn off following in Settings › Display", "Got it"]
+        let keys = ["What's new in %@", "Now with papers", "Nunsseop %@ is signed and notarized by Apple, and its bottom edge sits a little closer.",
+                    "Notarized by Apple", "Opens like any other app, no workarounds", "Ask again, once",
+                    "macOS may want permissions renewed", "Got it"]
         for language in ["de", "es", "fr", "ja", "ko", "zh-Hans"] {
             let table = try #require(NSDictionary(contentsOfFile: resources.appendingPathComponent("\(language).lproj/Localizable.strings").path), Comment(rawValue: language))
             for key in keys {
@@ -127,7 +127,7 @@ struct WhatsNewTests {
             }
             // A row's line under its title is one line of about 286 points (the visual column less the icon and padding).
             let font = NSFont.systemFont(ofSize: 11)
-            for key in ["Out of the way while your windows spread out", "Turn off following in Settings › Display"] {
+            for key in ["Opens like any other app, no workarounds", "macOS may want permissions renewed"] {
                 let text = (table[key] as? String ?? "").replacingOccurrences(of: "%1$@", with: "80 %").replacingOccurrences(of: "%2$@", with: "95 %")
                 #expect((text as NSString).size(withAttributes: [.font: font]).width <= 280, Comment(rawValue: "\(language): \(text)"))
             }

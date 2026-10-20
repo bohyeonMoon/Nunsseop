@@ -605,6 +605,12 @@
 "Change %lld of %lld this turn" = "Modification %1$lld sur %2$lld de ce tour";
 "← → the change before or after · Esc back to the list" = "← → modification précédente ou suivante · Échap revient à la liste";
 "Others" = "Autres";
+"Now with papers" = "Désormais avec papiers";
+"Nunsseop %@ is signed and notarized by Apple, and its bottom edge sits a little closer." = "Nunsseop %@ est signée et notarisée par Apple, et son bord inférieur est un peu plus serré.";
+"Notarized by Apple" = "Notarisée par Apple";
+"Opens like any other app, no workarounds" = "S’ouvre comme n’importe quelle app";
+"Ask again, once" = "Une dernière fois";
+"macOS may want permissions renewed" = "macOS peut redemander les autorisations";
 "A little shy now" = "Un peu timide";
 "Nunsseop %@ steps aside for Mission Control, and can stay on one display." = "Nunsseop %@ s’efface devant Mission Control et peut rester sur un seul écran.";
 "Hides in Mission Control" = "Cachée dans Mission Control";

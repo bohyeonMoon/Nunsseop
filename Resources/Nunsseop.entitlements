@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- The hardened runtime asks for each of these; without one, macOS refuses the access without asking. -->
+	<!-- Music, Spotify, browsers and terminals are driven with AppleScript. -->
+	<key>com.apple.security.automation.apple-events</key>
+	<true/>
+	<!-- The Mirror tab. -->
+	<key>com.apple.security.device.camera</key>
+	<true/>
+	<!-- Microphone audio in screen recordings, and per-app volume's audio taps. -->
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
+	<!-- Calendar events and reminders. -->
+	<key>com.apple.security.personal-information.calendars</key>
+	<true/>
+</dict>
+</plist>
