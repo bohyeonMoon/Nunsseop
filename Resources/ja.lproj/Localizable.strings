@@ -604,6 +604,12 @@
 "Show diff" = "差分を見る";
 "Change %lld of %lld this turn" = "このターンの変更 %1$lld/%2$lld";
 "← → the change before or after · Esc back to the list" = "← → 前後の変更 · Esc で一覧へ";
+"A little shy now" = "ちょっと控えめに";
+"Nunsseop %@ steps aside for Mission Control, and can stay on one display." = "Nunsseop %@ は Mission Control では身を引き、一つの画面にとどまることもできます。";
+"Hides in Mission Control" = "Mission Control では隠れる";
+"Out of the way while your windows spread out" = "ウインドウが広がる間はそっと退場";
+"Stays on one display" = "一つの画面にとどまる";
+"Turn off following in Settings › Display" = "設定 › ディスプレイで追従をオフに";
 "Now with feelings" = "眉に表情がつきました";
 "Nunsseop %@ wears its mood on its brow. Also new: a Monday recap, more shortcuts and six more agents." = "Nunsseop %@ では眉が気分を隠しません。月曜のまとめ、ショートカット、6つの新しいエージェントも加わりました。";
 "A brow with moods" = "眉の表情";

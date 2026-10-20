@@ -26,6 +26,13 @@ enum WhatsNew {
     /// A pre-release ("0.35.0-beta.1") shows the notes of the release it leads to.
     static func notes(for version: String) -> Notes? {
         switch version.split(separator: "-").first.map(String.init) ?? version {
+        case "0.36.0":
+            Notes(version: version, title: String(localized: "A little shy now"),
+                  text: String(localized: "Nunsseop \(version) steps aside for Mission Control, and can stay on one display."),
+                  items: [Item(symbol: "rectangle.3.group", title: String(localized: "Hides in Mission Control"),
+                               detail: String(localized: "Out of the way while your windows spread out")),
+                          Item(symbol: "display.2", title: String(localized: "Stays on one display"),
+                               detail: String(localized: "Turn off following in Settings › Display"))])
         case "0.35.0":
             Notes(version: version, title: String(localized: "Now with feelings"),
                   text: String(localized: "Nunsseop \(version) wears its mood on its brow. Also new: a Monday recap, more shortcuts and six more agents."),

@@ -629,6 +629,12 @@
 "Show diff" = "diff 보기";
 "Change %lld of %lld this turn" = "이번 턴 수정 %1$lld/%2$lld";
 "← → the change before or after · Esc back to the list" = "← → 이전·다음 수정 · Esc 목록으로";
+"A little shy now" = "눈썹이 좀 수줍어졌어요";
+"Nunsseop %@ steps aside for Mission Control, and can stay on one display." = "Nunsseop %@부터 Mission Control이 열리면 눈썹이 비켜 주고, 한 화면에만 머물 수도 있어요.";
+"Hides in Mission Control" = "Mission Control에선 숨기";
+"Out of the way while your windows spread out" = "창들이 펼쳐지는 동안 잠깐 비켜요";
+"Stays on one display" = "한 화면에 머물기";
+"Turn off following in Settings › Display" = "설정 › 화면에서 따라가기를 끄세요";
 "Now with feelings" = "눈썹에 표정이 생겼어요";
 "Nunsseop %@ wears its mood on its brow. Also new: a Monday recap, more shortcuts and six more agents." = "Nunsseop %@부터 눈썹이 기분을 숨기지 않아요. 월요일 요약, 단축키, 새 에이전트 여섯 개도 함께 왔어요.";
 "A brow with moods" = "눈썹 표정";

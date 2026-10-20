@@ -604,6 +604,12 @@
 "Show diff" = "Voir le diff";
 "Change %lld of %lld this turn" = "Modification %1$lld sur %2$lld de ce tour";
 "← → the change before or after · Esc back to the list" = "← → modification précédente ou suivante · Échap revient à la liste";
+"A little shy now" = "Un peu timide";
+"Nunsseop %@ steps aside for Mission Control, and can stay on one display." = "Nunsseop %@ s’efface devant Mission Control et peut rester sur un seul écran.";
+"Hides in Mission Control" = "Cachée dans Mission Control";
+"Out of the way while your windows spread out" = "S’efface pendant que vos fenêtres s’étalent";
+"Stays on one display" = "Reste sur un écran";
+"Turn off following in Settings › Display" = "Désactivez le suivi dans Réglages › Écran";
 "Now with feelings" = "Désormais avec des émotions";
 "Nunsseop %@ wears its mood on its brow. Also new: a Monday recap, more shortcuts and six more agents." = "Dans Nunsseop %@, le sourcil ne cache plus son humeur. Aussi au menu : un bilan du lundi, plus de raccourcis et six agents de plus.";
 "A brow with moods" = "Un sourcil expressif";
