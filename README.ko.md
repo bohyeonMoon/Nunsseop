@@ -26,7 +26,7 @@
 
 ## 30초 만에 설치
 
-**[Nunsseop.dmg 다운로드](https://github.com/namekun/Nunsseop/releases/latest/download/Nunsseop.dmg)** 후 파일을 열고 Nunsseop을 응용 프로그램으로 끌어다 놓으세요. Apple의 서명과 공증을 받은 앱이라 바로 열립니다. 새 버전이 나오면 설정 → 일반 → 업데이트에서 받을 수 있어요.
+**[Nunsseop.dmg 다운로드](https://github.com/namekun/Nunsseop/releases/latest/download/Nunsseop.dmg)** 후 파일을 열고 Nunsseop을 응용 프로그램으로 끌어다 놓으세요. Apple의 서명과 공증을 받은 앱이라 바로 열립니다. 새 버전이 나오면 설정 → 일반 → 업데이트의 '업데이트 설치'가 새로운 점을 보여 주고, 설치한 뒤 Nunsseop을 다시 시작해요(0.38.0보다 오래된 앱은 새 DMG를 한 번 더 받아야 해요).
 
 [Homebrew](https://brew.sh)로 설치할 수도 있습니다:
 
@@ -245,7 +245,7 @@ curl -X POST http://127.0.0.1:47750/notify \
 
 Nunsseop은 개인 정보를 수집하거나 보내지 않습니다. 인터넷은 아래 경우에만 씁니다.
 
-- 하루 한 번 `api.github.com`에서 새 버전 확인 (끌 수 있음)
+- 하루 한 번 `api.github.com`에서 새 버전 확인 (끌 수 있음). DMG로 설치한 앱에서 업데이트를 설치할 때는 GitHub에서 최신 릴리스의 `appcast.xml`과 DMG를 받음
 - `lrclib.net`에서 실시간 가사 찾기 (끌 수 있음)
 - 입력한 도시의 날씨를 `open-meteo.com`에서 가져오기 (도시를 입력하기 전에는 꺼져 있음). Open-Meteo가 도시를 못 찾으면 Apple 지오코더에 위치를 물어봅니다
 - MediaRemote 헬퍼를 쓸 수 없을 때만, 알려진 음악 서비스에서 HTTPS로 앨범아트 받기

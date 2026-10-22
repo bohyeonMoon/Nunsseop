@@ -19,19 +19,20 @@ cp -R Resources/*.lproj Resources/AppIcon.icns "$APP/Contents/Resources/"
 # The Muxy extension the user loads from Nunsseop's own folder (see MuxyBridge.swift).
 cp -R Resources/muxy-bridge "$APP/Contents/Resources/"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
+# Sparkle, for copies installed from the DMG (see UpdateMethod.swift); ditto keeps the framework's symlinks.
+FW="$APP/Contents/Frameworks/Sparkle.framework"
+[[ -d "$BIN_DIR/Sparkle.framework" ]] || { echo "No Sparkle.framework in $BIN_DIR" >&2; exit 1; }
+mkdir -p "$APP/Contents/Frameworks"
+ditto "$BIN_DIR/Sparkle.framework" "$FW"
+# Its XPC services are for sandboxed apps. Removed before signing: after, it would break the framework's seal.
+rm -rf "$FW/Versions/B/XPCServices" "$FW/XPCServices"
+# SwiftPM doesn't point the executable at Contents/Frameworks. Read into a variable first: under pipefail, grep -q
+# stopping early would fail otool with a broken pipe.
+LOADS="$(otool -l "$APP/Contents/MacOS/Nunsseop")"
+grep -q "@executable_path/../Frameworks" <<<"$LOADS" \
+    || install_name_tool -add_rpath @executable_path/../Frameworks "$APP/Contents/MacOS/Nunsseop" 2>/dev/null
 xattr -cr "$APP"
-# A fixed certificate keeps the code requirement stable, so macOS keeps the Accessibility permission across updates:
-# a Developer ID one when the keychain has it (releases signed with it are notarized, see make-dmg.sh), else the local
-# "Nunsseop Code Signing". Without either, sign ad hoc.
-IDENTITY="${CODESIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null | sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p' | head -1)}"
-IDENTITY="${IDENTITY:-Nunsseop Code Signing}"
-security find-certificate -c "$IDENTITY" >/dev/null 2>&1 || IDENTITY="-"
-# The hardened runtime, which notarization requires, everywhere, so every build behaves like a release. A notarized
-# release also needs a secure timestamp, which takes a trip to Apple.
-FLAGS=(--force --options runtime --sign "$IDENTITY")
-[[ "$CONFIG" == release && "$IDENTITY" != "-" ]] && FLAGS+=(--timestamp)
-codesign "${FLAGS[@]}" "$APP/Contents/Resources/libNowPlayingHelper.dylib" >/dev/null
-codesign "${FLAGS[@]}" --entitlements Resources/Nunsseop.entitlements "$APP" >/dev/null
+./scripts/sign-app.sh "$APP" "$CONFIG"
 rm -rf build/Nunsseop.app
 mkdir -p build
 ditto "$APP" build/Nunsseop.app

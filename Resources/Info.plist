@@ -50,5 +50,15 @@
 	<string>Records microphone audio with a screen recording when you turn that on in Settings.</string>
 	<key>NSRemindersFullAccessUsageDescription</key>
 	<string>Shows reminders due today under the calendar and lets you complete them.</string>
+	<key>SUEnableAutomaticChecks</key>
+	<false/>
+	<key>SUFeedURL</key>
+	<string>https://github.com/namekun/Nunsseop/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>ldXdW9IqvzDdgO5kRbK5kz3Ochwl+dbz8u1YTD14e4g=</string>
+	<key>SURequireSignedFeed</key>
+	<true/>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
 </dict>
 </plist>

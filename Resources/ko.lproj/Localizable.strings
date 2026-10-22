@@ -394,6 +394,8 @@
 "Copy Update Command" = "업데이트 명령 복사";
 "Copied" = "복사됨";
 "The command goes to the clipboard. Paste it in Terminal and press Return." = "명령이 클립보드에 복사됩니다. 터미널에 붙여 넣고 Return을 누르세요.";
+"Install Update" = "업데이트 설치";
+"Shows what's new, then installs the update and restarts Nunsseop." = "새로운 점을 보여 준 뒤 업데이트를 설치하고 Nunsseop을 다시 시작합니다.";
 "Download Update" = "업데이트 다운로드";
 "Open the downloaded file and drag Nunsseop to Applications, replacing this one." = "받은 파일을 열고 Nunsseop을 응용 프로그램으로 끌어다 놓아 지금 것과 바꾸세요.";
 "Agents" = "에이전트";
@@ -630,6 +632,12 @@
 "Change %lld of %lld this turn" = "이번 턴 수정 %1$lld/%2$lld";
 "← → the change before or after · Esc back to the list" = "← → 이전·다음 수정 · Esc 목록으로";
 "Others" = "기타";
+"Keeps itself fresh" = "알아서 새로워져요";
+"Installed from the DMG, Nunsseop %@ and later install their own updates." = "DMG로 설치했다면 Nunsseop %@부터는 업데이트를 스스로 설치해요.";
+"Updates itself" = "스스로 업데이트";
+"Install Update shows what's new, then restarts" = "업데이트 설치를 누르면 새 기능을 보여 주고 재시작";
+"Only when you say so" = "내가 원할 때만";
+"Nothing installs until you choose to" = "직접 고르기 전에는 아무것도 설치하지 않아요";
 "Now with papers" = "이제 신분증도 있어요";
 "Nunsseop %@ is signed and notarized by Apple, and its bottom edge sits a little closer." = "Nunsseop %@부터 Apple의 서명과 공증을 받았어요. 아래쪽 여백도 조금 다듬었어요.";
 "Notarized by Apple" = "Apple 공증 완료";

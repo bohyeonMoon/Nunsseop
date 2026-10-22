@@ -137,8 +137,22 @@ struct SettingsView: View {
 private struct GeneralPane: View {
     @ObservedObject var settings: AppSettings
     @ObservedObject private var updates = UpdateChecker.shared
+    @ObservedObject private var sparkle = SparkleUpdater.shared
     @State private var copiedUpdateCommand = false
     @StateObject private var launchAtLogin = LaunchAtLogin()
+
+    /// Once Sparkle has failed, a copy it would update gets the DMG instead.
+    private var updateWay: UpdateMethod {
+        UpdateMethod.current == .sparkle && sparkle.failed ? .manual : UpdateMethod.current
+    }
+
+    private var updateNote: String {
+        switch updateWay {
+        case .homebrew: String(localized: "The command goes to the clipboard. Paste it in Terminal and press Return.")
+        case .sparkle: String(localized: "Shows what's new, then installs the update and restarts Nunsseop.")
+        case .manual: String(localized: "Open the downloaded file and drag Nunsseop to Applications, replacing this one.")
+        }
+    }
 
     var body: some View {
         Form {
@@ -166,13 +180,16 @@ private struct GeneralPane: View {
                     if let release = updates.available {
                         Text("Version \(release.version) is available")
                         Spacer()
-                        if UpdateChecker.installedWithBrew {
+                        switch updateWay {
+                        case .homebrew:
                             Button(copiedUpdateCommand ? String(localized: "Copied") : String(localized: "Copy Update Command")) {
                                 updates.copyUpdateCommand()
                                 copiedUpdateCommand = true
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copiedUpdateCommand = false }
                             }
-                        } else {
+                        case .sparkle:
+                            Button("Install Update") { sparkle.install() }
+                        case .manual:
                             Button("Download Update") { NSWorkspace.shared.open(UpdateChecker.downloadURL(version: release.version)) }
                         }
                     } else {
@@ -186,10 +203,7 @@ private struct GeneralPane: View {
                     }
                 }
                 if updates.available != nil {
-                    Text(UpdateChecker.installedWithBrew
-                         ? String(localized: "The command goes to the clipboard. Paste it in Terminal and press Return.")
-                         : String(localized: "Open the downloaded file and drag Nunsseop to Applications, replacing this one."))
-                        .font(.caption).foregroundStyle(.secondary)
+                    Text(updateNote).font(.caption).foregroundStyle(.secondary)
                 }
                 Text("Version \(updates.currentVersion)").font(.caption).foregroundStyle(.secondary)
             }

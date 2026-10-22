@@ -26,6 +26,13 @@ enum WhatsNew {
     /// A pre-release ("0.35.0-beta.1") shows the notes of the release it leads to.
     static func notes(for version: String) -> Notes? {
         switch version.split(separator: "-").first.map(String.init) ?? version {
+        case "0.38.0":
+            Notes(version: version, title: String(localized: "Keeps itself fresh"),
+                  text: String(localized: "Installed from the DMG, Nunsseop \(version) and later install their own updates."),
+                  items: [Item(symbol: "arrow.triangle.2.circlepath", title: String(localized: "Updates itself"),
+                               detail: String(localized: "Install Update shows what's new, then restarts")),
+                          Item(symbol: "hand.raised", title: String(localized: "Only when you say so"),
+                               detail: String(localized: "Nothing installs until you choose to"))])
         case "0.37.0":
             Notes(version: version, title: String(localized: "Now with papers"),
                   text: String(localized: "Nunsseop \(version) is signed and notarized by Apple, and its bottom edge sits a little closer."),

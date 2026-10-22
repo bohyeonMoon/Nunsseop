@@ -369,6 +369,8 @@
 "Copy Update Command" = "Copier la commande de mise à jour";
 "Copied" = "Copiée";
 "The command goes to the clipboard. Paste it in Terminal and press Return." = "La commande est copiée dans le presse-papiers. Collez-la dans Terminal et appuyez sur Retour.";
+"Install Update" = "Installer la mise à jour";
+"Shows what's new, then installs the update and restarts Nunsseop." = "Montre les nouveautés, puis installe la mise à jour et relance Nunsseop.";
 "Download Update" = "Télécharger la mise à jour";
 "Open the downloaded file and drag Nunsseop to Applications, replacing this one." = "Ouvrez le fichier téléchargé et glissez Nunsseop dans Applications pour remplacer celle-ci.";
 "Agents" = "Agents";
@@ -605,6 +607,12 @@
 "Change %lld of %lld this turn" = "Modification %1$lld sur %2$lld de ce tour";
 "← → the change before or after · Esc back to the list" = "← → modification précédente ou suivante · Échap revient à la liste";
 "Others" = "Autres";
+"Keeps itself fresh" = "Se tient à jour";
+"Installed from the DMG, Nunsseop %@ and later install their own updates." = "Installée depuis le DMG, Nunsseop %@ et les suivantes installent leurs propres mises à jour.";
+"Updates itself" = "Se met à jour seule";
+"Install Update shows what's new, then restarts" = "Installer montre les nouveautés puis relance";
+"Only when you say so" = "Seulement quand vous le voulez";
+"Nothing installs until you choose to" = "Rien ne s’installe avant votre choix";
 "Now with papers" = "Désormais avec papiers";
 "Nunsseop %@ is signed and notarized by Apple, and its bottom edge sits a little closer." = "Nunsseop %@ est signée et notarisée par Apple, et son bord inférieur est un peu plus serré.";
 "Notarized by Apple" = "Notarisée par Apple";

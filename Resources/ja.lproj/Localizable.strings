@@ -369,6 +369,8 @@
 "Copy Update Command" = "アップデートコマンドをコピー";
 "Copied" = "コピーしました";
 "The command goes to the clipboard. Paste it in Terminal and press Return." = "コマンドがクリップボードにコピーされます。ターミナルに貼り付けて Return キーを押してください。";
+"Install Update" = "アップデートをインストール";
+"Shows what's new, then installs the update and restarts Nunsseop." = "新しい点を表示してからアップデートをインストールし、Nunsseop を再起動します。";
 "Download Update" = "アップデートをダウンロード";
 "Open the downloaded file and drag Nunsseop to Applications, replacing this one." = "ダウンロードしたファイルを開き、Nunsseop をアプリケーションにドラッグして今のものと置き換えてください。";
 "Agents" = "エージェント";
@@ -605,6 +607,12 @@
 "Change %lld of %lld this turn" = "このターンの変更 %1$lld/%2$lld";
 "← → the change before or after · Esc back to the list" = "← → 前後の変更 · Esc で一覧へ";
 "Others" = "その他";
+"Keeps itself fresh" = "自分で新しくなります";
+"Installed from the DMG, Nunsseop %@ and later install their own updates." = "DMG からインストールした場合、Nunsseop %@ 以降はアップデートを自分でインストールします。";
+"Updates itself" = "自分でアップデート";
+"Install Update shows what's new, then restarts" = "インストールで新機能を表示してから再起動";
+"Only when you say so" = "あなたが決めたときだけ";
+"Nothing installs until you choose to" = "選ぶまで何もインストールしません";
 "Now with papers" = "身分証つきになりました";
 "Nunsseop %@ is signed and notarized by Apple, and its bottom edge sits a little closer." = "Nunsseop %@ は Apple の署名と公証を受けました。下の余白も少し詰めました。";
 "Notarized by Apple" = "Apple が公証済み";
