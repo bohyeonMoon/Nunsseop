@@ -18,6 +18,12 @@ const check = (ok, msg) => { if (!ok) failures.push(msg); };
 // A panel slides in when its tab is chosen; a click during that can land beside the button it aims at.
 const settledPanel = page => page.waitForFunction(() => !document.querySelector('.panel.active').getAnimations({ subtree: true })
   .some(a => a.playState === 'running'));
+// The page waits on Google Fonts, which can take longer than a navigation is given. The document is what the checks
+// need; the fonts get another minute, without failing anything when they take longer.
+const openPage = async (page) => {
+  await page.goto(url, { waitUntil: 'domcontentloaded' });
+  await page.waitForLoadState('load', { timeout: 60000 }).catch(() => {});
+};
 const pickLang = async (page, lang) => {
   await page.click('.lang-btn');
   await page.click(`[data-set="${lang}"]`);
@@ -30,9 +36,8 @@ const pickLang = async (page, lang) => {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, locale: 'en-US' });
   page.on('pageerror', e => failures.push('page error: ' + e.message));
   page.on('console', m => { if (m.type() === 'error') failures.push('console error: ' + m.text()); });
-  await page.goto(url);
-  await page.waitForLoadState('load');
-
+  await openPage(page);
+  
   // An automated browser that never scrolls (a full-page capture) still gets every block.
   check(await page.evaluate(() => document.querySelectorAll('.reveal-pre').length) === 0, 'blocks hidden in an automated browser');
 
@@ -169,7 +174,7 @@ const pickLang = async (page, lang) => {
   for (const [locale, want] of [['ko-KR', 'ko'], ['ja-JP', 'ja'], ['zh-CN', 'zh'], ['fr-FR', 'fr'], ['it-IT', 'en']]) {
     const ctx = await browser.newContext({ locale });
     const p = await ctx.newPage();
-    await p.goto(url);
+    await openPage(p);
     const got = await p.getAttribute('body', 'data-lang');
     check(got === want, `locale ${locale}: expected ${want}, got ${got}`);
     await ctx.close();
@@ -181,7 +186,7 @@ const pickLang = async (page, lang) => {
   cp.on('pageerror', e => failures.push('copy page error: ' + e.message));
   cp.on('console', m => { if (m.type() === 'error') failures.push('copy page console error: ' + m.text()); });
   await cp.clock.install();
-  await cp.goto(url);
+  await openPage(cp);
   const copies = await cp.$$eval('[data-copy]', bs => bs.map(b => ({
     copy: b.getAttribute('data-copy'),
     shown: (b.parentElement.querySelector('code, pre') || {}).textContent,
@@ -240,7 +245,7 @@ const pickLang = async (page, lang) => {
 
   // Mobile: nothing wider than the screen.
   const mobile = await browser.newPage({ viewport: { width: 375, height: 812 } });
-  await mobile.goto(url);
+  await openPage(mobile);
   // Decorations may extend past the edge; what matters is that the page can't scroll sideways.
   const scrollX = await mobile.evaluate(() => { window.scrollTo(1000, 0); return window.scrollX; });
   check(scrollX === 0, `mobile: page scrolls sideways by ${scrollX}px`);
@@ -282,7 +287,7 @@ const pickLang = async (page, lang) => {
         p.on('pageerror', e => errors.push(e.message));
         await p.addInitScript(script);
         await p.addInitScript(`localStorage.setItem('nunsseop-lang', '${lang}')`);
-        await p.goto(url);
+        await openPage(p);
         const btn = p.locator('[data-copy]').nth(i);
         const tab = await btn.evaluate(b => { const panel = b.closest('.panel'); return panel && panel.dataset.panel; });
         if (tab) { await p.click(`.tabs button[data-tab="${tab}"]`); await settledPanel(p); }
@@ -325,9 +330,8 @@ const pickLang = async (page, lang) => {
     const rp = await rctx.newPage();
     rp.on('pageerror', e => failures.push('reduced-motion page error: ' + e.message));
     rp.on('console', m => { if (m.type() === 'error') failures.push('reduced-motion console error: ' + m.text()); });
-    await rp.goto(url);
-    await rp.waitForLoadState('load');
-    await sleep(300);
+    await openPage(rp);
+        await sleep(300);
     const r = await rp.evaluate(() => {
       const shown = sel => [...document.querySelectorAll(sel)].filter(el => el.getClientRects().length);
       const moving = shown('.reveal, .nn-word, .hero .lead, .hero .cta, .copy > span, #tourTitle, #tourText')
@@ -382,9 +386,8 @@ const pickLang = async (page, lang) => {
     const mp = await mctx.newPage();
     mp.on('pageerror', e => failures.push('motion page error: ' + e.message));
     mp.on('console', m => { if (m.type() === 'error') failures.push('motion console error: ' + m.text()); });
-    await mp.goto(url);
-    await mp.waitForLoadState('load');
-    const pend = await mp.evaluate(() => {
+    await openPage(mp);
+        const pend = await mp.evaluate(() => {
       const waiting = [...document.querySelectorAll('.reveal-pre')];
       const before = waiting.map(el => [el.offsetTop, el.offsetHeight]);
       waiting.forEach(el => el.classList.remove('reveal-pre'));
@@ -454,11 +457,15 @@ const pickLang = async (page, lang) => {
     const d = mp.locator('.faq details').first();
     await d.locator('summary').scrollIntoViewIfNeeded();
     await d.locator('summary').click();
-    await sleep(450);
-    const faqH = await d.evaluate(el => [...el.querySelectorAll('.a')].find(a => a.getClientRects().length).getBoundingClientRect().height);
+    // Up to five seconds for the motion to end: a busy machine runs it late, not differently.
+    await d.evaluate(el => new Promise(done => { const t0 = performance.now(); (function poll() {
+      const a = [...el.querySelectorAll('.a')].find(x => x.getClientRects().length);
+      if ((a && a.getBoundingClientRect().height > 20) || performance.now() - t0 > 5000) done(); else requestAnimationFrame(poll); })(); }));
+    const faqH = await d.evaluate(el => { const a = [...el.querySelectorAll('.a')].find(x => x.getClientRects().length); return a ? a.getBoundingClientRect().height : 0; });
     check(faqH > 20, `motion: FAQ answer is ${faqH}px tall after opening`);
     await d.locator('summary').click();
-    await sleep(450);
+    await d.evaluate(el => new Promise(done => { const t0 = performance.now(); (function poll() {
+      if ((getComputedStyle(el, '::details-content').blockSize === '0px' && !el.open) || performance.now() - t0 > 5000) done(); else requestAnimationFrame(poll); })(); }));
     check(await d.evaluate(el => getComputedStyle(el, '::details-content').blockSize === '0px' && !el.open), 'motion: FAQ answer still shown after closing');
 
     // A failed copy says so and shakes.
