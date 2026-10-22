@@ -98,7 +98,7 @@ struct AmpRunTests {
         let events = AgentEventLog(), notices = ServerNotices()
         server.server.onAgent = { events.add($0) }
         server.server.onNotify = { notices.add($0) }
-        let script = try NodeScript(files: ["nunsseop.mjs": AmpPlugin.source(port: server.port)], main: NodeScript.prelude + Self.fake + """
+        let script = try NodeScript(files: ["nunsseop.mjs": AmpPlugin.source(port: server.port)], main: NodeScript.prelude + NodeScript.patience + Self.fake + """
             out({ description, returned: [fire("session.start", {}), fire("agent.start", { message: "secret", id: "m1" })].flat().map((value) => value ?? null) })
             fire("agent.end", { status: "done", messages: [], id: "m1" })
             fire("agent.start", {})
@@ -117,6 +117,33 @@ struct AmpRunTests {
         #expect(events.events.map(\.action) == [.opened, .working, .finished, .working, .idle, .working, .finished, .remove])
         #expect(events.events.allSatisfy { $0.session == "T-0194c1a2-7b3d-7000-8c11-aaaaaaaaaaaa" && $0.agent == .amp && $0.app == "com.mitchellh.ghostty" && $0.pid == nil })
         #expect(notices.notices.map(\.title) == ["Amp"] && notices.notices.first?.message == "Finished")
+    }
+
+    /// A node whose first request takes longer than the plugin's own second, as on a busy machine, where the first `fetch` alone can: the
+    /// event is still sent, and the ones after it are not out of order or missing for it.
+    @Test(.enabled(if: NodeTool.available, NodeTool.reason))
+    func aFirstRequestSlowerThanThePluginsOwnWaitStillReachesTheServer() async throws {
+        let server = try await PermissionTestServer(token: String(repeating: "t", count: 40))
+        let events = AgentEventLog()
+        server.server.onAgent = { events.add($0) }
+        let script = try NodeScript(files: ["nunsseop.mjs": AmpPlugin.source(port: server.port), "slow-first-fetch.cjs": """
+            // The signal is made before fetch is called, so it has run for 1.3 seconds of its second when the request is begun.
+            const real = globalThis.fetch
+            let first = true
+            globalThis.fetch = async (...args) => {
+              if (first) { first = false; await new Promise((resolve) => setTimeout(resolve, 1300)) }
+              return real(...args)
+            }
+            """], main: NodeScript.prelude + NodeScript.patience + Self.fake + """
+            fire("session.start", {})
+            fire("agent.start", { message: "secret", id: "m1" })
+            await sleep(300)
+            out({ done: true })
+            """, home: server.home.url, environment: ["NODE_OPTIONS": "--require ./slow-first-fetch.cjs"])
+        let result = try #require(await script.finish())
+        #expect(result.status == 0 && result.lines.count == 1)
+        await eventually { events.events.count >= 2 }
+        #expect(events.events.map(\.action) == [.opened, .working])
     }
 
     @Test(.enabled(if: NodeTool.available, NodeTool.reason))

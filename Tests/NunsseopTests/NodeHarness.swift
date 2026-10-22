@@ -58,6 +58,17 @@ final class NodeScript {
         const gate = (name) => until(() => existsSync(name))
 
         """
+
+    /// Stretches `AbortSignal.timeout` to as long as a test waits for anything (`eventDeadline`). The plugins give up on a request to the server
+    /// after a second, as they should when Nunsseop is stuck, and what they gave up on is never sent again. That is their business and no test
+    /// here is about it; but on a busy machine the first `fetch` of a node that has just started can take that long on its own, and the first
+    /// event of a session (it was `opened`) never arrived. So in a script that has it, after `prelude`, the plugin's timers last as long as a test
+    /// waits for anything.
+    static let patience = """
+        const giveUpAfter = AbortSignal.timeout.bind(AbortSignal)
+        AbortSignal.timeout = (ms) => giveUpAfter(Math.max(ms, \(Int(eventDeadline * 1000))))
+
+        """
 }
 
 private func unwrap<T>(_ value: T?) throws -> T {
