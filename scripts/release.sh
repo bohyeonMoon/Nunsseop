@@ -32,6 +32,9 @@ if [[ -z "$NOTES_FILE" ]]; then
 fi
 [[ -s "$NOTES_FILE" ]] || { echo "Release notes are empty" >&2; exit 1; }
 
+# Notarization comes after the checks below; credentials Apple refuses would stop the release only then.
+./scripts/make-dmg.sh --check-notary
+
 # Copies installed from the DMG accept only updates signed with the key whose public half is in Info.plist. -p only
 # prints it: without arguments generate_keys would make a new key if the keychain had none.
 swift package resolve >/dev/null
